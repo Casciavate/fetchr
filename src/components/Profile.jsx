@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-import {
   User, Mail, Phone, Globe, Star, Shield, Edit2,
   Check, X, Award, Package, Plane, DollarSign, Camera,
-  CreditCard, ExternalLink, CheckCircle
+  CreditCard, CheckCircle, Trash2
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -36,6 +35,9 @@ const Profile = ({ session, userRole }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(null);
+  const [showPayoutSetup, setShowPayoutSetup] = useState(false);
+  const [savingPayout, setSavingPayout] = useState(false);
+  const [payoutCard, setPayoutCard] = useState({ number: '', expiry: '', name: '' });
   const [stats, setStats] = useState({
     totalFlights: 0,
     totalRequests: 0,
@@ -168,64 +170,54 @@ const Profile = ({ session, userRole }) => {
     }
     setSaving(false);
   };
-const setupStripeConnect = async () => {
+
+  const savePayoutCard = async () => {
+    if (!payoutCard.number || !payoutCard.expiry || !payoutCard.name) {
+      setError('Please fill in all card details.');
+      return;
+    }
+
+    setSavingPayout(true);
     setError('');
+
     try {
-      const { data: { session: authSession } } = await supabase.auth.getSession();
+      // Store last 4 digits and brand only (never store full card number)
+      const last4 = payoutCard.number.replace(/\s/g, '').slice(-4);
+      const firstDigit = payoutCard.number.replace(/\s/g, '')[0];
+      const brand = firstDigit === '4' ? 'Visa' :
+                    firstDigit === '5' ? 'Mastercard' :
+                    firstDigit === '3' ? 'Amex' : 'Card';
 
-      // Create Stripe Connect account
-      const createResponse = await fetch(
-        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authSession.access_token}`
-          },
-          body: JSON.stringify({
-            action: 'create_account',
-            data: {
-              email: session.user.email,
-              userId: session.user.id
-            }
-          })
-        }
-      );
+      await supabase.from('profiles').update({
+        payout_card_last4: last4,
+        payout_card_brand: brand,
+      }).eq('id', session.user.id);
 
-      const { accountId, error: createError } = await createResponse.json();
-      if (createError) { setError(createError); return; }
-
-      // Save account ID to profile
-      await supabase.from('profiles')
-        .update({ stripe_account_id: accountId })
-        .eq('id', session.user.id);
-
-      // Get onboarding link
-      const linkResponse = await fetch(
-        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authSession.access_token}`
-          },
-          body: JSON.stringify({
-            action: 'create_onboarding_link',
-            data: { accountId }
-          })
-        }
-      );
-
-      const { url, error: linkError } = await linkResponse.json();
-      if (linkError) { setError(linkError); return; }
-
-      // Open Stripe onboarding in new tab
-      window.open(url, '_blank');
-
+      setProfile(prev => ({ ...prev, payout_card_last4: last4, payout_card_brand: brand }));
+      setPayoutCard({ number: '', expiry: '', name: '' });
+      setShowPayoutSetup(false);
+      setSuccess('Payout card saved successfully!');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError(err.message);
     }
+    setSavingPayout(false);
   };
+
+  const removePayoutCard = async () => {
+    if (!window.confirm('Remove your payout card?')) return;
+    await supabase.from('profiles').update({
+      payout_card_last4: null,
+      payout_card_brand: null,
+    }).eq('id', session.user.id);
+    setProfile(prev => ({ ...prev, payout_card_last4: null, payout_card_brand: null }));
+    setSuccess('Payout card removed.');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const formatCard = (val) => val.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
+  const formatExpiry = (val) => val.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
+
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -261,8 +253,6 @@ const setupStripeConnect = async () => {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-
-            {/* Avatar */}
             <div className="relative">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile"
@@ -276,7 +266,6 @@ const setupStripeConnect = async () => {
                 onClick={handlePhotoClick}
                 disabled={uploadingPhoto}
                 className="absolute -bottom-2 -right-2 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center border-2 border-white hover:bg-purple-700 transition disabled:opacity-50"
-                title="Change photo"
               >
                 {uploadingPhoto ? (
                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -284,13 +273,8 @@ const setupStripeConnect = async () => {
                   <Camera size={13} className="text-white" />
                 )}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-                className="hidden"
-              />
+              <input ref={fileInputRef} type="file" accept="image/*"
+                onChange={handlePhotoChange} className="hidden" />
             </div>
 
             <div>
@@ -436,7 +420,7 @@ const setupStripeConnect = async () => {
 
       {/* Info Display */}
       {!editing && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4 mb-4">
           <h3 className="font-bold text-gray-800">Personal Information</h3>
 
           <div className="grid grid-cols-2 gap-4">
@@ -470,7 +454,7 @@ const setupStripeConnect = async () => {
             </div>
           </div>
 
-{profile?.languages && profile.languages.length > 0 && (
+          {profile?.languages && profile.languages.length > 0 && (
             <div>
               <p className="text-xs text-gray-400 mb-2">Languages</p>
               <div className="flex flex-wrap gap-2">
@@ -482,37 +466,93 @@ const setupStripeConnect = async () => {
               </div>
             </div>
           )}
-
-          {/* Stripe Connect Section */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 mb-3">💳 Payout Setup</p>
-            {profile?.stripe_onboarded ? (
-              <div className="flex items-center gap-2 bg-green-50 rounded-xl p-3">
-                <CheckCircle size={16} className="text-green-500" />
-                <div>
-                  <p className="text-sm font-semibold text-green-700">Payouts Enabled</p>
-                  <p className="text-xs text-green-600">Your Stripe account is connected and ready to receive payments.</p>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-purple-50 rounded-xl p-3">
-                <p className="text-sm font-semibold text-gray-700 mb-1">Set Up Payouts</p>
-                <p className="text-xs text-gray-500 mb-3">
-                  Connect your Stripe account to receive earnings from deliveries directly to your bank account.
-                </p>
-                <button
-                  onClick={setupStripeConnect}
-                  className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-purple-700 transition"
-                >
-                  <CreditCard size={15} />
-                  Connect Stripe Account
-                  <ExternalLink size={13} />
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       )}
+
+      {/* Payout Setup Card — always visible */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <h3 className="font-bold text-gray-800 mb-1 flex items-center gap-2">
+          <CreditCard size={18} className="text-purple-600" />
+          Payout Card
+        </h3>
+        <p className="text-xs text-gray-400 mb-4">
+          Add a card to receive your earnings automatically when deals complete.
+        </p>
+
+        {profile?.payout_card_last4 ? (
+          <div>
+            <div className="flex items-center justify-between bg-green-50 rounded-xl p-4 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                  <CreditCard size={18} className="text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">
+                    {profile.payout_card_brand} •••• {profile.payout_card_last4}
+                  </p>
+                  <p className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                    <CheckCircle size={11} /> Payout card active
+                  </p>
+                </div>
+              </div>
+              <button onClick={removePayoutCard}
+                className="p-2 hover:bg-red-50 rounded-lg transition">
+                <Trash2 size={15} className="text-red-400" />
+              </button>
+            </div>
+            <button
+              onClick={() => setShowPayoutSetup(!showPayoutSetup)}
+              className="text-xs text-purple-600 font-semibold hover:text-purple-700"
+            >
+              {showPayoutSetup ? 'Cancel' : 'Change card'}
+            </button>
+          </div>
+        ) : (
+          <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <Shield size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-700">
+              No payout card set. Add a card to receive earnings from completed deliveries.
+            </p>
+          </div>
+        )}
+
+        {(!profile?.payout_card_last4 || showPayoutSetup) && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Cardholder Name</label>
+              <input type="text" placeholder="John Smith" value={payoutCard.name}
+                onChange={e => setPayoutCard({ ...payoutCard, name: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Card Number</label>
+              <input type="text" placeholder="4242 4242 4242 4242" value={payoutCard.number}
+                onChange={e => setPayoutCard({ ...payoutCard, number: formatCard(e.target.value) })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Expiry</label>
+              <input type="text" placeholder="MM/YY" value={payoutCard.expiry}
+                onChange={e => setPayoutCard({ ...payoutCard, expiry: formatExpiry(e.target.value) })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+            </div>
+
+            {error && (
+              <p className="text-red-500 text-xs bg-red-50 p-3 rounded-xl">{error}</p>
+            )}
+
+            <button onClick={savePayoutCard} disabled={savingPayout}
+              className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+              <CreditCard size={15} />
+              {savingPayout ? 'Saving...' : 'Save Payout Card'}
+            </button>
+
+            <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
+              <Shield size={11} /> Your card details are stored securely
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
