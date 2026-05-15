@@ -1,95 +1,103 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Shield, DollarSign, CheckCircle, Lock, AlertTriangle, Edit2 } from 'lucide-react';
+import { Shield, DollarSign, CheckCircle, Lock, AlertTriangle, Info } from 'lucide-react';
 
-const FETCHR_FEE_PERCENT = 10;
+const STRIPE_CONNECT_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect';
 
 const EscrowPayment = ({ match, session, onPaymentComplete }) => {
   const [step, setStep] = useState('summary');
   const [loading, setLoading] = useState(false);
+  const [loadingFees, setLoadingFees] = useState(true);
   const [error, setError] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
+  const [fees, setFees] = useState(null);
   const [cardDetails, setCardDetails] = useState({
-    number: '',
-    expiry: '',
-    cvc: '',
-    name: ''
+    number: '', expiry: '', cvc: '', name: ''
   });
 
-  // Check if this is an additional payment
   const isAdditionalPayment = match.status === 'in_escrow';
-
-  // Default amounts from deal
   const defaultWeightKg = match.request?.weight_kg || 0;
   const defaultPricePerKg = match.flight?.price_per_kg || 0;
   const defaultSubtotal = defaultWeightKg * defaultPricePerKg;
 
-  // Amendable amount for additional payments
   const [customAmount, setCustomAmount] = useState('');
   const [amountNote, setAmountNote] = useState('');
-  const [isEditingAmount, setIsEditingAmount] = useState(isAdditionalPayment);
 
   const getSubtotal = () => {
-    if (isAdditionalPayment && customAmount) {
-      return parseFloat(customAmount) || 0;
-    }
+    if (isAdditionalPayment && customAmount) return parseFloat(customAmount) || 0;
     return defaultSubtotal;
   };
 
-  const subtotal = getSubtotal();
-  const fetchrFee = subtotal * (FETCHR_FEE_PERCENT / 100);
-  const total = subtotal + fetchrFee;
-  const travelerReceives = subtotal - fetchrFee;
+  const fetchFees = async (subtotal) => {
+    if (!subtotal || subtotal <= 0) { setFees(null); return; }
+    setLoadingFees(true);
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      const response = await fetch(STRIPE_CONNECT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession.access_token}`
+        },
+        body: JSON.stringify({ action: 'get_fees', data: { subtotal } })
+      });
+      const data = await response.json();
+      setFees(data);
+    } catch (err) {
+      console.error('Fee calculation error:', err);
+    }
+    setLoadingFees(false);
+  };
+
+  useEffect(() => {
+    fetchFees(getSubtotal());
+  }, [customAmount]);
+
+  useEffect(() => {
+    if (!isAdditionalPayment) fetchFees(defaultSubtotal);
+  }, []);
 
   const handlePayment = async () => {
     if (!cardDetails.number || !cardDetails.expiry || !cardDetails.cvc || !cardDetails.name) {
       setError('Please fill in all card details.');
       return;
     }
-    if (isAdditionalPayment && !customAmount) {
-      setError('Please enter the additional payment amount.');
-      return;
-    }
-    if (total <= 0) {
-      setError('Payment amount must be greater than zero.');
+    if (!fees) {
+      setError('Fee calculation failed. Please try again.');
       return;
     }
 
     setLoading(true);
     setError('');
-    setDebugInfo('');
 
     try {
-      setDebugInfo('Getting auth session...');
-      const { data: { session: authSession }, error: sessionError } = await supabase.auth.getSession();
+      const { data: { session: authSession } } = await supabase.auth.getSession();
 
-      if (sessionError || !authSession) {
-        setError('Authentication error. Please log out and log back in.');
-        setLoading(false);
-        return;
-      }
+      // Get traveler's Stripe account
+      const { data: travelerProfile } = await supabase
+        .from('profiles')
+        .select('stripe_account_id, stripe_onboarded')
+        .eq('id', match.traveler_id)
+        .single();
 
-      setDebugInfo('Processing payment...');
-      const response = await fetch(
-        `https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/create-payment`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authSession.access_token}`
-          },
-          body: JSON.stringify({
-            amount: total,
+      const response = await fetch(STRIPE_CONNECT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession.access_token}`
+        },
+        body: JSON.stringify({
+          action: 'create_escrow_payment',
+          data: {
+            subtotal: fees.subtotal,
             matchId: match.id,
-            currency: 'usd',
-            isAdditional: isAdditionalPayment,
-            note: amountNote
-          })
-        }
-      );
+            travelerStripeAccountId: travelerProfile?.stripe_onboarded
+              ? travelerProfile.stripe_account_id
+              : null,
+          }
+        })
+      });
 
-const result = await response.json();
-      setDebugInfo(`Response received: ${result.paymentIntentId ? 'Payment created ✓' : 'No payment ID'}`);
+      const result = await response.json();
 
       if (result.error) {
         setError(`Payment error: ${result.error}`);
@@ -97,36 +105,26 @@ const result = await response.json();
         return;
       }
 
-      // If we have a paymentIntentId, the payment was created successfully
-      if (!result.paymentIntentId && !result.clientSecret) {
-        setError(`Payment failed. Please try again.`);
+      if (!result.success) {
+        setError('Payment not completed. Please try again.');
         setLoading(false);
         return;
       }
 
-      setDebugInfo('Updating database...');
-
-      // Update match status
+      // Update match in database
       if (!isAdditionalPayment) {
-        const { error: dbError } = await supabase
-          .from('matches')
-          .update({
-            status: 'in_escrow',
-            agreed_price_per_kg: defaultPricePerKg,
-          })
-          .eq('id', match.id);
-
-        if (dbError) {
-          setError(`Database error: ${dbError.message}`);
-          setLoading(false);
-          return;
-        }
+        await supabase.from('matches').update({
+          status: 'in_escrow',
+          agreed_price_per_kg: defaultPricePerKg,
+          payment_intent_id: result.paymentIntentId,
+          escrow_amount: fees.totalCharged,
+        }).eq('id', match.id);
       }
 
-      // Send confirmation message in chat
+      // Send confirmation message
       const messageContent = isAdditionalPayment
-        ? `💰 ADDITIONAL PAYMENT CONFIRMED: $${total.toFixed(2)} has been added to escrow${amountNote ? ` — Note: ${amountNote}` : ''}. Fetchr fee: $${fetchrFee.toFixed(2)}. Traveler will receive an additional $${travelerReceives.toFixed(2)} upon delivery.`
-        : `💰 ESCROW PAYMENT CONFIRMED: $${total.toFixed(2)} has been securely held in escrow. The traveler will receive $${travelerReceives.toFixed(2)} upon successful delivery. The deal is now active!`;
+        ? `💰 ADDITIONAL PAYMENT CONFIRMED: $${fees.totalCharged.toFixed(2)} added to escrow${amountNote ? ` — Note: ${amountNote}` : ''}. Traveler will receive $${fees.travelerReceives.toFixed(2)} upon delivery.`
+        : `💰 ESCROW PAYMENT CONFIRMED: $${fees.totalCharged.toFixed(2)} is securely held in escrow (includes Fetchr fee of $${fees.totalFetchrFee.toFixed(2)}). Traveler will receive $${fees.travelerReceives.toFixed(2)} upon successful delivery.`;
 
       await supabase.from('messages').insert([{
         match_id: match.id,
@@ -135,54 +133,50 @@ const result = await response.json();
         is_read: false
       }]);
 
-setDebugInfo('');
       setStep('success');
-      setTimeout(() => onPaymentComplete(), 500);
+      onPaymentComplete();
 
     } catch (err) {
       setError(`Unexpected error: ${err.message}`);
     }
-
     setLoading(false);
   };
 
-  const formatCard = (val) => {
-    return val.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
-  };
-
-  const formatExpiry = (val) => {
-    return val.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
-  };
+  const formatCard = (val) => val.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
+  const formatExpiry = (val) => val.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
 
   if (step === 'success') return (
     <div className="flex flex-col items-center justify-center py-8 px-6">
       <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mb-3">
         <CheckCircle size={28} className="text-green-500" />
       </div>
-      <h3 className="text-lg font-bold text-gray-800 mb-1">
-        {isAdditionalPayment ? 'Additional Payment Confirmed!' : 'Payment in Escrow!'}
-      </h3>
+      <h3 className="text-lg font-bold text-gray-800 mb-1">Payment in Escrow!</h3>
       <p className="text-sm text-gray-400 text-center mb-4">
-        ${total.toFixed(2)} has been securely processed.
+        Funds are securely held until delivery is confirmed by both parties.
       </p>
-      <div className="bg-purple-50 rounded-xl p-4 w-full text-sm">
-        <div className="flex justify-between mb-1">
-          <span className="text-gray-500">Amount</span>
-          <span className="font-semibold">${subtotal.toFixed(2)}</span>
+      {fees && (
+        <div className="bg-purple-50 rounded-xl p-4 w-full text-sm space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Deal subtotal</span>
+            <span className="font-semibold">${fees.subtotal.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-red-500">
+            <span className="flex items-center gap-1">
+              Fetchr fee (incl. Stripe)
+              <Info size={11} />
+            </span>
+            <span>-${fees.totalFetchrFee.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-purple-600 border-t border-purple-100 pt-2 mt-1">
+            <span>Total charged</span>
+            <span>${fees.totalCharged.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-green-600 text-xs pt-1">
+            <span>Traveler receives on delivery</span>
+            <span>${fees.travelerReceives.toFixed(2)}</span>
+          </div>
         </div>
-        <div className="flex justify-between mb-1">
-          <span className="text-gray-500">Fetchr fee (10%)</span>
-          <span className="font-semibold">${fetchrFee.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between font-bold text-purple-600 border-t border-purple-100 pt-2 mt-2">
-          <span>Total paid</span>
-          <span>${total.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between text-green-600 text-xs mt-2">
-          <span>Traveler receives on delivery</span>
-          <span>${travelerReceives.toFixed(2)}</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 
@@ -195,17 +189,7 @@ setDebugInfo('');
         </h3>
       </div>
 
-      {/* Additional payment notice */}
-      {isAdditionalPayment && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
-          <p className="text-xs text-blue-700 font-semibold mb-0.5">💡 Additional Payment</p>
-          <p className="text-xs text-blue-600">
-            You can add an additional payment to escrow — for example to cover the item purchase price or an amended delivery fee.
-          </p>
-        </div>
-      )}
-
-      {/* Amount Section */}
+      {/* Fee Breakdown */}
       <div className="bg-gray-50 rounded-xl p-4 mb-4">
         {isAdditionalPayment ? (
           <div className="space-y-3">
@@ -217,148 +201,123 @@ setDebugInfo('');
                 <DollarSign size={15} className="absolute left-3 top-3 text-gray-400" />
                 <input
                   type="number"
-                  placeholder="Enter amount (e.g. 50.00)"
+                  placeholder="Enter amount"
                   value={customAmount}
-                  onChange={e => setCustomAmount(e.target.value)}
+                  onChange={e => { setCustomAmount(e.target.value); fetchFees(parseFloat(e.target.value) || 0); }}
                   className="w-full pl-8 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
                 />
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
-                Note <span className="text-gray-400 font-normal">(optional — explain the reason)</span>
-              </label>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">Note (optional)</label>
               <input
                 type="text"
-                placeholder="e.g. Item purchase price, amended delivery fee..."
+                placeholder="e.g. Item purchase price..."
                 value={amountNote}
                 onChange={e => setAmountNote(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
               />
             </div>
-            {customAmount && parseFloat(customAmount) > 0 && (
-              <div className="border-t border-gray-200 pt-3 space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Amount</span>
-                  <span className="font-semibold">${parseFloat(customAmount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Fetchr fee (10%)</span>
-                  <span className="font-semibold">${(parseFloat(customAmount) * 0.10).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-purple-600 border-t border-gray-200 pt-1.5">
-                  <span>Total to pay</span>
-                  <span>${(parseFloat(customAmount) * 1.10).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-green-600 text-xs">
-                  <span>Traveler receives</span>
-                  <span>${(parseFloat(customAmount) * 0.90).toFixed(2)}</span>
-                </div>
-              </div>
-            )}
+          </div>
+        ) : null}
+
+        {/* Fee breakdown table */}
+        {fees && !loadingFees ? (
+          <div className={`space-y-1.5 text-sm ${isAdditionalPayment ? 'mt-3 pt-3 border-t border-gray-200' : ''}`}>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Deal subtotal</span>
+              <span className="font-semibold">${fees.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-500">
+              <span>Fetchr platform fee (10%)</span>
+              <span>${fees.fetchrFee.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-500">
+              <span>Payment processing (Stripe)</span>
+              <span>${fees.stripeFee.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-gray-700 border-t border-gray-200 pt-1.5">
+              <span>Total Fetchr fees</span>
+              <span>${fees.totalFetchrFee.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-purple-600 border-t border-gray-200 pt-1.5">
+              <span>Total you pay</span>
+              <span>${fees.totalCharged.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-green-600 text-xs pt-1">
+              <span>Traveler receives on delivery</span>
+              <span>${fees.travelerReceives.toFixed(2)}</span>
+            </div>
           </div>
         ) : (
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">{defaultWeightKg}kg × ${defaultPricePerKg}/kg</span>
-              <span className="font-semibold">${defaultSubtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Fetchr fee (10%)</span>
-              <span className="font-semibold">${fetchrFee.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-purple-600 border-t border-gray-200 pt-2">
-              <span>Total</span>
-              <span>${total.toFixed(2)}</span>
-            </div>
-            <p className="text-xs text-gray-400">
-              Traveler receives ${travelerReceives.toFixed(2)} after Fetchr's fee
-            </p>
+          <div className="text-center py-3">
+            <p className="text-xs text-gray-400">Calculating fees...</p>
           </div>
         )}
+
+        {/* Fee explanation */}
+        <div className="mt-3 bg-blue-50 rounded-lg p-2.5 flex items-start gap-2">
+          <Info size={13} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-600">
+            Fetchr fees include our 10% platform commission plus Stripe's payment processing fee (2.9% + $0.30). This covers all costs so you never pay extra.
+          </p>
+        </div>
       </div>
 
       {/* Card Form */}
       <div className="space-y-3 mb-4">
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-1 block">Cardholder Name</label>
-          <input
-            type="text"
-            placeholder="John Smith"
-            value={cardDetails.name}
+          <input type="text" placeholder="John Smith" value={cardDetails.name}
             onChange={e => setCardDetails({ ...cardDetails, name: e.target.value })}
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-          />
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
         </div>
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-1 block">Card Number</label>
-          <input
-            type="text"
-            placeholder="4242 4242 4242 4242"
-            value={cardDetails.number}
+          <input type="text" placeholder="4242 4242 4242 4242" value={cardDetails.number}
             onChange={e => setCardDetails({ ...cardDetails, number: formatCard(e.target.value) })}
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-          />
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">Expiry</label>
-            <input
-              type="text"
-              placeholder="MM/YY"
-              value={cardDetails.expiry}
+            <input type="text" placeholder="MM/YY" value={cardDetails.expiry}
               onChange={e => setCardDetails({ ...cardDetails, expiry: formatExpiry(e.target.value) })}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-            />
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">CVC</label>
-            <input
-              type="text"
-              placeholder="123"
-              maxLength={3}
-              value={cardDetails.cvc}
+            <input type="text" placeholder="123" maxLength={3} value={cardDetails.cvc}
               onChange={e => setCardDetails({ ...cardDetails, cvc: e.target.value.replace(/\D/g, '') })}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-            />
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
           </div>
         </div>
       </div>
 
-      {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-red-600 text-xs">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Debug info */}
-      {debugInfo && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-3">
-          <p className="text-blue-600 text-xs font-mono">{debugInfo}</p>
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-red-600 text-xs">{error}</p>
         </div>
       )}
 
       <button
         onClick={handlePayment}
-        disabled={loading || (isAdditionalPayment && (!customAmount || parseFloat(customAmount) <= 0))}
+        disabled={loading || !fees || (isAdditionalPayment && (!customAmount || parseFloat(customAmount) <= 0))}
         className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
       >
         <Lock size={14} />
-        {loading ? 'Processing...' : `Pay $${total > 0 ? total.toFixed(2) : '0.00'} into Escrow`}
+        {loading ? 'Processing...' : `Pay $${fees?.totalCharged.toFixed(2) || '0.00'} into Escrow`}
       </button>
 
       <p className="text-xs text-gray-400 text-center mt-3 flex items-center justify-center gap-1">
-        <Shield size={11} /> Secured by Stripe. Money held safely until delivery confirmed.
+        <Shield size={11} /> Secured by Stripe. Held safely until delivery confirmed.
       </p>
 
       <div className="mt-3 bg-yellow-50 rounded-xl p-3">
         <p className="text-xs text-yellow-700 font-semibold">🧪 Test Mode</p>
         <p className="text-xs text-yellow-600 mt-0.5">
-          Use card: <strong>4242 4242 4242 4242</strong> • Any future expiry • Any 3-digit CVC
+          Use card: <strong>4242 4242 4242 4242</strong> • Any future expiry • Any CVC
         </p>
       </div>
     </div>
