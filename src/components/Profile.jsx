@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
+import {
   User, Mail, Phone, Globe, Star, Shield, Edit2,
-  Check, X, Award, Package, Plane, DollarSign, Camera
+  Check, X, Award, Package, Plane, DollarSign, Camera,
+  CreditCard, ExternalLink, CheckCircle
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -166,7 +168,64 @@ const Profile = ({ session, userRole }) => {
     }
     setSaving(false);
   };
+const setupStripeConnect = async () => {
+    setError('');
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
 
+      // Create Stripe Connect account
+      const createResponse = await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`
+          },
+          body: JSON.stringify({
+            action: 'create_account',
+            data: {
+              email: session.user.email,
+              userId: session.user.id
+            }
+          })
+        }
+      );
+
+      const { accountId, error: createError } = await createResponse.json();
+      if (createError) { setError(createError); return; }
+
+      // Save account ID to profile
+      await supabase.from('profiles')
+        .update({ stripe_account_id: accountId })
+        .eq('id', session.user.id);
+
+      // Get onboarding link
+      const linkResponse = await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`
+          },
+          body: JSON.stringify({
+            action: 'create_onboarding_link',
+            data: { accountId }
+          })
+        }
+      );
+
+      const { url, error: linkError } = await linkResponse.json();
+      if (linkError) { setError(linkError); return; }
+
+      // Open Stripe onboarding in new tab
+      window.open(url, '_blank');
+
+    } catch (err) {
+      setError(err.message);
+    }
+  };
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -411,7 +470,7 @@ const Profile = ({ session, userRole }) => {
             </div>
           </div>
 
-          {profile?.languages && profile.languages.length > 0 && (
+{profile?.languages && profile.languages.length > 0 && (
             <div>
               <p className="text-xs text-gray-400 mb-2">Languages</p>
               <div className="flex flex-wrap gap-2">
@@ -423,6 +482,35 @@ const Profile = ({ session, userRole }) => {
               </div>
             </div>
           )}
+
+          {/* Stripe Connect Section */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-500 mb-3">💳 Payout Setup</p>
+            {profile?.stripe_onboarded ? (
+              <div className="flex items-center gap-2 bg-green-50 rounded-xl p-3">
+                <CheckCircle size={16} className="text-green-500" />
+                <div>
+                  <p className="text-sm font-semibold text-green-700">Payouts Enabled</p>
+                  <p className="text-xs text-green-600">Your Stripe account is connected and ready to receive payments.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-purple-50 rounded-xl p-3">
+                <p className="text-sm font-semibold text-gray-700 mb-1">Set Up Payouts</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Connect your Stripe account to receive earnings from deliveries directly to your bank account.
+                </p>
+                <button
+                  onClick={setupStripeConnect}
+                  className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-purple-700 transition"
+                >
+                  <CreditCard size={15} />
+                  Connect Stripe Account
+                  <ExternalLink size={13} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
