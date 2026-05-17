@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Plane, Search, MapPin, Calendar, Weight, DollarSign,
@@ -21,15 +21,14 @@ const AIRLINES = [
   'Austrian Airlines', 'Finnair', 'SAS', 'Iberia', 'EgyptAir',
   'Ethiopian Airlines', 'Kenya Airways', 'Saudia', 'Gulf Air',
   'Oman Air', 'Air India', 'Japan Airlines', 'Korean Air',
-  'ANA', 'Thai Airways', 'Malaysia Airlines', 'LATAM', 'Avianca', 'Air Canada',
-  'WizzAir', 'Vueling', 'TAP Air Portugal', 'Alitalia', 'LOT Polish Airlines',
-  'Brussels Airlines', 'Aer Lingus', 'Norwegian', 'TUI Airways',
-  'IndiGo', 'SpiceJet', 'Vistara', 'Air Asia', 'Garuda Indonesia',
-  'Philippine Airlines', 'Vietnam Airlines', 'China Eastern', 'China Southern',
-  'Air China', 'Hainan Airlines', 'Xiamen Airlines', 'Shenzhen Airlines',
-  'Royal Jordanian', 'Middle East Airlines', 'Yemenia', 'Iraqi Airways',
-  'flynas', 'flyadeal', 'Jazeera Airways', 'Air Arabia Abu Dhabi',
-  'SunExpress', 'Pegasus Airlines', 'AtlasGlobal',
+  'ANA', 'Thai Airways', 'Malaysia Airlines', 'LATAM', 'Avianca',
+  'Air Canada', 'IndiGo', 'SpiceJet', 'flynas', 'Jazeera Airways',
+  'Pegasus Airlines', 'Royal Jordanian', 'Middle East Airlines',
+  'flyadeal', 'Air Arabia Abu Dhabi', 'WizzAir', 'Vueling',
+  'TAP Air Portugal', 'Aer Lingus', 'Norwegian', 'TUI Airways',
+  'Air Asia', 'Garuda Indonesia', 'Philippine Airlines',
+  'Vietnam Airlines', 'China Eastern', 'China Southern', 'Air China',
+  'Hainan Airlines', 'SunExpress',
 ];
 
 const AIRLINE_CODES = {
@@ -50,16 +49,13 @@ const AIRLINE_CODES = {
   'Jazeera Airways': 'J9', 'Pegasus Airlines': 'PC',
 };
 
-// Comprehensive airport list
 const AIRPORTS = [
-  // UAE
   { code: 'DXB', city: 'Dubai', name: 'Dubai International', country: 'UAE' },
   { code: 'DWC', city: 'Dubai', name: 'Al Maktoum International', country: 'UAE' },
   { code: 'AUH', city: 'Abu Dhabi', name: 'Zayed International', country: 'UAE' },
   { code: 'SHJ', city: 'Sharjah', name: 'Sharjah International', country: 'UAE' },
   { code: 'RKT', city: 'Ras Al Khaimah', name: 'RAK International', country: 'UAE' },
   { code: 'FJR', city: 'Fujairah', name: 'Fujairah International', country: 'UAE' },
-  // Middle East
   { code: 'DOH', city: 'Doha', name: 'Hamad International', country: 'Qatar' },
   { code: 'KWI', city: 'Kuwait City', name: 'Kuwait International', country: 'Kuwait' },
   { code: 'BAH', city: 'Manama', name: 'Bahrain International', country: 'Bahrain' },
@@ -82,7 +78,6 @@ const AIRPORTS = [
   { code: 'GYD', city: 'Baku', name: 'Heydar Aliyev International', country: 'Azerbaijan' },
   { code: 'TBS', city: 'Tbilisi', name: 'Shota Rustaveli International', country: 'Georgia' },
   { code: 'EVN', city: 'Yerevan', name: 'Zvartnots International', country: 'Armenia' },
-  // UK
   { code: 'LHR', city: 'London', name: 'Heathrow', country: 'UK' },
   { code: 'LGW', city: 'London', name: 'Gatwick', country: 'UK' },
   { code: 'STN', city: 'London', name: 'Stansted', country: 'UK' },
@@ -93,14 +88,12 @@ const AIRPORTS = [
   { code: 'EDI', city: 'Edinburgh', name: 'Edinburgh Airport', country: 'UK' },
   { code: 'GLA', city: 'Glasgow', name: 'Glasgow Airport', country: 'UK' },
   { code: 'BRS', city: 'Bristol', name: 'Bristol Airport', country: 'UK' },
-  // France
   { code: 'CDG', city: 'Paris', name: 'Charles de Gaulle', country: 'France' },
   { code: 'ORY', city: 'Paris', name: 'Orly', country: 'France' },
   { code: 'NCE', city: 'Nice', name: 'Nice Cote d Azur', country: 'France' },
   { code: 'LYS', city: 'Lyon', name: 'Saint-Exupery', country: 'France' },
   { code: 'MRS', city: 'Marseille', name: 'Marseille Provence', country: 'France' },
   { code: 'TLS', city: 'Toulouse', name: 'Toulouse-Blagnac', country: 'France' },
-  // Germany
   { code: 'FRA', city: 'Frankfurt', name: 'Frankfurt Airport', country: 'Germany' },
   { code: 'MUC', city: 'Munich', name: 'Munich Airport', country: 'Germany' },
   { code: 'BER', city: 'Berlin', name: 'Brandenburg Airport', country: 'Germany' },
@@ -108,14 +101,11 @@ const AIRPORTS = [
   { code: 'DUS', city: 'Dusseldorf', name: 'Dusseldorf Airport', country: 'Germany' },
   { code: 'CGN', city: 'Cologne', name: 'Cologne Bonn Airport', country: 'Germany' },
   { code: 'STR', city: 'Stuttgart', name: 'Stuttgart Airport', country: 'Germany' },
-  // Switzerland
   { code: 'ZRH', city: 'Zurich', name: 'Zurich Airport', country: 'Switzerland' },
   { code: 'GVA', city: 'Geneva', name: 'Geneva Airport', country: 'Switzerland' },
   { code: 'BSL', city: 'Basel', name: 'EuroAirport Basel-Mulhouse', country: 'Switzerland' },
-  // Netherlands
   { code: 'AMS', city: 'Amsterdam', name: 'Schiphol', country: 'Netherlands' },
   { code: 'EIN', city: 'Eindhoven', name: 'Eindhoven Airport', country: 'Netherlands' },
-  // Spain
   { code: 'MAD', city: 'Madrid', name: 'Adolfo Suarez Barajas', country: 'Spain' },
   { code: 'BCN', city: 'Barcelona', name: 'El Prat', country: 'Spain' },
   { code: 'AGP', city: 'Malaga', name: 'Malaga Airport', country: 'Spain' },
@@ -125,7 +115,6 @@ const AIRPORTS = [
   { code: 'SVQ', city: 'Seville', name: 'San Pablo Airport', country: 'Spain' },
   { code: 'TFS', city: 'Tenerife', name: 'Tenerife South', country: 'Spain' },
   { code: 'LPA', city: 'Gran Canaria', name: 'Gran Canaria Airport', country: 'Spain' },
-  // Italy
   { code: 'FCO', city: 'Rome', name: 'Fiumicino', country: 'Italy' },
   { code: 'CIA', city: 'Rome', name: 'Ciampino', country: 'Italy' },
   { code: 'MXP', city: 'Milan', name: 'Malpensa', country: 'Italy' },
@@ -136,7 +125,6 @@ const AIRPORTS = [
   { code: 'CTA', city: 'Catania', name: 'Fontanarossa', country: 'Italy' },
   { code: 'BRI', city: 'Bari', name: 'Karol Wojtyla', country: 'Italy' },
   { code: 'PSA', city: 'Pisa', name: 'Galileo Galilei', country: 'Italy' },
-  // Turkey
   { code: 'IST', city: 'Istanbul', name: 'Istanbul Airport', country: 'Turkey' },
   { code: 'SAW', city: 'Istanbul', name: 'Sabiha Gokcen', country: 'Turkey' },
   { code: 'AYT', city: 'Antalya', name: 'Antalya Airport', country: 'Turkey' },
@@ -144,20 +132,17 @@ const AIRPORTS = [
   { code: 'ESB', city: 'Ankara', name: 'Esenboga Airport', country: 'Turkey' },
   { code: 'DLM', city: 'Dalaman', name: 'Dalaman Airport', country: 'Turkey' },
   { code: 'BJV', city: 'Bodrum', name: 'Milas-Bodrum Airport', country: 'Turkey' },
-  // Greece
   { code: 'ATH', city: 'Athens', name: 'Eleftherios Venizelos', country: 'Greece' },
   { code: 'SKG', city: 'Thessaloniki', name: 'Macedonia Airport', country: 'Greece' },
   { code: 'HER', city: 'Heraklion', name: 'Nikos Kazantzakis', country: 'Greece' },
   { code: 'RHO', city: 'Rhodes', name: 'Diagoras Airport', country: 'Greece' },
   { code: 'CFU', city: 'Corfu', name: 'Ioannis Kapodistrias', country: 'Greece' },
-  // Scandinavia
   { code: 'CPH', city: 'Copenhagen', name: 'Kastrup', country: 'Denmark' },
   { code: 'ARN', city: 'Stockholm', name: 'Arlanda', country: 'Sweden' },
   { code: 'GOT', city: 'Gothenburg', name: 'Landvetter', country: 'Sweden' },
   { code: 'HEL', city: 'Helsinki', name: 'Helsinki-Vantaa', country: 'Finland' },
   { code: 'OSL', city: 'Oslo', name: 'Gardermoen', country: 'Norway' },
   { code: 'BGO', city: 'Bergen', name: 'Flesland', country: 'Norway' },
-  // Eastern Europe
   { code: 'WAW', city: 'Warsaw', name: 'Chopin Airport', country: 'Poland' },
   { code: 'KRK', city: 'Krakow', name: 'John Paul II', country: 'Poland' },
   { code: 'PRG', city: 'Prague', name: 'Vaclav Havel', country: 'Czech Republic' },
@@ -172,7 +157,6 @@ const AIRPORTS = [
   { code: 'SVO', city: 'Moscow', name: 'Sheremetyevo', country: 'Russia' },
   { code: 'DME', city: 'Moscow', name: 'Domodedovo', country: 'Russia' },
   { code: 'LED', city: 'St Petersburg', name: 'Pulkovo', country: 'Russia' },
-  // Other Europe
   { code: 'VIE', city: 'Vienna', name: 'Vienna International', country: 'Austria' },
   { code: 'BRU', city: 'Brussels', name: 'Brussels Airport', country: 'Belgium' },
   { code: 'CRL', city: 'Brussels', name: 'Brussels South Charleroi', country: 'Belgium' },
@@ -186,7 +170,6 @@ const AIRPORTS = [
   { code: 'LUX', city: 'Luxembourg', name: 'Luxembourg Findel', country: 'Luxembourg' },
   { code: 'MLA', city: 'Malta', name: 'Malta International', country: 'Malta' },
   { code: 'LCA', city: 'Larnaca', name: 'Larnaca International', country: 'Cyprus' },
-  // North America
   { code: 'JFK', city: 'New York', name: 'John F Kennedy', country: 'USA' },
   { code: 'LGA', city: 'New York', name: 'LaGuardia', country: 'USA' },
   { code: 'EWR', city: 'New York', name: 'Newark Liberty', country: 'USA' },
@@ -228,7 +211,6 @@ const AIRPORTS = [
   { code: 'MEX', city: 'Mexico City', name: 'Benito Juarez International', country: 'Mexico' },
   { code: 'CUN', city: 'Cancun', name: 'Cancun International', country: 'Mexico' },
   { code: 'GDL', city: 'Guadalajara', name: 'Miguel Hidalgo', country: 'Mexico' },
-  // South America
   { code: 'GRU', city: 'Sao Paulo', name: 'Guarulhos International', country: 'Brazil' },
   { code: 'CGH', city: 'Sao Paulo', name: 'Congonhas Airport', country: 'Brazil' },
   { code: 'GIG', city: 'Rio de Janeiro', name: 'Galeao International', country: 'Brazil' },
@@ -238,7 +220,6 @@ const AIRPORTS = [
   { code: 'LIM', city: 'Lima', name: 'Jorge Chavez International', country: 'Peru' },
   { code: 'BOG', city: 'Bogota', name: 'El Dorado International', country: 'Colombia' },
   { code: 'UIO', city: 'Quito', name: 'Mariscal Sucre', country: 'Ecuador' },
-  // Asia
   { code: 'SIN', city: 'Singapore', name: 'Changi Airport', country: 'Singapore' },
   { code: 'BKK', city: 'Bangkok', name: 'Suvarnabhumi', country: 'Thailand' },
   { code: 'DMK', city: 'Bangkok', name: 'Don Mueang', country: 'Thailand' },
@@ -260,7 +241,6 @@ const AIRPORTS = [
   { code: 'DAC', city: 'Dhaka', name: 'Hazrat Shahjalal International', country: 'Bangladesh' },
   { code: 'CMB', city: 'Colombo', name: 'Bandaranaike International', country: 'Sri Lanka' },
   { code: 'KTM', city: 'Kathmandu', name: 'Tribhuvan International', country: 'Nepal' },
-  // India
   { code: 'DEL', city: 'New Delhi', name: 'Indira Gandhi International', country: 'India' },
   { code: 'BOM', city: 'Mumbai', name: 'Chhatrapati Shivaji Maharaj', country: 'India' },
   { code: 'BLR', city: 'Bangalore', name: 'Kempegowda International', country: 'India' },
@@ -273,7 +253,6 @@ const AIRPORTS = [
   { code: 'GOI', city: 'Goa', name: 'Dabolim Airport', country: 'India' },
   { code: 'JAI', city: 'Jaipur', name: 'Jaipur International', country: 'India' },
   { code: 'ATQ', city: 'Amritsar', name: 'Sri Guru Ram Dass Jee', country: 'India' },
-  // China
   { code: 'PVG', city: 'Shanghai', name: 'Pudong International', country: 'China' },
   { code: 'SHA', city: 'Shanghai', name: 'Hongqiao International', country: 'China' },
   { code: 'PEK', city: 'Beijing', name: 'Capital International', country: 'China' },
@@ -288,7 +267,6 @@ const AIRPORTS = [
   { code: 'HGH', city: 'Hangzhou', name: 'Xiaoshan International', country: 'China' },
   { code: 'NKG', city: 'Nanjing', name: 'Lukou International', country: 'China' },
   { code: 'HAK', city: 'Haikou', name: 'Meilan International', country: 'China' },
-  // Japan
   { code: 'NRT', city: 'Tokyo', name: 'Narita International', country: 'Japan' },
   { code: 'HND', city: 'Tokyo', name: 'Haneda', country: 'Japan' },
   { code: 'KIX', city: 'Osaka', name: 'Kansai International', country: 'Japan' },
@@ -296,16 +274,13 @@ const AIRPORTS = [
   { code: 'NGO', city: 'Nagoya', name: 'Chubu Centrair', country: 'Japan' },
   { code: 'FUK', city: 'Fukuoka', name: 'Fukuoka Airport', country: 'Japan' },
   { code: 'CTS', city: 'Sapporo', name: 'New Chitose Airport', country: 'Japan' },
-  // South Korea
   { code: 'ICN', city: 'Seoul', name: 'Incheon International', country: 'South Korea' },
   { code: 'GMP', city: 'Seoul', name: 'Gimpo International', country: 'South Korea' },
   { code: 'PUS', city: 'Busan', name: 'Gimhae International', country: 'South Korea' },
   { code: 'CJU', city: 'Jeju', name: 'Jeju International', country: 'South Korea' },
-  // HK / Taiwan
   { code: 'HKG', city: 'Hong Kong', name: 'Hong Kong International', country: 'Hong Kong' },
   { code: 'TPE', city: 'Taipei', name: 'Taiwan Taoyuan International', country: 'Taiwan' },
   { code: 'TSA', city: 'Taipei', name: 'Taipei Songshan', country: 'Taiwan' },
-  // Australia & NZ
   { code: 'SYD', city: 'Sydney', name: 'Kingsford Smith', country: 'Australia' },
   { code: 'MEL', city: 'Melbourne', name: 'Melbourne Airport', country: 'Australia' },
   { code: 'BNE', city: 'Brisbane', name: 'Brisbane Airport', country: 'Australia' },
@@ -315,7 +290,6 @@ const AIRPORTS = [
   { code: 'AKL', city: 'Auckland', name: 'Auckland Airport', country: 'New Zealand' },
   { code: 'WLG', city: 'Wellington', name: 'Wellington Airport', country: 'New Zealand' },
   { code: 'CHC', city: 'Christchurch', name: 'Christchurch Airport', country: 'New Zealand' },
-  // Africa
   { code: 'JNB', city: 'Johannesburg', name: 'OR Tambo International', country: 'South Africa' },
   { code: 'CPT', city: 'Cape Town', name: 'Cape Town International', country: 'South Africa' },
   { code: 'DUR', city: 'Durban', name: 'King Shaka International', country: 'South Africa' },
@@ -337,7 +311,6 @@ const AIRPORTS = [
   { code: 'KGL', city: 'Kigali', name: 'Kigali International', country: 'Rwanda' },
   { code: 'MRU', city: 'Mauritius', name: 'Sir Seewoosagur Ramgoolam', country: 'Mauritius' },
   { code: 'SEZ', city: 'Seychelles', name: 'Seychelles International', country: 'Seychelles' },
-  // Central Asia & Pakistan
   { code: 'ALA', city: 'Almaty', name: 'Almaty International', country: 'Kazakhstan' },
   { code: 'NQZ', city: 'Astana', name: 'Nursultan Nazarbayev', country: 'Kazakhstan' },
   { code: 'TAS', city: 'Tashkent', name: 'Islam Karimov International', country: 'Uzbekistan' },
@@ -347,18 +320,18 @@ const AIRPORTS = [
 ];
 
 const AirportSearch = ({ label, value, onChange, placeholder }) => {
-  const [query, setQuery] = useState(value?.city ? `${value.city} (${value.code})` : '');
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (value?.code && !query) {
       setQuery(`${value.city} (${value.code})`);
     }
   }, [value]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const handleClick = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
@@ -445,25 +418,19 @@ const AddFlight = ({ session }) => {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const searchByFlightNumber = async () => {
+  const searchByFlightNumber = () => {
     if (!flightNumberSearch.trim()) return;
     setSearching(true);
-    setError('');
-
     const upper = flightNumberSearch.toUpperCase().trim();
     const airlineCode = upper.replace(/[0-9\s]/g, '');
     const airline = Object.entries(AIRLINE_CODES).find(([, code]) => code === airlineCode)?.[0];
-
     if (airline) {
       setForm(prev => ({ ...prev, airline, flight_number: upper }));
       setError('');
     } else {
-      setError('Airline not found from flight number. Please select airline manually below.');
+      setError('Airline not detected. Please select it manually below.');
       setForm(prev => ({ ...prev, flight_number: upper }));
     }
-
-    // Note: Real flight data (airports/date) requires a paid API.
-    // We auto-fill airline from the IATA code. Airports must be entered manually.
     setSearching(false);
   };
 
@@ -511,7 +478,6 @@ const AddFlight = ({ session }) => {
   const saveFlight = async () => {
     setLoading(true);
     setError('');
-
     const { error } = await supabase.from('flights').insert([{
       user_id: session.user.id,
       from_city: form.from_city,
@@ -531,7 +497,6 @@ const AddFlight = ({ session }) => {
       handover_location_departure: form.handover_location_departure,
       handover_location_arrival: form.handover_location_arrival,
     }]);
-
     if (error) {
       setError(error.message);
     } else {
@@ -540,54 +505,57 @@ const AddFlight = ({ session }) => {
     setLoading(false);
   };
 
-const grossEarnings = form.available_kg && form.price_per_kg
-    ? parseFloat(form.available_kg) * parseFloat(form.price_per_kg)
-    : 0;
+  const resetForm = () => {
+    setSuccess(false);
+    setStep(1);
+    setForm({
+      from_city: '', from_code: '', to_city: '', to_code: '',
+      flight_date: '', flight_number: '', airline: '',
+      available_kg: '', price_per_kg: '', categories: [], notes: '',
+      delivery_type: 'handover', shop_and_ship_fee: '',
+      handover_location_departure: '', handover_location_arrival: '',
+    });
+  };
+
+  // Earnings calculations
+  const grossEarnings = form.available_kg && form.price_per_kg
+    ? parseFloat(form.available_kg) * parseFloat(form.price_per_kg) : 0;
   const netShippingEarnings = grossEarnings * 0.90;
   const shopFeeGross = parseFloat(form.shop_and_ship_fee) || 0;
-  const shopFeeNet = shopFeeGross * 0.90; // Fetchr also takes 10% of shop & ship fee
+  const shopFeeNet = shopFeeGross * 0.90;
   const netWithShop = (netShippingEarnings + shopFeeNet).toFixed(2);
 
-  if (success) return (
-    <div className="max-w-xl mx-auto py-16 px-6 text-center">
-      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={40} className="text-green-500" />
+  if (success) {
+    return (
+      <div className="max-w-xl mx-auto py-16 px-6 text-center">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <CheckCircle size={40} className="text-green-500" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Flight Listed!</h2>
+        <p className="text-gray-400 mb-6">
+          Your flight from <strong>{form.from_city}</strong> to <strong>{form.to_city}</strong> is now live.
+        </p>
+        <div className="bg-purple-50 rounded-2xl p-4 mb-6 text-left space-y-2">
+          {[
+            { label: 'Route', value: `${form.from_code} -> ${form.to_code}` },
+            { label: 'Date', value: new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
+            { label: 'Capacity', value: `${form.available_kg}kg @ $${form.price_per_kg}/kg` },
+            { label: 'Service', value: form.delivery_type === 'both' ? `Handover + Shop and Ship (+$${shopFeeGross}/trip)` : 'Handover only' },
+            { label: 'Max net earnings', value: `$${netWithShop} (after Fetchr 10%)` },
+          ].map((row, i) => (
+            <div key={i} className="flex justify-between text-sm">
+              <span className="text-gray-500">{row.label}</span>
+              <span className="font-semibold text-gray-800">{row.value}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={resetForm}
+          className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
+          Add Another Flight
+        </button>
       </div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-2">Flight Listed! ✈️</h2>
-      <p className="text-gray-400 mb-6">
-        Your flight from <strong>{form.from_city}</strong> to <strong>{form.to_city}</strong> is now live and being matched.
-      </p>
-      <div className="bg-purple-50 rounded-2xl p-4 mb-6 text-left space-y-2">
-        {[
-          { label: 'Route', value: `${form.from_code} → ${form.to_code}` },
-          { label: 'Date', value: new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
-          { label: 'Capacity', value: `${form.available_kg}kg @ $${form.price_per_kg}/kg` },
-          { label: 'Service', value: form.delivery_type === 'both' ? `Handover + Shop & Ship (+$${shopFee}/trip)` : 'Handover only' },
-          { label: 'Max earnings (after Fetchr 10%)', value: `$${netWithShop}` },
-        ].map((row, i) => (
-          <div key={i} className="flex justify-between text-sm">
-            <span className="text-gray-500">{row.label}</span>
-            <span className="font-semibold text-gray-800">{row.value}</span>
-          </div>
-        ))}
-      </div>
-      <button
-        onClick={() => {
-          setSuccess(false); setStep(1);
-          setForm({
-            from_city: '', from_code: '', to_city: '', to_code: '',
-            flight_date: '', flight_number: '', airline: '',
-            available_kg: '', price_per_kg: '', categories: [], notes: '',
-            delivery_type: 'handover', shop_and_ship_fee: '',
-            handover_location_departure: '', handover_location_arrival: '',
-          });
-        }}
-        className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition"
-      >
-        Add Another Flight
-      </button>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="max-w-xl mx-auto py-6 px-4 md:px-6">
@@ -622,14 +590,13 @@ const grossEarnings = form.available_kg && form.price_per_kg
         </div>
       )}
 
-      {/* ── STEP 1: Flight Info ── */}
+      {/* STEP 1 */}
       {step === 1 && (
         <div className="space-y-4">
-          {/* Quick Search */}
           <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-purple-700 mb-1">🔍 Quick Fill — Flight Number</p>
+            <p className="text-sm font-semibold text-purple-700 mb-1">Quick Fill — Flight Number</p>
             <p className="text-xs text-gray-500 mb-2">
-              Entering your flight number will auto-detect your airline. You still need to select departure and arrival airports below.
+              Auto-detects your airline. You still need to select airports and date below.
             </p>
             <div className="flex gap-2">
               <input
@@ -643,27 +610,25 @@ const grossEarnings = form.available_kg && form.price_per_kg
               <button type="button" onClick={searchByFlightNumber} disabled={searching}
                 className="bg-purple-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2">
                 <Search size={15} />
-                {searching ? 'Searching...' : 'Fill'}
+                Fill
               </button>
             </div>
             {form.airline && (
-              <p className="text-xs text-green-600 font-semibold mt-2">
-                ✓ Airline detected: {form.airline}
-              </p>
+              <p className="text-xs text-green-600 font-semibold mt-2">Airline detected: {form.airline}</p>
             )}
           </div>
 
           <AirportSearch
             label="Departure Airport *"
             value={{ city: form.from_city, code: form.from_code }}
-            onChange={(airport) => setForm(prev => ({ ...prev, from_city: airport.city, from_code: airport.code }))}
+            onChange={airport => setForm(prev => ({ ...prev, from_city: airport.city, from_code: airport.code }))}
             placeholder="Search city, airport or code..."
           />
 
           <AirportSearch
             label="Arrival Airport *"
             value={{ city: form.to_city, code: form.to_code }}
-            onChange={(airport) => setForm(prev => ({ ...prev, to_city: airport.city, to_code: airport.code }))}
+            onChange={airport => setForm(prev => ({ ...prev, to_city: airport.city, to_code: airport.code }))}
             placeholder="Search city, airport or code..."
           />
 
@@ -700,19 +665,19 @@ const grossEarnings = form.available_kg && form.price_per_kg
 
           <button onClick={handleNext}
             className="w-full bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition">
-            Continue to Capacity →
+            Continue to Capacity
           </button>
         </div>
       )}
 
-      {/* ── STEP 2: Capacity & Categories ── */}
+      {/* STEP 2 */}
       {step === 2 && (
         <div className="space-y-4">
           <div className="bg-gray-50 rounded-xl p-3 flex items-center gap-2 text-sm">
             <Plane size={15} className="text-purple-600" />
-            <span className="font-semibold text-gray-700">{form.from_city} ({form.from_code})</span>
-            <span className="text-gray-400">→</span>
-            <span className="font-semibold text-gray-700">{form.to_city} ({form.to_code})</span>
+            <span className="font-semibold">{form.from_city} ({form.from_code})</span>
+            <span className="text-gray-400">to</span>
+            <span className="font-semibold">{form.to_city} ({form.to_code})</span>
             <span className="text-gray-400 ml-auto text-xs">
               {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
             </span>
@@ -741,15 +706,14 @@ const grossEarnings = form.available_kg && form.price_per_kg
             </div>
           </div>
 
-          {/* Earnings estimate — clearly labelled after commission */}
           {grossEarnings > 0 && (
             <div className="bg-green-50 border border-green-100 rounded-xl p-4">
               <p className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1">
                 <Info size={13} /> Earnings Estimate (if fully booked)
               </p>
-<div className="space-y-1 text-xs">
+              <div className="space-y-1 text-xs">
                 <div className="flex justify-between text-gray-600">
-                  <span>Gross ({form.available_kg}kg × ${form.price_per_kg})</span>
+                  <span>Gross ({form.available_kg}kg x ${form.price_per_kg})</span>
                   <span>${grossEarnings.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-red-500">
@@ -766,7 +730,7 @@ const grossEarnings = form.available_kg && form.price_per_kg
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              What items can you carry? * <span className="text-gray-400 font-normal">(select all that apply)</span>
+              What items can you carry? *
             </label>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(cat => (
@@ -783,9 +747,7 @@ const grossEarnings = form.available_kg && form.price_per_kg
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Additional Notes <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Notes (optional)</label>
             <textarea placeholder="Any special conditions or restrictions..."
               value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
               rows={2} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none" />
@@ -794,24 +756,23 @@ const grossEarnings = form.available_kg && form.price_per_kg
           <div className="flex gap-3">
             <button onClick={() => setStep(1)}
               className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition">
-              ← Back
+              Back
             </button>
             <button onClick={handleNext}
-              className="flex-[2] bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
-              Continue to Delivery →
+              className="flex-2 flex-[2] bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
+              Continue to Delivery
             </button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 3: Delivery Preferences ── */}
+      {/* STEP 3 */}
       {step === 3 && (
         <div className="space-y-4">
-          {/* Summary */}
           <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1">
             <div className="flex justify-between">
               <span className="text-gray-500">Route</span>
-              <span className="font-semibold">{form.from_code} → {form.to_code}</span>
+              <span className="font-semibold">{form.from_code} to {form.to_code}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Capacity</span>
@@ -819,7 +780,6 @@ const grossEarnings = form.available_kg && form.price_per_kg
             </div>
           </div>
 
-          {/* Delivery Type */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               What delivery service do you offer? *
@@ -830,13 +790,13 @@ const grossEarnings = form.available_kg && form.price_per_kg
                   value: 'handover',
                   icon: '🤝',
                   label: 'Handover Only',
-                  desc: 'Shipper hands item to you at departure location. You hand it over to the recipient or shipper at the arrival location.'
+                  desc: 'Shipper hands item to you at departure. You hand it to recipient at arrival.'
                 },
                 {
                   value: 'both',
                   icon: '🛍️',
-                  label: 'Handover + Shop & Ship',
-                  desc: 'In addition to regular handover, you can purchase the item at the destination for an additional service fee.'
+                  label: 'Handover + Shop and Ship',
+                  desc: 'You can also purchase items at the destination for an additional service fee.'
                 },
               ].map(opt => (
                 <button key={opt.value} type="button"
@@ -859,11 +819,10 @@ const grossEarnings = form.available_kg && form.price_per_kg
             </div>
           </div>
 
-          {/* Handover Locations — two fields */}
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                📍 Departure Handover Location
+                Departure Handover Location
               </label>
               <p className="text-xs text-gray-400 mb-1.5">Where should the shipper hand the item to you before departure?</p>
               <input type="text"
@@ -874,7 +833,7 @@ const grossEarnings = form.available_kg && form.price_per_kg
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                📍 Arrival Handover Location
+                Arrival Handover Location
               </label>
               <p className="text-xs text-gray-400 mb-1.5">Where will you hand the item to the recipient at the destination?</p>
               <input type="text"
@@ -885,15 +844,14 @@ const grossEarnings = form.available_kg && form.price_per_kg
             </div>
           </div>
 
-          {/* Shop & Ship Fee */}
           {form.delivery_type === 'both' && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
               <div className="flex items-start gap-2">
                 <ShoppingBag size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-blue-700">Shop & Ship Service Fee</p>
+                  <p className="text-sm font-semibold text-blue-700">Shop and Ship Service Fee</p>
                   <p className="text-xs text-blue-600 mt-0.5">
-                    This is your personal service fee for going to the store and purchasing the item. The item's purchase price will be added separately to the escrow by the shipper.
+                    Your fee for going to the store and purchasing. Item purchase price is added separately by the shipper via escrow.
                   </p>
                 </div>
               </div>
@@ -905,27 +863,25 @@ const grossEarnings = form.available_kg && form.price_per_kg
                   className="w-full pl-8 border border-blue-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
               </div>
 
-              {/* Earnings with Shop & Ship */}
               {grossEarnings > 0 && (
                 <div className="bg-white rounded-xl p-3 space-y-1 text-xs">
-                  <p className="font-semibold text-gray-700 mb-2">💰 Your potential earnings</p>
+                  <p className="font-semibold text-gray-700 mb-2">Your potential earnings</p>
                   <div className="flex justify-between text-gray-500">
-<div className="flex justify-between text-gray-500">
                     <span>Net shipping earnings (after 10%)</span>
                     <span>${netShippingEarnings.toFixed(2)}</span>
                   </div>
                   {shopFeeGross > 0 && (
                     <>
                       <div className="flex justify-between text-gray-500">
-                        <span>Shop & Ship fee (gross)</span>
+                        <span>Shop and Ship fee (gross)</span>
                         <span>${shopFeeGross.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-red-400">
-                        <span>Fetchr commission on Shop & Ship (10%)</span>
+                        <span>Fetchr commission on Shop and Ship (10%)</span>
                         <span>-${(shopFeeGross * 0.10).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-gray-500">
-                        <span>Net Shop & Ship earnings</span>
+                        <span>Net Shop and Ship earnings</span>
                         <span>${shopFeeNet.toFixed(2)}</span>
                       </div>
                     </>
@@ -934,26 +890,23 @@ const grossEarnings = form.available_kg && form.price_per_kg
                     <span>Total net earnings per booking</span>
                     <span>${netWithShop}</span>
                   </div>
-                  <p className="text-gray-400 text-xs pt-1">
-                    * Item purchase price paid separately by shipper via escrow
-                  </p>
+                  <p className="text-gray-400 pt-1">Item purchase price paid separately by shipper</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Final Summary */}
           <div className="bg-purple-50 rounded-xl p-4 space-y-2">
-            <p className="text-xs font-bold text-purple-700 mb-3">📋 Listing Preview</p>
+            <p className="text-xs font-bold text-purple-700 mb-2">Listing Preview</p>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <p className="text-gray-400">Route</p>
-                <p className="font-semibold text-gray-700">{form.from_city} → {form.to_city}</p>
+                <p className="font-semibold text-gray-700">{form.from_city} to {form.to_city}</p>
               </div>
               <div>
                 <p className="text-gray-400">Date</p>
                 <p className="font-semibold text-gray-700">
-                  {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                  {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not set'}
                 </p>
               </div>
               <div>
@@ -964,14 +917,12 @@ const grossEarnings = form.available_kg && form.price_per_kg
                 <p className="text-gray-400">Net earnings</p>
                 <p className="font-semibold text-green-600">${netWithShop}</p>
               </div>
-              <div className="col-span-2">
-                <p className="text-gray-400">Service</p>
-                <p className="font-semibold text-gray-700">
-                  {form.delivery_type === 'both'
-                    ? `Handover + Shop & Ship (+$${shopFee}/trip)`
-                    : 'Handover only'}
-                </p>
-              </div>
+              {form.categories.length > 0 && (
+                <div className="col-span-2">
+                  <p className="text-gray-400">Categories</p>
+                  <p className="font-semibold text-gray-700">{form.categories.join(', ')}</p>
+                </div>
+              )}
               {form.handover_location_departure && (
                 <div className="col-span-2">
                   <p className="text-gray-400">Departure handover</p>
@@ -984,23 +935,19 @@ const grossEarnings = form.available_kg && form.price_per_kg
                   <p className="font-semibold text-gray-700">{form.handover_location_arrival}</p>
                 </div>
               )}
-              <div className="col-span-2">
-                <p className="text-gray-400">Categories</p>
-                <p className="font-semibold text-gray-700">{form.categories.join(', ') || '—'}</p>
-              </div>
             </div>
           </div>
 
           <div className="flex gap-3">
             <button onClick={() => setStep(2)}
               className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition">
-              ← Back
+              Back
             </button>
             <button onClick={saveFlight} disabled={loading}
               className="flex-[2] bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
               {loading
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publishing...</>
-                : <><Plane size={16} /> Publish Flight Listing</>
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Publishing...</>
+                : <><Plane size={16} />Publish Flight Listing</>
               }
             </button>
           </div>
