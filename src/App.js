@@ -1,12 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { supabase } from './supabaseClient';
 import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
 
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+  }, []);
+
+  // Auto logout on inactivity
+  useEffect(() => {
+    if (!session) return;
+    let timer;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        signOut();
+      }, INACTIVITY_TIMEOUT);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach(e => window.addEventListener(e, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [session, signOut]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -32,11 +60,7 @@ function App() {
     </div>
   );
 
-  return session ? (
-    <Dashboard session={session} />
-  ) : (
-    <Auth onAuthSuccess={() => {}} />
-  );
+  return session ? <Dashboard session={session} /> : <Auth onAuthSuccess={() => {}} />;
 }
 
 export default App;

@@ -1,297 +1,345 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { Search, CheckCircle, Package, DollarSign, Loader, Plane } from 'lucide-react';
+import { Plane, Search, MapPin, Calendar, Weight, DollarSign, Tag, CheckCircle, AlertCircle, ChevronDown, Package, ShoppingBag, MapPin as Location } from 'lucide-react';
 
 const CATEGORIES = [
-  'Documents', 'Electronics', 'Fashion', 'Cosmetics',
-  'Food', 'Medicine', 'Jewellery', 'Other'
+  'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
+  'Food & Beverages', 'Books & Stationery', 'Toys & Games',
+  'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
+  'Home & Living', 'Documents', 'Other'
 ];
 
-const AIRLINES = {
-  'EK': 'Emirates', 'QR': 'Qatar Airways', 'EY': 'Etihad Airways',
-  'LH': 'Lufthansa', 'BA': 'British Airways', 'AF': 'Air France',
-  'TK': 'Turkish Airlines', 'FZ': 'Flydubai', 'G9': 'Air Arabia',
-  'SQ': 'Singapore Airlines', 'CX': 'Cathay Pacific', 'QF': 'Qantas',
-  'AA': 'American Airlines', 'UA': 'United Airlines', 'DL': 'Delta Air Lines',
-  'WN': 'Southwest Airlines', 'FR': 'Ryanair', 'U2': 'easyJet',
-  'W6': 'Wizz Air', 'VY': 'Vueling', 'IB': 'Iberia', 'AZ': 'ITA Airways',
-  'KL': 'KLM', 'OS': 'Austrian Airlines', 'LX': 'Swiss', 'SK': 'SAS',
-  'AY': 'Finnair', 'TP': 'TAP Air Portugal', 'RO': 'TAROM',
-  'MS': 'EgyptAir', 'ET': 'Ethiopian Airlines', 'KQ': 'Kenya Airways',
-  'SA': 'South African Airways', 'SV': 'Saudia', 'GF': 'Gulf Air',
-  'WY': 'Oman Air', 'ME': 'Middle East Airlines', 'RJ': 'Royal Jordanian',
-  'AI': 'Air India', 'UK': 'Vistara', '6E': 'IndiGo', 'SG': 'SpiceJet',
-  'NH': 'ANA', 'JL': 'Japan Airlines', 'KE': 'Korean Air', 'OZ': 'Asiana',
-  'CI': 'China Airlines', 'BR': 'EVA Air', 'MH': 'Malaysia Airlines',
-  'TG': 'Thai Airways', 'GA': 'Garuda Indonesia', 'PR': 'Philippine Airlines',
-  'VN': 'Vietnam Airlines', 'LA': 'LATAM', 'AV': 'Avianca', 'CM': 'Copa Airlines',
-  'AC': 'Air Canada', 'WS': 'WestJet', 'NZ': 'Air New Zealand',
+const AIRLINES = [
+  'Emirates', 'Qatar Airways', 'Etihad Airways', 'Lufthansa',
+  'British Airways', 'Air France', 'Turkish Airlines', 'Flydubai',
+  'Air Arabia', 'Singapore Airlines', 'Cathay Pacific', 'Qantas',
+  'American Airlines', 'United Airlines', 'Delta Air Lines',
+  'Southwest Airlines', 'Ryanair', 'easyJet', 'KLM', 'Swiss',
+  'Austrian Airlines', 'Finnair', 'SAS', 'Iberia', 'EgyptAir',
+  'Ethiopian Airlines', 'Kenya Airways', 'Saudia', 'Gulf Air',
+  'Oman Air', 'Air India', 'Japan Airlines', 'Korean Air',
+  'ANA', 'Thai Airways', 'Malaysia Airlines', 'LATAM', 'Avianca', 'Air Canada'
+];
+
+const AIRPORTS = [
+  { code: 'DXB', city: 'Dubai', name: 'Dubai International', country: 'UAE' },
+  { code: 'AUH', city: 'Abu Dhabi', name: 'Zayed International', country: 'UAE' },
+  { code: 'SHJ', city: 'Sharjah', name: 'Sharjah International', country: 'UAE' },
+  { code: 'DOH', city: 'Doha', name: 'Hamad International', country: 'Qatar' },
+  { code: 'KWI', city: 'Kuwait City', name: 'Kuwait International', country: 'Kuwait' },
+  { code: 'BAH', city: 'Bahrain', name: 'Bahrain International', country: 'Bahrain' },
+  { code: 'RUH', city: 'Riyadh', name: 'King Khalid International', country: 'Saudi Arabia' },
+  { code: 'JED', city: 'Jeddah', name: 'King Abdulaziz International', country: 'Saudi Arabia' },
+  { code: 'MCT', city: 'Muscat', name: 'Muscat International', country: 'Oman' },
+  { code: 'BEY', city: 'Beirut', name: 'Rafic Hariri International', country: 'Lebanon' },
+  { code: 'AMM', city: 'Amman', name: 'Queen Alia International', country: 'Jordan' },
+  { code: 'CAI', city: 'Cairo', name: 'Cairo International', country: 'Egypt' },
+  { code: 'TLV', city: 'Tel Aviv', name: 'Ben Gurion International', country: 'Israel' },
+  { code: 'LHR', city: 'London', name: 'Heathrow', country: 'UK' },
+  { code: 'LGW', city: 'London', name: 'Gatwick', country: 'UK' },
+  { code: 'STN', city: 'London', name: 'Stansted', country: 'UK' },
+  { code: 'CDG', city: 'Paris', name: 'Charles de Gaulle', country: 'France' },
+  { code: 'ORY', city: 'Paris', name: 'Orly', country: 'France' },
+  { code: 'AMS', city: 'Amsterdam', name: 'Schiphol', country: 'Netherlands' },
+  { code: 'FRA', city: 'Frankfurt', name: 'Frankfurt Airport', country: 'Germany' },
+  { code: 'MUC', city: 'Munich', name: 'Munich Airport', country: 'Germany' },
+  { code: 'ZRH', city: 'Zurich', name: 'Zurich Airport', country: 'Switzerland' },
+  { code: 'GVA', city: 'Geneva', name: 'Geneva Airport', country: 'Switzerland' },
+  { code: 'VIE', city: 'Vienna', name: 'Vienna International', country: 'Austria' },
+  { code: 'BRU', city: 'Brussels', name: 'Brussels Airport', country: 'Belgium' },
+  { code: 'MAD', city: 'Madrid', name: 'Adolfo Suarez', country: 'Spain' },
+  { code: 'BCN', city: 'Barcelona', name: 'El Prat', country: 'Spain' },
+  { code: 'FCO', city: 'Rome', name: 'Fiumicino', country: 'Italy' },
+  { code: 'MXP', city: 'Milan', name: 'Malpensa', country: 'Italy' },
+  { code: 'LIN', city: 'Milan', name: 'Linate', country: 'Italy' },
+  { code: 'IST', city: 'Istanbul', name: 'Istanbul Airport', country: 'Turkey' },
+  { code: 'SAW', city: 'Istanbul', name: 'Sabiha Gokcen', country: 'Turkey' },
+  { code: 'ATH', city: 'Athens', name: 'Eleftherios Venizelos', country: 'Greece' },
+  { code: 'CPH', city: 'Copenhagen', name: 'Kastrup', country: 'Denmark' },
+  { code: 'ARN', city: 'Stockholm', name: 'Arlanda', country: 'Sweden' },
+  { code: 'HEL', city: 'Helsinki', name: 'Helsinki Airport', country: 'Finland' },
+  { code: 'OSL', city: 'Oslo', name: 'Gardermoen', country: 'Norway' },
+  { code: 'WAW', city: 'Warsaw', name: 'Chopin Airport', country: 'Poland' },
+  { code: 'PRG', city: 'Prague', name: 'Vaclav Havel', country: 'Czech Republic' },
+  { code: 'BUD', city: 'Budapest', name: 'Ferenc Liszt', country: 'Hungary' },
+  { code: 'JFK', city: 'New York', name: 'John F Kennedy', country: 'USA' },
+  { code: 'LGA', city: 'New York', name: 'LaGuardia', country: 'USA' },
+  { code: 'EWR', city: 'New York', name: 'Newark Liberty', country: 'USA' },
+  { code: 'LAX', city: 'Los Angeles', name: 'Los Angeles International', country: 'USA' },
+  { code: 'ORD', city: 'Chicago', name: 'O Hare International', country: 'USA' },
+  { code: 'ATL', city: 'Atlanta', name: 'Hartsfield Jackson', country: 'USA' },
+  { code: 'DFW', city: 'Dallas', name: 'Dallas Fort Worth', country: 'USA' },
+  { code: 'MIA', city: 'Miami', name: 'Miami International', country: 'USA' },
+  { code: 'SFO', city: 'San Francisco', name: 'San Francisco International', country: 'USA' },
+  { code: 'BOS', city: 'Boston', name: 'Logan International', country: 'USA' },
+  { code: 'YYZ', city: 'Toronto', name: 'Pearson International', country: 'Canada' },
+  { code: 'YVR', city: 'Vancouver', name: 'Vancouver International', country: 'Canada' },
+  { code: 'GRU', city: 'Sao Paulo', name: 'Guarulhos International', country: 'Brazil' },
+  { code: 'MEX', city: 'Mexico City', name: 'Benito Juarez International', country: 'Mexico' },
+  { code: 'SIN', city: 'Singapore', name: 'Changi Airport', country: 'Singapore' },
+  { code: 'BKK', city: 'Bangkok', name: 'Suvarnabhumi', country: 'Thailand' },
+  { code: 'KUL', city: 'Kuala Lumpur', name: 'KLIA', country: 'Malaysia' },
+  { code: 'HKG', city: 'Hong Kong', name: 'Hong Kong International', country: 'China' },
+  { code: 'PVG', city: 'Shanghai', name: 'Pudong International', country: 'China' },
+  { code: 'PEK', city: 'Beijing', name: 'Capital International', country: 'China' },
+  { code: 'NRT', city: 'Tokyo', name: 'Narita International', country: 'Japan' },
+  { code: 'HND', city: 'Tokyo', name: 'Haneda', country: 'Japan' },
+  { code: 'ICN', city: 'Seoul', name: 'Incheon International', country: 'South Korea' },
+  { code: 'DEL', city: 'New Delhi', name: 'Indira Gandhi International', country: 'India' },
+  { code: 'BOM', city: 'Mumbai', name: 'Chhatrapati Shivaji', country: 'India' },
+  { code: 'BLR', city: 'Bangalore', name: 'Kempegowda International', country: 'India' },
+  { code: 'SYD', city: 'Sydney', name: 'Kingsford Smith', country: 'Australia' },
+  { code: 'MEL', city: 'Melbourne', name: 'Melbourne Airport', country: 'Australia' },
+  { code: 'JNB', city: 'Johannesburg', name: 'OR Tambo International', country: 'South Africa' },
+  { code: 'NBO', city: 'Nairobi', name: 'Jomo Kenyatta International', country: 'Kenya' },
+  { code: 'ADD', city: 'Addis Ababa', name: 'Bole International', country: 'Ethiopia' },
+  { code: 'LOS', city: 'Lagos', name: 'Murtala Muhammed', country: 'Nigeria' },
+  { code: 'CMN', city: 'Casablanca', name: 'Mohammed V International', country: 'Morocco' },
+];
+
+const AIRLINE_CODES = {
+  'Emirates': 'EK', 'Qatar Airways': 'QR', 'Etihad Airways': 'EY',
+  'Lufthansa': 'LH', 'British Airways': 'BA', 'Air France': 'AF',
+  'Turkish Airlines': 'TK', 'Flydubai': 'FZ', 'Air Arabia': 'G9',
+  'Singapore Airlines': 'SQ', 'Cathay Pacific': 'CX', 'Qantas': 'QF',
+  'American Airlines': 'AA', 'United Airlines': 'UA', 'Delta Air Lines': 'DL',
+  'Southwest Airlines': 'WN', 'Ryanair': 'FR', 'easyJet': 'U2',
+  'KLM': 'KL', 'Swiss': 'LX', 'Austrian Airlines': 'OS',
+  'Finnair': 'AY', 'SAS': 'SK', 'Iberia': 'IB',
+  'EgyptAir': 'MS', 'Ethiopian Airlines': 'ET', 'Kenya Airways': 'KQ',
+  'Saudia': 'SV', 'Gulf Air': 'GF', 'Oman Air': 'WY',
+  'Air India': 'AI', 'Japan Airlines': 'JL', 'Korean Air': 'KE',
+  'ANA': 'NH', 'Thai Airways': 'TG', 'Malaysia Airlines': 'MH',
+  'LATAM': 'LA', 'Avianca': 'AV', 'Air Canada': 'AC',
 };
 
-const AIRPORTS = {
-  'DXB': { city: 'Dubai', country: 'UAE', name: 'Dubai International' },
-  'AUH': { city: 'Abu Dhabi', country: 'UAE', name: 'Zayed International' },
-  'SHJ': { city: 'Sharjah', country: 'UAE', name: 'Sharjah International' },
-  'DOH': { city: 'Doha', country: 'Qatar', name: 'Hamad International' },
-  'KWI': { city: 'Kuwait City', country: 'Kuwait', name: 'Kuwait International' },
-  'BAH': { city: 'Bahrain', country: 'Bahrain', name: 'Bahrain International' },
-  'RUH': { city: 'Riyadh', country: 'Saudi Arabia', name: 'King Khalid International' },
-  'JED': { city: 'Jeddah', country: 'Saudi Arabia', name: 'King Abdulaziz International' },
-  'MCT': { city: 'Muscat', country: 'Oman', name: 'Muscat International' },
-  'BEY': { city: 'Beirut', country: 'Lebanon', name: 'Rafic Hariri International' },
-  'AMM': { city: 'Amman', country: 'Jordan', name: 'Queen Alia International' },
-  'CAI': { city: 'Cairo', country: 'Egypt', name: 'Cairo International' },
-  'LHR': { city: 'London', country: 'UK', name: 'Heathrow' },
-  'LGW': { city: 'London', country: 'UK', name: 'Gatwick' },
-  'STN': { city: 'London', country: 'UK', name: 'Stansted' },
-  'CDG': { city: 'Paris', country: 'France', name: 'Charles de Gaulle' },
-  'ORY': { city: 'Paris', country: 'France', name: 'Orly' },
-  'AMS': { city: 'Amsterdam', country: 'Netherlands', name: 'Schiphol' },
-  'FRA': { city: 'Frankfurt', country: 'Germany', name: 'Frankfurt Airport' },
-  'MUC': { city: 'Munich', country: 'Germany', name: 'Munich Airport' },
-  'ZRH': { city: 'Zurich', country: 'Switzerland', name: 'Zurich Airport' },
-  'GVA': { city: 'Geneva', country: 'Switzerland', name: 'Geneva Airport' },
-  'VIE': { city: 'Vienna', country: 'Austria', name: 'Vienna International' },
-  'BRU': { city: 'Brussels', country: 'Belgium', name: 'Brussels Airport' },
-  'MAD': { city: 'Madrid', country: 'Spain', name: 'Adolfo Suárez' },
-  'BCN': { city: 'Barcelona', country: 'Spain', name: 'El Prat' },
-  'FCO': { city: 'Rome', country: 'Italy', name: 'Fiumicino' },
-  'MXP': { city: 'Milan', country: 'Italy', name: 'Malpensa' },
-  'IST': { city: 'Istanbul', country: 'Turkey', name: 'Istanbul Airport' },
-  'SAW': { city: 'Istanbul', country: 'Turkey', name: 'Sabiha Gökçen' },
-  'ATH': { city: 'Athens', country: 'Greece', name: 'Eleftherios Venizelos' },
-  'CPH': { city: 'Copenhagen', country: 'Denmark', name: 'Kastrup' },
-  'ARN': { city: 'Stockholm', country: 'Sweden', name: 'Arlanda' },
-  'HEL': { city: 'Helsinki', country: 'Finland', name: 'Helsinki Airport' },
-  'OSL': { city: 'Oslo', country: 'Norway', name: 'Gardermoen' },
-  'WAW': { city: 'Warsaw', country: 'Poland', name: 'Chopin Airport' },
-  'PRG': { city: 'Prague', country: 'Czech Republic', name: 'Václav Havel' },
-  'BUD': { city: 'Budapest', country: 'Hungary', name: 'Ferenc Liszt' },
-  'OTP': { city: 'Bucharest', country: 'Romania', name: 'Henri Coandă' },
-  'SVO': { city: 'Moscow', country: 'Russia', name: 'Sheremetyevo' },
-  'JFK': { city: 'New York', country: 'USA', name: 'John F. Kennedy' },
-  'LGA': { city: 'New York', country: 'USA', name: 'LaGuardia' },
-  'EWR': { city: 'New York', country: 'USA', name: 'Newark Liberty' },
-  'LAX': { city: 'Los Angeles', country: 'USA', name: 'Los Angeles International' },
-  'ORD': { city: 'Chicago', country: 'USA', name: "O'Hare International" },
-  'ATL': { city: 'Atlanta', country: 'USA', name: 'Hartsfield-Jackson' },
-  'DFW': { city: 'Dallas', country: 'USA', name: 'Dallas/Fort Worth' },
-  'MIA': { city: 'Miami', country: 'USA', name: 'Miami International' },
-  'SFO': { city: 'San Francisco', country: 'USA', name: 'San Francisco International' },
-  'BOS': { city: 'Boston', country: 'USA', name: 'Logan International' },
-  'IAD': { city: 'Washington DC', country: 'USA', name: 'Dulles International' },
-  'YYZ': { city: 'Toronto', country: 'Canada', name: 'Pearson International' },
-  'YVR': { city: 'Vancouver', country: 'Canada', name: 'Vancouver International' },
-  'YUL': { city: 'Montreal', country: 'Canada', name: 'Pierre Elliott Trudeau' },
-  'GRU': { city: 'São Paulo', country: 'Brazil', name: 'Guarulhos International' },
-  'EZE': { city: 'Buenos Aires', country: 'Argentina', name: 'Ministro Pistarini' },
-  'BOG': { city: 'Bogotá', country: 'Colombia', name: 'El Dorado International' },
-  'LIM': { city: 'Lima', country: 'Peru', name: 'Jorge Chávez International' },
-  'MEX': { city: 'Mexico City', country: 'Mexico', name: 'Benito Juárez International' },
-  'SIN': { city: 'Singapore', country: 'Singapore', name: 'Changi Airport' },
-  'BKK': { city: 'Bangkok', country: 'Thailand', name: 'Suvarnabhumi' },
-  'KUL': { city: 'Kuala Lumpur', country: 'Malaysia', name: 'KLIA' },
-  'CGK': { city: 'Jakarta', country: 'Indonesia', name: 'Soekarno-Hatta' },
-  'MNL': { city: 'Manila', country: 'Philippines', name: 'Ninoy Aquino' },
-  'HKG': { city: 'Hong Kong', country: 'China', name: 'Hong Kong International' },
-  'PVG': { city: 'Shanghai', country: 'China', name: 'Pudong International' },
-  'PEK': { city: 'Beijing', country: 'China', name: 'Capital International' },
-  'PKX': { city: 'Beijing', country: 'China', name: 'Daxing International' },
-  'CAN': { city: 'Guangzhou', country: 'China', name: 'Baiyun International' },
-  'NRT': { city: 'Tokyo', country: 'Japan', name: 'Narita International' },
-  'HND': { city: 'Tokyo', country: 'Japan', name: 'Haneda' },
-  'ICN': { city: 'Seoul', country: 'South Korea', name: 'Incheon International' },
-  'DEL': { city: 'New Delhi', country: 'India', name: 'Indira Gandhi International' },
-  'BOM': { city: 'Mumbai', country: 'India', name: 'Chhatrapati Shivaji' },
-  'BLR': { city: 'Bangalore', country: 'India', name: 'Kempegowda International' },
-  'MAA': { city: 'Chennai', country: 'India', name: 'Chennai International' },
-  'HYD': { city: 'Hyderabad', country: 'India', name: 'Rajiv Gandhi International' },
-  'CCU': { city: 'Kolkata', country: 'India', name: 'Netaji Subhas Chandra Bose' },
-  'CMB': { city: 'Colombo', country: 'Sri Lanka', name: 'Bandaranaike International' },
-  'KTM': { city: 'Kathmandu', country: 'Nepal', name: 'Tribhuvan International' },
-  'DAC': { city: 'Dhaka', country: 'Bangladesh', name: 'Hazrat Shahjalal' },
-  'KHI': { city: 'Karachi', country: 'Pakistan', name: 'Jinnah International' },
-  'LHE': { city: 'Lahore', country: 'Pakistan', name: 'Allama Iqbal International' },
-  'ISB': { city: 'Islamabad', country: 'Pakistan', name: 'New Islamabad International' },
-  'TLV': { city: 'Tel Aviv', country: 'Israel', name: 'Ben Gurion International' },
-  'ADD': { city: 'Addis Ababa', country: 'Ethiopia', name: 'Bole International' },
-  'NBO': { city: 'Nairobi', country: 'Kenya', name: 'Jomo Kenyatta International' },
-  'LOS': { city: 'Lagos', country: 'Nigeria', name: 'Murtala Muhammed' },
-  'ACC': { city: 'Accra', country: 'Ghana', name: 'Kotoka International' },
-  'JNB': { city: 'Johannesburg', country: 'South Africa', name: 'OR Tambo International' },
-  'CPT': { city: 'Cape Town', country: 'South Africa', name: 'Cape Town International' },
-  'CMN': { city: 'Casablanca', country: 'Morocco', name: 'Mohammed V International' },
-  'TUN': { city: 'Tunis', country: 'Tunisia', name: 'Tunis-Carthage International' },
-  'ALG': { city: 'Algiers', country: 'Algeria', name: 'Houari Boumediene' },
-  'SYD': { city: 'Sydney', country: 'Australia', name: 'Kingsford Smith' },
-  'MEL': { city: 'Melbourne', country: 'Australia', name: 'Melbourne Airport' },
-  'BNE': { city: 'Brisbane', country: 'Australia', name: 'Brisbane Airport' },
-  'PER': { city: 'Perth', country: 'Australia', name: 'Perth Airport' },
-  'AKL': { city: 'Auckland', country: 'New Zealand', name: 'Auckland Airport' },
-};
+const AirportSearch = ({ label, value, onChange, placeholder }) => {
+  const [query, setQuery] = useState(value?.city ? `${value.city} (${value.code})` : '');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
 
-const getAirlineFromCode = (flightNumber) => {
-  const code = flightNumber.replace(/[0-9]/g, '').toUpperCase().slice(0, 2);
-  return AIRLINES[code] || '';
-};
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
-const getAirportInfo = (code) => {
-  return AIRPORTS[code?.toUpperCase()] || null;
+  const handleSearch = (q) => {
+    setQuery(q);
+    if (q.length < 1) { setResults([]); setOpen(false); return; }
+    const filtered = AIRPORTS.filter(a =>
+      a.city.toLowerCase().includes(q.toLowerCase()) ||
+      a.code.toLowerCase().includes(q.toLowerCase()) ||
+      a.name.toLowerCase().includes(q.toLowerCase()) ||
+      a.country.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 6);
+    setResults(filtered);
+    setOpen(true);
+  };
+
+  const handleSelect = (airport) => {
+    setQuery(`${airport.city} (${airport.code})`);
+    setOpen(false);
+    setResults([]);
+    onChange(airport);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+      <div className="relative">
+        <MapPin size={16} className="absolute left-3 top-3.5 text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={e => handleSearch(e.target.value)}
+          onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
+          placeholder={placeholder}
+          className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          {results.map(airport => (
+            <button
+              key={airport.code}
+              type="button"
+              onClick={() => handleSelect(airport)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-purple-50 text-left transition"
+            >
+              <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-purple-600">{airport.code}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-800">{airport.city}</p>
+                <p className="text-xs text-gray-400">{airport.name} • {airport.country}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const AddFlight = ({ session }) => {
-  const [searchMode, setSearchMode] = useState('number');
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState({
+    from_city: '', from_code: '',
+    to_city: '', to_code: '',
+    flight_date: '', flight_number: '', airline: '',
+    available_kg: '', price_per_kg: '',
+    categories: [], notes: '',
+    delivery_type: 'handover',
+    shop_and_ship_fee: '',
+    handover_location: '',
+  });
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [flightFound, setFlightFound] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const [flightNumberSearch, setFlightNumberSearch] = useState('');
+  const [searching, setSearching] = useState(false);
 
-  const [flightNumber, setFlightNumber] = useState('');
-  const [flightDate, setFlightDate] = useState('');
+  const today = new Date().toISOString().split('T')[0];
 
-  const [fromCode, setFromCode] = useState('');
-  const [toCode, setToCode] = useState('');
-  const [routeDate, setRouteDate] = useState('');
-
-  const [availableKg, setAvailableKg] = useState('');
-  const [pricePerKg, setPricePerKg] = useState('');
-  const [categories, setCategories] = useState([]);
-
-  const searchByFlightNumber = () => {
-    if (!flightNumber || !flightDate) {
-      setError('Please enter a flight number and date.');
-      return;
-    }
+  const searchByFlightNumber = async () => {
+    if (!flightNumberSearch.trim()) return;
+    setSearching(true);
     setError('');
-
-    const upperFlight = flightNumber.toUpperCase().trim();
-    const depCode = upperFlight.slice(0, 2);
-    const airline = getAirlineFromCode(upperFlight);
-
-    setFlightFound({
-      flight_number: upperFlight,
-      airline: airline,
-      from_city: '',
-      from_code: '',
-      to_city: '',
-      to_code: '',
-      flight_date: flightDate,
-      needs_route: true,
-    });
-  };
-
-  const searchByRoute = () => {
-    if (!fromCode || !toCode || !routeDate) {
-      setError('Please enter both airport codes and date.');
-      return;
+    try {
+      const upper = flightNumberSearch.toUpperCase().trim();
+      const airlineCode = upper.replace(/[0-9]/g, '');
+      const airline = Object.entries(AIRLINE_CODES).find(([, code]) => code === airlineCode)?.[0];
+      if (airline) {
+        setForm(prev => ({ ...prev, airline, flight_number: upper }));
+      } else {
+        setForm(prev => ({ ...prev, flight_number: upper }));
+      }
+    } catch {
+      setError('Could not find flight. Please enter details manually.');
     }
-    setError('');
-
-    const from = getAirportInfo(fromCode);
-    const to = getAirportInfo(toCode);
-
-    if (!from) {
-      setError(`Airport code "${fromCode.toUpperCase()}" not recognised. Please check and try again.`);
-      return;
-    }
-    if (!to) {
-      setError(`Airport code "${toCode.toUpperCase()}" not recognised. Please check and try again.`);
-      return;
-    }
-
-    setFlightFound({
-      flight_number: '',
-      airline: '',
-      from_city: from.city,
-      from_code: fromCode.toUpperCase(),
-      to_city: to.city,
-      to_code: toCode.toUpperCase(),
-      flight_date: routeDate,
-      needs_route: false,
-    });
-  };
-
-  const updateRouteOnFlight = (field, value) => {
-    if (!flightFound) return;
-    const updated = { ...flightFound, [field]: value };
-
-    if (field === 'from_code') {
-      const info = getAirportInfo(value);
-      if (info) updated.from_city = info.city;
-    }
-    if (field === 'to_code') {
-      const info = getAirportInfo(value);
-      if (info) updated.to_city = info.city;
-    }
-    setFlightFound(updated);
+    setSearching(false);
   };
 
   const toggleCategory = (cat) => {
-    setCategories(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    );
+    setForm(prev => ({
+      ...prev,
+      categories: prev.categories.includes(cat)
+        ? prev.categories.filter(c => c !== cat)
+        : [...prev.categories, cat]
+    }));
   };
 
-  const handleSubmit = async () => {
-    if (!flightFound) {
-      setError('Please search for a flight first.');
-      return;
-    }
-    if (!flightFound.from_code || !flightFound.to_code) {
-      setError('Please enter the departure and arrival airport codes.');
-      return;
-    }
-    if (!availableKg || !pricePerKg) {
-      setError('Please enter available kg and price per kg.');
-      return;
-    }
-    if (categories.length === 0) {
-      setError('Please select at least one category.');
-      return;
-    }
+  const validateStep1 = () => {
+    if (!form.from_code) { setError('Please select departure airport.'); return false; }
+    if (!form.to_code) { setError('Please select arrival airport.'); return false; }
+    if (form.from_code === form.to_code) { setError('Departure and arrival cannot be the same.'); return false; }
+    if (!form.flight_date) { setError('Please select flight date.'); return false; }
+    if (form.flight_date < today) { setError('Flight date cannot be in the past.'); return false; }
+    if (!form.airline) { setError('Please select your airline.'); return false; }
+    return true;
+  };
 
+  const validateStep2 = () => {
+    if (!form.available_kg || parseFloat(form.available_kg) <= 0) {
+      setError('Please enter available weight.'); return false;
+    }
+    if (parseFloat(form.available_kg) > 30) {
+      setError('Maximum 30kg per listing.'); return false;
+    }
+    if (!form.price_per_kg || parseFloat(form.price_per_kg) <= 0) {
+      setError('Please enter your price per kg.'); return false;
+    }
+    if (form.categories.length === 0) {
+      setError('Please select at least one category.'); return false;
+    }
+    return true;
+  };
+
+  const handleNext = () => {
+    setError('');
+    if (step === 1 && validateStep1()) setStep(2);
+    else if (step === 2 && validateStep2()) setStep(3);
+  };
+
+  const saveFlight = async () => {
     setLoading(true);
+    setError('');
+
     const { error } = await supabase.from('flights').insert([{
       user_id: session.user.id,
-      from_city: flightFound.from_city,
-      from_code: flightFound.from_code,
-      to_city: flightFound.to_city,
-      to_code: flightFound.to_code,
-      flight_date: flightFound.flight_date,
-      flight_number: flightFound.flight_number,
-      airline: flightFound.airline,
-      available_kg: parseFloat(availableKg),
-      price_per_kg: parseFloat(pricePerKg),
-      categories,
-      status: 'active'
+      from_city: form.from_city,
+      from_code: form.from_code,
+      to_city: form.to_city,
+      to_code: form.to_code,
+      flight_date: form.flight_date,
+      flight_number: form.flight_number,
+      airline: form.airline,
+      available_kg: parseFloat(form.available_kg),
+      price_per_kg: parseFloat(form.price_per_kg),
+      categories: form.categories,
+      notes: form.notes,
+      status: 'active',
+      delivery_type: form.delivery_type,
+      shop_and_ship_fee: parseFloat(form.shop_and_ship_fee) || 0,
+      handover_location: form.handover_location,
     }]);
 
-    setLoading(false);
-    if (error) setError(error.message);
-    else {
+    if (error) {
+      setError(error.message);
+    } else {
       setSuccess(true);
-      setFlightFound(null);
-      setFlightNumber('');
-      setFlightDate('');
-      setFromCode('');
-      setToCode('');
-      setRouteDate('');
-      setAvailableKg('');
-      setPricePerKg('');
-      setCategories([]);
     }
+    setLoading(false);
   };
 
   if (success) return (
-    <div className="flex flex-col items-center justify-center h-full py-20">
-      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-        <CheckCircle size={32} className="text-green-500" />
+    <div className="max-w-xl mx-auto py-16 px-6 text-center">
+      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={40} className="text-green-500" />
       </div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">Flight Listed!</h2>
-      <p className="text-gray-400 text-sm mb-6">Your flight is now live and visible to shippers.</p>
+      <h2 className="text-2xl font-bold text-gray-800 mb-2">Flight Listed! ✈️</h2>
+      <p className="text-gray-400 mb-2">
+        Your flight from <strong>{form.from_city}</strong> to <strong>{form.to_city}</strong> is now live.
+      </p>
+      <p className="text-gray-400 text-sm mb-6">
+        Fetchr will match you with shippers automatically. You'll be notified when a match is found.
+      </p>
+      <div className="bg-purple-50 rounded-2xl p-4 mb-6 text-left space-y-2">
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Route</span>
+          <span className="font-semibold">{form.from_code} → {form.to_code}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Date</span>
+          <span className="font-semibold">{new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Capacity</span>
+          <span className="font-semibold">{form.available_kg}kg @ ${form.price_per_kg}/kg</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Delivery type</span>
+          <span className="font-semibold">{form.delivery_type === 'both' ? '🛍️ Handover + Shop & Ship' : '🤝 Handover only'}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Potential earnings</span>
+          <span className="font-semibold text-green-600">
+            up to ${(parseFloat(form.available_kg) * parseFloat(form.price_per_kg) * 0.9).toFixed(2)}
+          </span>
+        </div>
+      </div>
       <button
-        onClick={() => setSuccess(false)}
-        className="bg-purple-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-purple-700"
+        onClick={() => { setSuccess(false); setStep(1); setForm({
+          from_city: '', from_code: '', to_city: '', to_code: '',
+          flight_date: '', flight_number: '', airline: '',
+          available_kg: '', price_per_kg: '', categories: [], notes: '',
+          delivery_type: 'handover', shop_and_ship_fee: '', handover_location: '',
+        }); }}
+        className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition"
       >
         Add Another Flight
       </button>
@@ -299,239 +347,410 @@ const AddFlight = ({ session }) => {
   );
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-6">
+    <div className="max-w-xl mx-auto py-6 px-4 md:px-6">
+
+      {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Add a Flight</h1>
-        <p className="text-gray-400 text-sm mt-1">Enter your flight details to list your spare luggage space</p>
+        <h1 className="text-2xl font-bold text-gray-800">List Your Flight</h1>
+        <p className="text-gray-400 text-sm mt-1">Earn money by delivering items on your next trip</p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+      {/* Progress Steps */}
+      <div className="flex items-center gap-2 mb-8">
+        {[
+          { n: 1, label: 'Flight Info' },
+          { n: 2, label: 'Capacity' },
+          { n: 3, label: 'Delivery' },
+        ].map((s, i) => (
+          <React.Fragment key={s.n}>
+            <div className="flex items-center gap-2">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition ${
+                step > s.n ? 'bg-green-500 text-white' :
+                step === s.n ? 'bg-purple-600 text-white' :
+                'bg-gray-100 text-gray-400'
+              }`}>
+                {step > s.n ? <CheckCircle size={16} /> : s.n}
+              </div>
+              <span className={`text-xs font-medium hidden sm:block ${
+                step === s.n ? 'text-purple-600' : 'text-gray-400'
+              }`}>{s.label}</span>
+            </div>
+            {i < 2 && <div className={`flex-1 h-0.5 ${step > s.n ? 'bg-green-400' : 'bg-gray-200'}`} />}
+          </React.Fragment>
+        ))}
+      </div>
 
-        {/* Search Mode Toggle */}
-        <div className="flex bg-gray-100 rounded-xl p-1">
-          <button
-            onClick={() => { setSearchMode('number'); setError(''); setFlightFound(null); }}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
-              searchMode === 'number' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500'
-            }`}
-          >
-            🔢 I Know My Flight Number
-          </button>
-          <button
-            onClick={() => { setSearchMode('route'); setError(''); setFlightFound(null); }}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
-              searchMode === 'route' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500'
-            }`}
-          >
-            🗺️ I Know My Route
-          </button>
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-xl mb-4">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          {error}
         </div>
+      )}
 
-        {/* Search by Flight Number */}
-        {searchMode === 'number' && !flightFound && (
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Enter your flight number and date
-            </label>
-            <div className="grid grid-cols-2 gap-3 mb-3">
+      {/* Step 1: Flight Info */}
+      {step === 1 && (
+        <div className="space-y-4">
+          {/* Flight Number Search */}
+          <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
+            <p className="text-sm font-semibold text-purple-700 mb-2">🔍 Quick Fill — Search by Flight Number</p>
+            <div className="flex gap-2">
               <input
-                placeholder="e.g. EK087"
-                value={flightNumber}
-                onChange={e => setFlightNumber(e.target.value)}
-                className="border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 uppercase"
+                type="text"
+                placeholder="e.g. EK203, QR542..."
+                value={flightNumberSearch}
+                onChange={e => setFlightNumberSearch(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === 'Enter' && searchByFlightNumber()}
+                className="flex-1 border border-purple-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
               />
-              <input
-                type="date"
-                value={flightDate}
-                onChange={e => setFlightDate(e.target.value)}
-                className="border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-              />
-            </div>
-            <button
-              onClick={searchByFlightNumber}
-              className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
-            >
-              <Search size={16} /> Continue
-            </button>
-          </div>
-        )}
-
-        {/* Search by Route */}
-        {searchMode === 'route' && !flightFound && (
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Enter departure airport, arrival airport and date
-            </label>
-            <div className="grid grid-cols-3 gap-3 mb-1">
-              <div>
-                <input
-                  placeholder="From (e.g. DXB)"
-                  value={fromCode}
-                  onChange={e => setFromCode(e.target.value.toUpperCase())}
-                  maxLength={3}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 uppercase"
-                />
-                {fromCode.length === 3 && getAirportInfo(fromCode) && (
-                  <p className="text-xs text-green-600 mt-1 ml-1">✓ {getAirportInfo(fromCode).city}</p>
-                )}
-              </div>
-              <div>
-                <input
-                  placeholder="To (e.g. LHR)"
-                  value={toCode}
-                  onChange={e => setToCode(e.target.value.toUpperCase())}
-                  maxLength={3}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 uppercase"
-                />
-                {toCode.length === 3 && getAirportInfo(toCode) && (
-                  <p className="text-xs text-green-600 mt-1 ml-1">✓ {getAirportInfo(toCode).city}</p>
-                )}
-              </div>
-              <input
-                type="date"
-                value={routeDate}
-                onChange={e => setRouteDate(e.target.value)}
-                className="border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-              />
-            </div>
-            <p className="text-xs text-gray-400 mb-3 ml-1">Use IATA airport codes — e.g. DXB, LHR, JFK, CDG</p>
-            <button
-              onClick={searchByRoute}
-              className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2"
-            >
-              <Search size={16} /> Confirm Route
-            </button>
-          </div>
-        )}
-
-        {/* Flight Found / Confirmed Card */}
-        {flightFound && (
-          <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Plane size={16} className="text-purple-600" />
-                <p className="text-sm font-bold text-purple-700">
-                  {flightFound.flight_number && `${flightFound.flight_number} — `}
-                  {flightFound.airline || 'Flight Details'}
-                </p>
-              </div>
               <button
-                onClick={() => { setFlightFound(null); setError(''); }}
-                className="text-xs text-gray-400 hover:text-gray-600"
+                type="button"
+                onClick={searchByFlightNumber}
+                disabled={searching}
+                className="bg-purple-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2"
               >
-                Change
+                <Search size={15} />
+                {searching ? 'Searching...' : 'Search'}
               </button>
             </div>
-
-            {/* If flight number mode — need to enter route */}
-            {flightFound.needs_route ? (
-              <div>
-                <p className="text-xs text-gray-500 mb-2">Now enter your departure and arrival airports:</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <input
-                      placeholder="From Code (e.g. DXB)"
-                      value={flightFound.from_code}
-                      onChange={e => updateRouteOnFlight('from_code', e.target.value.toUpperCase())}
-                      maxLength={3}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 uppercase bg-white"
-                    />
-                    {flightFound.from_city && (
-                      <p className="text-xs text-green-600 mt-1 ml-1">✓ {flightFound.from_city}</p>
-                    )}
-                  </div>
-                  <div>
-                    <input
-                      placeholder="To Code (e.g. LHR)"
-                      value={flightFound.to_code}
-                      onChange={e => updateRouteOnFlight('to_code', e.target.value.toUpperCase())}
-                      maxLength={3}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 uppercase bg-white"
-                    />
-                    {flightFound.to_city && (
-                      <p className="text-xs text-green-600 mt-1 ml-1">✓ {flightFound.to_city}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm font-semibold text-gray-800">
-                {flightFound.from_city} ({flightFound.from_code}) → {flightFound.to_city} ({flightFound.to_code})
-              </p>
-            )}
-
-            <p className="text-xs text-gray-500">
-              📅 {new Date(flightFound.flight_date).toLocaleDateString('en-GB', {
-                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-              })}
-            </p>
+            <p className="text-xs text-purple-500 mt-2">Or fill in the details manually below</p>
           </div>
-        )}
 
-        {/* Capacity & Price */}
-        {flightFound && (
-          <>
+          <AirportSearch
+            label="Departure Airport *"
+            value={{ city: form.from_city, code: form.from_code }}
+            onChange={(airport) => setForm(prev => ({
+              ...prev, from_city: airport.city, from_code: airport.code
+            }))}
+            placeholder="Search city or airport code..."
+          />
+
+          <AirportSearch
+            label="Arrival Airport *"
+            value={{ city: form.to_city, code: form.to_code }}
+            onChange={(airport) => setForm(prev => ({
+              ...prev, to_city: airport.city, to_code: airport.code
+            }))}
+            placeholder="Search city or airport code..."
+          />
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Flight Date *</label>
+            <div className="relative">
+              <Calendar size={16} className="absolute left-3 top-3.5 text-gray-400" />
+              <input
+                type="date"
+                min={today}
+                value={form.flight_date}
+                onChange={e => setForm({ ...form, flight_date: e.target.value })}
+                className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Airline *</label>
+            <div className="relative">
+              <Plane size={16} className="absolute left-3 top-3.5 text-gray-400" />
+              <select
+                value={form.airline}
+                onChange={e => setForm({ ...form, airline: e.target.value })}
+                className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 appearance-none text-gray-700"
+              >
+                <option value="">Select airline...</option>
+                {AIRLINES.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-3.5 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Flight Number</label>
+            <input
+              type="text"
+              placeholder="e.g. EK203"
+              value={form.flight_number}
+              onChange={e => setForm({ ...form, flight_number: e.target.value.toUpperCase() })}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+            />
+          </div>
+
+          <button
+            onClick={handleNext}
+            className="w-full bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition"
+          >
+            Continue to Capacity →
+          </button>
+        </div>
+      )}
+
+      {/* Step 2: Capacity & Categories */}
+      {step === 2 && (
+        <div className="space-y-4">
+          {/* Route summary */}
+          <div className="bg-gray-50 rounded-xl p-3 flex items-center gap-2 text-sm">
+            <Plane size={15} className="text-purple-600" />
+            <span className="font-semibold text-gray-700">{form.from_city} ({form.from_code})</span>
+            <span className="text-gray-400">→</span>
+            <span className="font-semibold text-gray-700">{form.to_city} ({form.to_code})</span>
+            <span className="text-gray-400 ml-auto">
+              {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">📦 Capacity & Price</label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="relative">
-                  <Package size={16} className="absolute left-3 top-3.5 text-gray-400" />
-                  <input
-                    type="number"
-                    placeholder="Available kg (e.g. 20)"
-                    value={availableKg}
-                    onChange={e => setAvailableKg(e.target.value)}
-                    className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-                  />
-                </div>
-                <div className="relative">
-                  <DollarSign size={16} className="absolute left-3 top-3.5 text-gray-400" />
-                  <input
-                    type="number"
-                    placeholder="Price per kg (e.g. 8.50)"
-                    value={pricePerKg}
-                    onChange={e => setPricePerKg(e.target.value)}
-                    className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-                  />
-                </div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Available Weight (kg) *</label>
+              <div className="relative">
+                <Weight size={16} className="absolute left-3 top-3.5 text-gray-400" />
+                <input
+                  type="number"
+                  placeholder="e.g. 10"
+                  min="0.5" max="30" step="0.5"
+                  value={form.available_kg}
+                  onChange={e => setForm({ ...form, available_kg: e.target.value })}
+                  className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                />
               </div>
             </div>
-
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">🏷️ What will you carry?</label>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => toggleCategory(cat)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
-                      categories.includes(cat)
-                        ? 'bg-purple-600 text-white border-purple-600'
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Price per kg ($) *</label>
+              <div className="relative">
+                <DollarSign size={16} className="absolute left-3 top-3.5 text-gray-400" />
+                <input
+                  type="number"
+                  placeholder="e.g. 10"
+                  min="1" step="0.5"
+                  value={form.price_per_kg}
+                  onChange={e => setForm({ ...form, price_per_kg: e.target.value })}
+                  className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                />
               </div>
             </div>
+          </div>
 
-            {error && <p className="text-red-500 text-xs bg-red-50 p-3 rounded-xl">{error}</p>}
+          {/* Earnings estimate */}
+          {form.available_kg && form.price_per_kg && (
+            <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex items-center justify-between">
+              <span className="text-sm text-green-700">Potential earnings (if fully booked)</span>
+              <span className="text-sm font-bold text-green-700">
+                up to ${(parseFloat(form.available_kg) * parseFloat(form.price_per_kg) * 0.9).toFixed(2)}
+              </span>
+            </div>
+          )}
 
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              What items can you carry? * <span className="text-gray-400 font-normal">(select all that apply)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => toggleCategory(cat)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                    form.categories.includes(cat)
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Additional Notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              placeholder="Any special conditions, restrictions, or information for shippers..."
+              value={form.notes}
+              onChange={e => setForm({ ...form, notes: e.target.value })}
+              rows={3}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3">
             <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="w-full bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50"
+              onClick={() => setStep(1)}
+              className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition"
             >
-              {loading ? 'Saving...' : 'List My Flight →'}
+              ← Back
             </button>
-          </>
-        )}
+            <button
+              onClick={handleNext}
+              className="flex-[2] bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition"
+            >
+              Continue to Delivery →
+            </button>
+          </div>
+        </div>
+      )}
 
-        {error && !flightFound && (
-          <p className="text-red-500 text-xs bg-red-50 p-3 rounded-xl">{error}</p>
-        )}
-      </div>
+      {/* Step 3: Delivery Preferences */}
+      {step === 3 && (
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Route</span>
+              <span className="font-semibold">{form.from_code} → {form.to_code}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Capacity</span>
+              <span className="font-semibold">{form.available_kg}kg @ ${form.price_per_kg}/kg</span>
+            </div>
+          </div>
+
+          {/* Delivery Type */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              What delivery service do you offer? *
+            </label>
+            <div className="space-y-2">
+              {[
+                {
+                  value: 'handover',
+                  icon: '🤝',
+                  label: 'Handover Only',
+                  desc: 'Shipper brings item to you at airport or agreed meeting point'
+                },
+                {
+                  value: 'both',
+                  icon: '🛍️',
+                  label: 'Handover + Shop & Ship',
+                  desc: 'You can also purchase the item at destination for an additional service fee'
+                },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, delivery_type: opt.value })}
+                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition text-left ${
+                    form.delivery_type === opt.value
+                      ? 'border-purple-400 bg-purple-50'
+                      : 'border-gray-200 hover:border-purple-200 bg-white'
+                  }`}
+                >
+                  <span className="text-2xl flex-shrink-0">{opt.icon}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-800">{opt.label}</p>
+                      {form.delivery_type === opt.value && (
+                        <CheckCircle size={15} className="text-purple-600" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Shop & Ship Fee */}
+          {form.delivery_type === 'both' && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <div className="flex items-start gap-2 mb-3">
+                <ShoppingBag size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-700">Shop & Ship Service Fee</p>
+                  <p className="text-xs text-blue-600 mt-0.5">
+                    This is your fee for going to the store and purchasing the item. The item's actual purchase price will be added separately to the escrow.
+                  </p>
+                </div>
+              </div>
+              <div className="relative">
+                <DollarSign size={15} className="absolute left-3 top-3.5 text-gray-400" />
+                <input
+                  type="number"
+                  placeholder="e.g. 15.00"
+                  min="0" step="0.5"
+                  value={form.shop_and_ship_fee}
+                  onChange={e => setForm({ ...form, shop_and_ship_fee: e.target.value })}
+                  className="w-full pl-8 border border-blue-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Handover Location */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Preferred Handover Location
+            </label>
+            <div className="relative">
+              <Location size={16} className="absolute left-3 top-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="e.g. Airport departures terminal, Hotel lobby, Mall..."
+                value={form.handover_location}
+                onChange={e => setForm({ ...form, handover_location: e.target.value })}
+                className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              />
+            </div>
+          </div>
+
+          {/* Listing Summary */}
+          <div className="bg-purple-50 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-bold text-purple-700 mb-3">📋 Listing Summary</p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <p className="text-gray-400">Route</p>
+                <p className="font-semibold text-gray-700">{form.from_city} → {form.to_city}</p>
+              </div>
+              <div>
+                <p className="text-gray-400">Date</p>
+                <p className="font-semibold text-gray-700">
+                  {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400">Capacity</p>
+                <p className="font-semibold text-gray-700">{form.available_kg}kg @ ${form.price_per_kg}/kg</p>
+              </div>
+              <div>
+                <p className="text-gray-400">Service</p>
+                <p className="font-semibold text-gray-700">
+                  {form.delivery_type === 'both' ? `Handover + Shop & Ship (+$${form.shop_and_ship_fee || 0})` : 'Handover only'}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-gray-400">Categories</p>
+                <p className="font-semibold text-gray-700">{form.categories.join(', ') || '—'}</p>
+              </div>
+              {form.handover_location && (
+                <div className="col-span-2">
+                  <p className="text-gray-400">Handover at</p>
+                  <p className="font-semibold text-gray-700">{form.handover_location}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setStep(2)}
+              className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition"
+            >
+              ← Back
+            </button>
+            <button
+              onClick={saveFlight}
+              disabled={loading}
+              className="flex-[2] bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publishing...</>
+              ) : (
+                <><Plane size={16} /> Publish Flight Listing</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

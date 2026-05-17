@@ -1,25 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Star, Package, DollarSign, Calendar, CheckCircle, XCircle, RefreshCw, Clock } from 'lucide-react';
+import {
+  Search, Plane, Package, Star, CheckCircle, XCircle,
+  ChevronRight, MapPin, Calendar, Weight, DollarSign,
+  Clock, Shield, User, X, Award, Globe, Phone
+} from 'lucide-react';
 
 const Matches = ({ session }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [countdown, setCountdown] = useState(5);
-  const intervalRef = useRef(null);
-  const countdownRef = useRef(null);
-
-  const runMatching = async () => {
-    setRunning(true);
-    await supabase.rpc('find_matches');
-    await fetchMatches();
-    setLastUpdated(new Date());
-    setRunning(false);
-  };
+  const [acting, setActing] = useState({});
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const fetchMatches = async () => {
+    setLoading(true);
+    await supabase.rpc('find_matches');
     const { data, error } = await supabase
       .from('matches')
       .select(`
@@ -30,343 +27,388 @@ const Matches = ({ session }) => {
         shipper:profiles!matches_shipper_id_fkey(*)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .in('status', ['pending', 'awaiting_other'])
+      .eq('status', 'pending')
       .order('match_score', { ascending: false });
-
     if (!error) setMatches(data || []);
     setLoading(false);
   };
 
-  const startAutoRefresh = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
+  const fetchProfile = async (userId) => {
+    setProfileLoading(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
-    intervalRef.current = setInterval(async () => {
-      await runMatching();
-      setCountdown(5);
-    }, 5000);
+    const { count: flightsCount } = await supabase
+      .from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
+    const { count: dealsCount } = await supabase
+      .from('matches').select('id', { count: 'exact' })
+      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+      .eq('status', 'completed');
 
-    countdownRef.current = setInterval(() => {
-      setCountdown(prev => prev <= 1 ? 5 : prev - 1);
-    }, 1000);
+    setViewingProfile({ ...data, totalFlights: flightsCount || 0, totalDeals: dealsCount || 0 });
+    setProfileLoading(false);
   };
 
   useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await runMatching();
-    };
-    init();
-    startAutoRefresh();
-
-    // Real-time subscription
-    const sub = supabase
-      .channel('matches-realtime')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'matches'
-      }, () => fetchMatches())
-      .subscribe();
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-      supabase.removeChannel(sub);
-    };
+    fetchMatches();
+    const interval = setInterval(fetchMatches, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const isTraveler = (match) => match.traveler_id === session.user.id;
-
-  const hasCurrentUserAccepted = (match) => {
-    return isTraveler(match) ? match.traveler_accepted : match.shipper_accepted;
-  };
-
-  const hasOtherUserAccepted = (match) => {
-    return isTraveler(match) ? match.shipper_accepted : match.traveler_accepted;
-  };
-
-  const handleAccept = async (match) => {
-    const updateField = isTraveler(match)
-      ? { traveler_accepted: true }
-      : { shipper_accepted: true };
-
-    // Check if other side already accepted
-    const otherAccepted = hasOtherUserAccepted(match);
+  const handleAccept = async (matchId) => {
+    setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
+    const match = matches.find(m => m.id === matchId);
+    const isTraveler = match.traveler_id === session.user.id;
+    const myField = isTraveler ? 'traveler_accepted' : 'shipper_accepted';
+    const otherAccepted = isTraveler ? match.shipper_accepted : match.traveler_accepted;
 
     if (otherAccepted) {
-      // Both have accepted — open chat
       await supabase.from('matches').update({
-        ...updateField,
-        status: 'accepted'
-      }).eq('id', match.id);
-
-      // Send welcome system message
+        [myField]: true, status: 'accepted'
+      }).eq('id', matchId);
       await supabase.from('messages').insert([{
-        match_id: match.id,
+        match_id: matchId,
         sender_id: session.user.id,
-        content: '🎉 Both parties have accepted this match! You can now discuss the details and agree on the deal. Good luck!'
+        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat, discuss the deal details, and proceed with the escrow payment. Let's make this delivery happen!`,
+        is_read: false
       }]);
     } else {
-      // Only this side accepted so far
       await supabase.from('matches').update({
-        ...updateField,
-        status: 'awaiting_other'
-      }).eq('id', match.id);
+        [myField]: true, status: 'awaiting_other'
+      }).eq('id', matchId);
     }
-
+    setSelectedMatch(null);
     await fetchMatches();
+    setActing(prev => ({ ...prev, [matchId]: null }));
   };
 
-  const handleReject = async (matchId) => {
-    await supabase.from('matches')
-      .update({ status: 'rejected' })
-      .eq('id', matchId);
-    setMatches(matches.filter(m => m.id !== matchId));
+  const handleDecline = async (matchId) => {
+    setActing(prev => ({ ...prev, [matchId]: 'declining' }));
+    await supabase.from('matches').update({ status: 'rejected' }).eq('id', matchId);
+    setSelectedMatch(null);
+    setMatches(prev => prev.filter(m => m.id !== matchId));
+    setActing(prev => ({ ...prev, [matchId]: null }));
   };
 
-  const getMatchColor = (score) => {
-    if (score >= 90) return 'bg-green-50 text-green-600';
-    if (score >= 70) return 'bg-blue-50 text-blue-600';
-    return 'bg-orange-50 text-orange-600';
+  const isTraveler = (match) => match.traveler_id === session.user.id;
+  const getOtherParty = (match) => isTraveler(match) ? match.shipper : match.traveler;
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getAcceptanceStatus = (match) => {
-    const iAmTraveler = isTraveler(match);
-    const myAccepted = iAmTraveler ? match.traveler_accepted : match.shipper_accepted;
-    const theirAccepted = iAmTraveler ? match.shipper_accepted : match.traveler_accepted;
-
-    if (myAccepted && theirAccepted) return { label: 'Both Accepted', color: 'text-green-600', icon: '✅' };
-    if (myAccepted && !theirAccepted) return { label: 'Waiting for other party', color: 'text-yellow-600', icon: '⏳' };
-    if (!myAccepted && theirAccepted) return { label: 'Other party accepted — your turn!', color: 'text-purple-600', icon: '🔔' };
-    return { label: 'Pending your response', color: 'text-gray-500', icon: '💬' };
+  const getScoreColor = (score) => {
+    if (score >= 90) return 'bg-green-50 text-green-600 border-green-200';
+    if (score >= 75) return 'bg-blue-50 text-blue-600 border-blue-200';
+    return 'bg-orange-50 text-orange-600 border-orange-200';
   };
+
+  const getAvatarUrl = (profile) => {
+    if (!profile?.avatar_url) return null;
+    const { data } = supabase.storage.from('avatars').getPublicUrl(profile.avatar_url);
+    return data?.publicUrl;
+  };
+
+  if (loading && matches.length === 0) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="text-center">
+        <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+          <Search size={24} className="text-purple-400" />
+        </div>
+        <p className="text-gray-400 text-sm">Finding your matches...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-6">
+    <div className="max-w-3xl mx-auto py-6 px-4 md:px-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Matches</h1>
-          <p className="text-gray-400 text-sm mt-1">Both parties must accept to open chat</p>
+          <h1 className="text-2xl font-bold text-gray-800">Your Matches</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} • Updates every 5s
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-purple-50 px-4 py-2 rounded-xl">
-            <div className={`w-2 h-2 rounded-full ${running ? 'bg-yellow-400 animate-pulse' : 'bg-green-400 animate-pulse'}`} />
-            <span className="text-xs font-semibold text-purple-700">
-              {running ? 'Searching...' : `Refreshing in ${countdown}s`}
-            </span>
-          </div>
-          <button
-            onClick={runMatching}
-            disabled={running}
-            className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={running ? 'animate-spin' : ''} />
-            {running ? 'Searching...' : 'Refresh Now'}
-          </button>
-        </div>
+        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" title="Live" />
       </div>
 
-      {lastUpdated && (
-        <p className="text-xs text-gray-400 mb-4">
-          Last updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-        </p>
-      )}
-
-      {/* How it works banner */}
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
-        <p className="text-sm font-semibold text-blue-700 mb-1">🤝 How Matching Works</p>
-        <p className="text-xs text-blue-600">
-          When a match is found, both the traveler and shipper must individually click
-          <strong> Accept</strong> on their side. Only once both parties have accepted will
-          the chat open and the deal can begin.
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100">
-          <RefreshCw size={28} className="text-purple-400 animate-spin mb-3" />
-          <p className="text-gray-400 text-sm">Finding your matches...</p>
-        </div>
-      ) : matches.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100">
-          <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mb-4">
-            <Star size={28} className="text-purple-400" />
+      {matches.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="w-20 h-20 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search size={36} className="text-purple-300" />
           </div>
-          <h2 className="text-lg font-bold text-gray-800 mb-1">No matches yet</h2>
-          <p className="text-gray-400 text-sm mb-1">Make sure you have flights or requests listed</p>
-          <p className="text-xs text-gray-300">Checking again in {countdown} seconds...</p>
+          <h2 className="text-lg font-bold text-gray-700 mb-2">No matches yet</h2>
+          <p className="text-gray-400 text-sm max-w-xs mx-auto">
+            We're searching for matches. Add a flight or shipment request to get started.
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
           {matches.map(match => {
-            const acceptanceStatus = getAcceptanceStatus(match);
-            const iHaveAccepted = hasCurrentUserAccepted(match);
-            const theyHaveAccepted = hasOtherUserAccepted(match);
+            const other = getOtherParty(match);
+            const avatarUrl = getAvatarUrl(other);
+            const myAccepted = isTraveler(match)
+              ? match.traveler_accepted
+              : match.shipper_accepted;
 
             return (
-              <div key={match.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div key={match.id}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
 
-                {/* Match Score & Role */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${getMatchColor(match.match_score)}`}>
-                      {match.match_score}% Match
+                {/* Match Score Banner */}
+                <div className={`px-4 py-2 flex items-center justify-between text-xs font-semibold border-b ${getScoreColor(match.match_score)}`}>
+                  <span>⚡ {match.match_score}% Match Score</span>
+                  {match.status === 'awaiting_other' && (
+                    <span className="flex items-center gap-1">
+                      <Clock size={11} /> Waiting for other party
                     </span>
-                    <span className="text-xs text-gray-400 bg-gray-50 px-3 py-1 rounded-full">
-                      {isTraveler(match) ? 'You are the Traveler ✈️' : 'You are the Shipper 📦'}
-                    </span>
-                  </div>
+                  )}
+                  {myAccepted && match.status === 'awaiting_other' && (
+                    <span className="text-green-600">✓ You accepted</span>
+                  )}
                 </div>
 
-                {/* Acceptance Status Banner */}
-                <div className={`flex items-center gap-2 rounded-xl p-3 mb-4 ${
-                  iHaveAccepted && theyHaveAccepted ? 'bg-green-50' :
-                  !iHaveAccepted && theyHaveAccepted ? 'bg-purple-50' :
-                  iHaveAccepted ? 'bg-yellow-50' : 'bg-gray-50'
-                }`}>
-                  <span className="text-lg">{acceptanceStatus.icon}</span>
-                  <div className="flex-1">
-                    <p className={`text-sm font-semibold ${acceptanceStatus.color}`}>
-                      {acceptanceStatus.label}
-                    </p>
-                    <div className="flex items-center gap-4 mt-1">
-                      <span className={`text-xs flex items-center gap-1 ${
-                        isTraveler(match) ? (match.traveler_accepted ? 'text-green-600 font-semibold' : 'text-gray-400') : (match.traveler_accepted ? 'text-green-600 font-semibold' : 'text-gray-400')
-                      }`}>
-                        {match.traveler_accepted ? '✓' : '○'} Traveler
-                      </span>
-                      <span className={`text-xs flex items-center gap-1 ${
-                        match.shipper_accepted ? 'text-green-600 font-semibold' : 'text-gray-400'
-                      }`}>
-                        {match.shipper_accepted ? '✓' : '○'} Shipper
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Flight & Request Info */}
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-purple-50 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-purple-600 mb-2">✈️ Flight</p>
-                    <p className="font-bold text-gray-800">
-                      {match.flight?.from_city} → {match.flight?.to_city}
-                    </p>
-<p className="text-xs text-gray-500 mt-1">
-                      {match.flight?.airline} • {match.flight?.flight_number}
-                    </p>
-                    {match.match_score < 90 && (
-                      <p className="text-xs text-orange-500 mt-0.5">
-                        📍 Nearby airport match (within 50km)
+                <div className="p-4">
+                  {/* Route */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex-1 bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                        <Plane size={11} /> Flight
                       </p>
-                    )}
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Calendar size={11} />
+                      <p className="text-sm font-bold text-gray-800">
+                        {match.flight?.from_code} → {match.flight?.to_code}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {match.flight?.from_city} → {match.flight?.to_city}
+                      </p>
+                      <p className="text-xs text-purple-600 font-semibold mt-1">
                         {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', {
-                          day: 'numeric', month: 'short'
-                        }) : 'N/A'}
-                      </span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Package size={11} /> {match.flight?.available_kg}kg
-                      </span>
-                      <span className="text-xs font-semibold text-purple-600 flex items-center gap-1">
-                        <DollarSign size={11} /> ${match.flight?.price_per_kg}/kg
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-gray-600 mb-2">📦 Request</p>
-                    {match.request?.item_photo_url && (
-                      <img src={match.request.item_photo_url}
-                        alt={match.request.item_name}
-                        className="w-full h-16 object-cover rounded-lg mb-2" />
-                    )}
-                    <p className="font-bold text-gray-800">{match.request?.item_name}</p>
-                    <p className="text-xs text-gray-500 mt-1">{match.request?.category}</p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Package size={11} /> {match.request?.weight_kg}kg
-                      </span>
-                      {match.request?.budget_per_kg && (
-                        <span className="text-xs text-gray-500 flex items-center gap-1">
-                          <DollarSign size={11} /> Budget: ${match.request.budget_per_kg}/kg
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Deal Value */}
-                <div className="bg-gray-50 rounded-xl px-4 py-3 mb-4 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Estimated deal value</span>
-                  <span className="text-sm font-bold text-purple-600">
-                    ${((match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0)).toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Other Party */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600">
-                      {isTraveler(match)
-                        ? (match.shipper?.full_name?.[0] || '?')
-                        : (match.traveler?.full_name?.[0] || '?')}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">
-                        {isTraveler(match)
-                          ? match.shipper?.full_name || 'Shipper'
-                          : match.traveler?.full_name || 'Traveler'}
+                          day: 'numeric', month: 'short', year: 'numeric'
+                        }) : ''}
                       </p>
-                      <div className="flex items-center gap-1">
-                        {(isTraveler(match) ? match.shipper?.rating : match.traveler?.rating) > 0 && (
-                          <>
-                            <Star size={11} className="text-yellow-400 fill-yellow-400" />
-                            <span className="text-xs text-gray-500">
-                              {isTraveler(match) ? match.shipper?.rating : match.traveler?.rating}
-                            </span>
-                          </>
-                        )}
-                        <span className="text-xs text-gray-400">
-                          {isTraveler(match) ? 'Wants delivery' : 'Offering space'}
-                        </span>
-                      </div>
+                    </div>
+                    <div className="flex-1 bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                        <Package size={11} /> Shipment
+                      </p>
+                      <p className="text-sm font-bold text-gray-800">{match.request?.item_name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{match.request?.category}</p>
+                      <p className="text-xs text-purple-600 font-semibold mt-1">
+                        {match.request?.weight_kg}kg • ${match.request?.budget_per_kg}/kg budget
+                      </p>
                     </div>
                   </div>
 
-                  {/* Accept / Reject Buttons */}
-                  <div className="flex items-center gap-2">
-                    {!iHaveAccepted ? (
-                      <>
-                        <button
-                          onClick={() => handleReject(match.id)}
-                          className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-500 rounded-xl text-sm font-medium hover:bg-red-50 transition"
-                        >
-                          <XCircle size={15} /> Decline
-                        </button>
-                        <button
-                          onClick={() => handleAccept(match)}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition"
-                        >
-                          <CheckCircle size={15} /> Accept Match
-                        </button>
-                      </>
-                    ) : !theyHaveAccepted ? (
-                      <div className="flex items-center gap-2 bg-yellow-50 text-yellow-700 px-4 py-2 rounded-xl text-sm font-medium">
-                        <Clock size={15} /> Waiting for other party...
+                  {/* Deal Value */}
+                  <div className="bg-purple-50 rounded-xl p-3 mb-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-500">Estimated deal value</p>
+                      <p className="text-lg font-bold text-purple-600">
+                        ${((match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0)).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">{match.flight?.available_kg}kg available</p>
+                      <p className="text-xs text-gray-500">${match.flight?.price_per_kg}/kg</p>
+                    </div>
+                  </div>
+
+                  {/* Other Party */}
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={() => fetchProfile(other?.id)}
+                      className="flex items-center gap-3 hover:bg-gray-50 rounded-xl p-2 -ml-2 transition"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0 overflow-hidden">
+                        {avatarUrl
+                          ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" />
+                          : getInitials(other?.full_name)
+                        }
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-2 rounded-xl text-sm font-medium">
-                        <CheckCircle size={15} /> Chat is now open!
+                      <div className="text-left">
+                        <p className="text-sm font-semibold text-gray-800">
+                          {other?.full_name || 'User'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {other?.rating > 0 ? (
+                            <div className="flex items-center gap-1">
+                              <Star size={12} className="text-yellow-400 fill-yellow-400" />
+                              <span className="text-xs text-gray-600 font-semibold">{other.rating.toFixed(1)}</span>
+                              <span className="text-xs text-gray-400">({other.total_reviews})</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">New member</span>
+                          )}
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                            {isTraveler(match) ? '📦 Shipper' : '✈️ Traveler'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-purple-500 mt-0.5">Tap to view profile →</p>
+                      </div>
+                    </button>
+
+                    {other?.verified && (
+                      <div className="flex items-center gap-1 bg-blue-50 text-blue-600 text-xs font-semibold px-3 py-1.5 rounded-full">
+                        <Shield size={12} /> Verified
                       </div>
                     )}
                   </div>
+
+                  {/* Item photo if available */}
+                  {match.request?.item_photo_url && (
+                    <div className="mb-4">
+                      <img
+                        src={match.request.item_photo_url}
+                        alt={match.request.item_name}
+                        className="w-full h-32 object-cover rounded-xl"
+                      />
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  {!myAccepted ? (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => handleDecline(match.id)}
+                        disabled={!!acting[match.id]}
+                        className="flex-1 flex items-center justify-center gap-2 border border-gray-200 text-gray-500 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition disabled:opacity-50"
+                      >
+                        <XCircle size={16} />
+                        {acting[match.id] === 'declining' ? 'Declining...' : 'Decline'}
+                      </button>
+                      <button
+                        onClick={() => handleAccept(match.id)}
+                        disabled={!!acting[match.id]}
+                        className="flex-2 flex-[2] flex items-center justify-center gap-2 bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50"
+                      >
+                        <CheckCircle size={16} />
+                        {acting[match.id] === 'accepting' ? 'Accepting...' : 'Accept Match'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-green-50 rounded-xl p-3 flex items-center gap-2">
+                      <CheckCircle size={16} className="text-green-500" />
+                      <p className="text-sm text-green-700 font-semibold">
+                        You accepted — waiting for {isTraveler(match) ? 'shipper' : 'traveler'} to confirm
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Profile Modal */}
+      {viewingProfile && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between rounded-t-2xl">
+              <h3 className="font-bold text-gray-800">User Profile</h3>
+              <button onClick={() => setViewingProfile(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            {profileLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-gray-400 text-sm">Loading profile...</p>
+              </div>
+            ) : (
+              <div className="p-5">
+                {/* Avatar + Name */}
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center text-xl font-bold text-purple-600 overflow-hidden flex-shrink-0">
+                    {viewingProfile?.avatar_url ? (
+                      <img
+                        src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
+                        alt={viewingProfile.full_name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : getInitials(viewingProfile?.full_name)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-bold text-gray-800">{viewingProfile?.full_name || 'User'}</h2>
+                      {viewingProfile?.verified && (
+                        <span className="flex items-center gap-1 bg-blue-50 text-blue-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                          <Shield size={10} /> Verified
+                        </span>
+                      )}
+                    </div>
+                    {viewingProfile?.rating > 0 ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        {[1,2,3,4,5].map(star => (
+                          <Star key={star} size={14}
+                            className={star <= Math.round(viewingProfile.rating) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'} />
+                        ))}
+                        <span className="text-sm font-semibold text-gray-700 ml-1">{viewingProfile.rating.toFixed(1)}</span>
+                        <span className="text-xs text-gray-400">({viewingProfile.total_reviews} reviews)</span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-1">No reviews yet</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bio */}
+                {viewingProfile?.bio && (
+                  <div className="bg-gray-50 rounded-xl p-3 mb-4">
+                    <p className="text-sm text-gray-600 italic">"{viewingProfile.bio}"</p>
+                  </div>
+                )}
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="bg-purple-50 rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-purple-600">{viewingProfile?.totalDeals || 0}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Deals Done</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-blue-600">{viewingProfile?.totalFlights || 0}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Flights</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-green-600">
+                      {viewingProfile?.response_rate || 100}%
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">Response</p>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="space-y-2">
+                  {viewingProfile?.nationality && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Globe size={15} className="text-purple-400" />
+                      <span>{viewingProfile.nationality}</span>
+                    </div>
+                  )}
+                  {viewingProfile?.languages?.length > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Award size={15} className="text-purple-400" />
+                      <span>{viewingProfile.languages.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setViewingProfile(null)}
+                  className="w-full mt-5 bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition"
+                >
+                  Close Profile
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
