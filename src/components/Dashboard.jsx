@@ -671,9 +671,10 @@ const Dashboard = ({ session }) => {
       </div>
     </div>
   );
-};
-
-export default Dashboard;
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-30">
+        <div className="flex items-center justify-around px-2 py-2">
+          {bottomNavItems.map(item => (
             <button
               key={item.id}
               onClick={() => navigate(item.id)}
@@ -695,6 +696,13 @@ export default Dashboard;
               )}
             </button>
           ))}
+          <button
+            onClick={async () => { await supabase.auth.signOut(); }}
+            className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition text-gray-400"
+          >
+            <LogOut size={22} />
+            <span className="text-xs font-medium">Logout</span>
+          </button>
         </div>
       </div>
     </div>
