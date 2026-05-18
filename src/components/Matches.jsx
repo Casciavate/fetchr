@@ -205,19 +205,52 @@ const Matches = ({ session }) => {
                     </div>
                   </div>
 
-                  {/* Deal Value */}
-                  <div className="bg-purple-50 rounded-xl p-3 mb-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-500">Estimated deal value</p>
-                      <p className="text-lg font-bold text-purple-600">
-                        ${((match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0)).toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">{match.flight?.available_kg}kg available</p>
-                      <p className="text-xs text-gray-500">${match.flight?.price_per_kg}/kg</p>
-                    </div>
-                  </div>
+{/* Deal Value + Fee Preview */}
+                  {(() => {
+                    const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
+                    let fetchrPct = 10;
+                    if (subtotal >= 500) fetchrPct = 7;
+                    else if (subtotal >= 200) fetchrPct = 8.5;
+                    else if (subtotal < 20) fetchrPct = 12;
+                    const fetchrFee = subtotal * fetchrPct / 100;
+                    const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
+                    const totalFees = fetchrFee + stripeFee;
+                    const totalCharged = subtotal + totalFees;
+                    const travelerReceives = subtotal - fetchrFee;
+
+                    return (
+                      <div className="bg-purple-50 rounded-xl p-3 mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-xs text-gray-500">Deal subtotal</p>
+                            <p className="text-lg font-bold text-purple-600">${subtotal.toFixed(2)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-500">{match.flight?.available_kg}kg available</p>
+                            <p className="text-xs text-gray-500">${match.flight?.price_per_kg}/kg</p>
+                          </div>
+                        </div>
+                        <div className="border-t border-purple-100 pt-2 space-y-1 text-xs">
+                          <div className="flex justify-between text-gray-500">
+                            <span>Fetchr fee ({fetchrPct}%)</span>
+                            <span>${fetchrFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-gray-500">
+                            <span>Processing fee</span>
+                            <span>${stripeFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-semibold text-gray-700 border-t border-purple-100 pt-1">
+                            <span>Shipper pays</span>
+                            <span>${totalCharged.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-green-600 font-semibold">
+                            <span>Traveler receives</span>
+                            <span>${travelerReceives.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Other Party */}
                   <div className="flex items-center justify-between mb-4">
