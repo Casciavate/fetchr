@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, Plane, Package, Star, CheckCircle, XCircle,
-  ChevronRight, MapPin, Calendar, Weight, DollarSign,
-  Clock, Shield, User, X, Award, Globe, Phone
+  ChevronRight, MapPin, Calendar, Shield, X, Award,
+  Globe, Clock, Zap, TrendingUp, ShoppingBag
 } from 'lucide-react';
 
 const Matches = ({ session }) => {
@@ -35,19 +35,10 @@ const Matches = ({ session }) => {
 
   const fetchProfile = async (userId) => {
     setProfileLoading(true);
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    const { count: flightsCount } = await supabase
-      .from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
-    const { count: dealsCount } = await supabase
-      .from('matches').select('id', { count: 'exact' })
-      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-      .eq('status', 'completed');
-
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    const { count: flightsCount } = await supabase.from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
+    const { count: dealsCount } = await supabase.from('matches').select('id', { count: 'exact' })
+      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`).eq('status', 'completed');
     setViewingProfile({ ...data, totalFlights: flightsCount || 0, totalDeals: dealsCount || 0 });
     setProfileLoading(false);
   };
@@ -66,19 +57,15 @@ const Matches = ({ session }) => {
     const otherAccepted = isTraveler ? match.shipper_accepted : match.traveler_accepted;
 
     if (otherAccepted) {
-      await supabase.from('matches').update({
-        [myField]: true, status: 'accepted'
-      }).eq('id', matchId);
+      await supabase.from('matches').update({ [myField]: true, status: 'accepted' }).eq('id', matchId);
       await supabase.from('messages').insert([{
         match_id: matchId,
         sender_id: session.user.id,
-        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat, discuss the deal details, and proceed with the escrow payment. Let's make this delivery happen!`,
+        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery. Let's make this happen!`,
         is_read: false
       }]);
     } else {
-      await supabase.from('matches').update({
-        [myField]: true, status: 'awaiting_other'
-      }).eq('id', matchId);
+      await supabase.from('matches').update({ [myField]: true, status: 'awaiting_other' }).eq('id', matchId);
     }
     setSelectedMatch(null);
     await fetchMatches();
@@ -101,51 +88,64 @@ const Matches = ({ session }) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 90) return 'bg-green-50 text-green-600 border-green-200';
-    if (score >= 75) return 'bg-blue-50 text-blue-600 border-blue-200';
-    return 'bg-orange-50 text-orange-600 border-orange-200';
-  };
-
   const getAvatarUrl = (profile) => {
     if (!profile?.avatar_url) return null;
     const { data } = supabase.storage.from('avatars').getPublicUrl(profile.avatar_url);
     return data?.publicUrl;
   };
 
+  const getFeePreview = (match) => {
+    const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
+    let fetchrPct = 10;
+    if (subtotal >= 500) fetchrPct = 7;
+    else if (subtotal >= 200) fetchrPct = 8.5;
+    else if (subtotal < 20) fetchrPct = 12;
+    const fetchrFee = subtotal * fetchrPct / 100;
+    const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
+    const totalCharged = subtotal + fetchrFee + stripeFee;
+    const travelerReceives = subtotal - fetchrFee;
+    return { subtotal, fetchrPct, fetchrFee, stripeFee, totalCharged, travelerReceives };
+  };
+
+  const getScoreBadge = (score) => {
+    if (score >= 90) return 'badge-green';
+    if (score >= 75) return 'badge-blue';
+    return 'badge-yellow';
+  };
+
   if (loading && matches.length === 0) return (
-    <div className="flex items-center justify-center py-20">
-      <div className="text-center">
-        <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-          <Search size={24} className="text-purple-400" />
-        </div>
-        <p className="text-gray-400 text-sm">Finding your matches...</p>
+    <div className="flex flex-col items-center justify-center py-24">
+      <div className="w-14 h-14 bg-violet-100 rounded-2xl flex items-center justify-center mb-4 animate-pulse">
+        <Search size={24} className="text-violet-500" />
       </div>
+      <p className="text-gray-500 font-medium">Finding your matches...</p>
+      <p className="text-gray-400 text-sm mt-1">This updates every 5 seconds</p>
     </div>
   );
 
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4 md:px-6">
-
-      {/* Header */}
+    <div className="max-w-3xl mx-auto animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Your Matches</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} • Updates every 5s
+          <h1 className="text-2xl font-bold text-gray-900">Your Matches</h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} • Auto-refreshes
           </p>
         </div>
-        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" title="Live" />
+        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
+          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+          Live
+        </div>
       </div>
 
       {matches.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="w-20 h-20 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Search size={36} className="text-purple-300" />
+        <div className="text-center py-24 bg-white rounded-2xl shadow-card border border-gray-100/80">
+          <div className="w-20 h-20 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Search size={32} className="text-violet-300" />
           </div>
-          <h2 className="text-lg font-bold text-gray-700 mb-2">No matches yet</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-2">No matches yet</h2>
           <p className="text-gray-400 text-sm max-w-xs mx-auto">
-            We're searching for matches. Add a flight or shipment request to get started.
+            Add a flight or shipment request and we'll find your perfect match automatically.
           </p>
         </div>
       ) : (
@@ -153,181 +153,167 @@ const Matches = ({ session }) => {
           {matches.map(match => {
             const other = getOtherParty(match);
             const avatarUrl = getAvatarUrl(other);
-            const myAccepted = isTraveler(match)
-              ? match.traveler_accepted
-              : match.shipper_accepted;
+            const myAccepted = isTraveler(match) ? match.traveler_accepted : match.shipper_accepted;
+            const fees = getFeePreview(match);
 
             return (
               <div key={match.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
 
-                {/* Match Score Banner */}
-                <div className={`px-4 py-2 flex items-center justify-between text-xs font-semibold border-b ${getScoreColor(match.match_score)}`}>
-                  <span>⚡ {match.match_score}% Match Score</span>
-                  {match.status === 'awaiting_other' && (
-                    <span className="flex items-center gap-1">
-                      <Clock size={11} /> Waiting for other party
+                {/* Score bar */}
+                <div className={`h-1 ${
+                  match.match_score >= 90 ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                  match.match_score >= 75 ? 'bg-gradient-to-r from-blue-400 to-indigo-500' :
+                  'bg-gradient-to-r from-amber-400 to-orange-500'
+                }`} style={{ width: `${match.match_score}%` }} />
+
+                <div className="p-5">
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`badge ${getScoreBadge(match.match_score)}`}>
+                        <Zap size={10} /> {match.match_score}% Match
+                      </span>
+                      {match.status === 'awaiting_other' && (
+                        <span className="badge badge-yellow">
+                          <Clock size={10} /> Awaiting other party
+                        </span>
+                      )}
+                      {myAccepted && (
+                        <span className="badge badge-green">
+                          <CheckCircle size={10} /> You accepted
+                        </span>
+                      )}
+                    </div>
+                    <span className={`badge ${isTraveler(match) ? 'badge-blue' : 'badge-purple'}`}>
+                      {isTraveler(match) ? '✈️ Traveler' : '📦 Shipper'}
                     </span>
-                  )}
-                  {myAccepted && match.status === 'awaiting_other' && (
-                    <span className="text-green-600">✓ You accepted</span>
-                  )}
-                </div>
+                  </div>
 
-                <div className="p-4">
-                  {/* Route */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex-1 bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
-                        <Plane size={11} /> Flight
+                  {/* Route cards */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
+                      <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
+                        <Plane size={10} /> Flight
                       </p>
-                      <p className="text-sm font-bold text-gray-800">
+                      <p className="text-base font-bold text-gray-900">
                         {match.flight?.from_code} → {match.flight?.to_code}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {match.flight?.from_city} → {match.flight?.to_city}
                       </p>
-                      <p className="text-xs text-purple-600 font-semibold mt-1">
+                      <p className="text-xs font-semibold text-violet-600 mt-2">
                         {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', {
                           day: 'numeric', month: 'short', year: 'numeric'
                         }) : ''}
                       </p>
                     </div>
-                    <div className="flex-1 bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
-                        <Package size={11} /> Shipment
+                    <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
+                      <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
+                        <Package size={10} /> Shipment
                       </p>
-                      <p className="text-sm font-bold text-gray-800">{match.request?.item_name}</p>
+                      <p className="text-base font-bold text-gray-900 truncate">{match.request?.item_name}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{match.request?.category}</p>
-                      <p className="text-xs text-purple-600 font-semibold mt-1">
-                        {match.request?.weight_kg}kg • ${match.request?.budget_per_kg}/kg budget
+                      <p className="text-xs font-semibold text-violet-600 mt-2">
+                        {match.request?.weight_kg}kg · ${match.request?.budget_per_kg}/kg budget
                       </p>
                     </div>
                   </div>
 
-{/* Deal Value + Fee Preview */}
-                  {(() => {
-                    const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
-                    let fetchrPct = 10;
-                    if (subtotal >= 500) fetchrPct = 7;
-                    else if (subtotal >= 200) fetchrPct = 8.5;
-                    else if (subtotal < 20) fetchrPct = 12;
-                    const fetchrFee = subtotal * fetchrPct / 100;
-                    const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
-                    const totalFees = fetchrFee + stripeFee;
-                    const totalCharged = subtotal + totalFees;
-                    const travelerReceives = subtotal - fetchrFee;
-
-                    return (
-                      <div className="bg-purple-50 rounded-xl p-3 mb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="text-xs text-gray-500">Deal subtotal</p>
-                            <p className="text-lg font-bold text-purple-600">${subtotal.toFixed(2)}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-gray-500">{match.flight?.available_kg}kg available</p>
-                            <p className="text-xs text-gray-500">${match.flight?.price_per_kg}/kg</p>
-                          </div>
-                        </div>
-                        <div className="border-t border-purple-100 pt-2 space-y-1 text-xs">
-                          <div className="flex justify-between text-gray-500">
-                            <span>Fetchr fee ({fetchrPct}%)</span>
-                            <span>${fetchrFee.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-500">
-                            <span>Processing fee</span>
-                            <span>${stripeFee.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between font-semibold text-gray-700 border-t border-purple-100 pt-1">
-                            <span>Shipper pays</span>
-                            <span>${totalCharged.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between text-green-600 font-semibold">
-                            <span>Traveler receives</span>
-                            <span>${travelerReceives.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Other Party */}
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={() => fetchProfile(other?.id)}
-                      className="flex items-center gap-3 hover:bg-gray-50 rounded-xl p-2 -ml-2 transition"
-                    >
-                      <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0 overflow-hidden">
-                        {avatarUrl
-                          ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" />
-                          : getInitials(other?.full_name)
-                        }
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-semibold text-gray-800">
-                          {other?.full_name || 'User'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {other?.rating > 0 ? (
-                            <div className="flex items-center gap-1">
-                              <Star size={12} className="text-yellow-400 fill-yellow-400" />
-                              <span className="text-xs text-gray-600 font-semibold">{other.rating.toFixed(1)}</span>
-                              <span className="text-xs text-gray-400">({other.total_reviews})</span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">New member</span>
-                          )}
-                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                            {isTraveler(match) ? '📦 Shipper' : '✈️ Traveler'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-purple-500 mt-0.5">Tap to view profile →</p>
-                      </div>
-                    </button>
-
-                    {other?.verified && (
-                      <div className="flex items-center gap-1 bg-blue-50 text-blue-600 text-xs font-semibold px-3 py-1.5 rounded-full">
-                        <Shield size={12} /> Verified
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Item photo if available */}
-                  {match.request?.item_photo_url && (
-                    <div className="mb-4">
-                      <img
-                        src={match.request.item_photo_url}
-                        alt={match.request.item_name}
-                        className="w-full h-32 object-cover rounded-xl"
-                      />
+                  {/* Shop & Ship badge */}
+                  {match.flight?.delivery_type === 'both' && (
+                    <div className="flex items-center gap-2 bg-blue-50 text-blue-700 rounded-xl px-3 py-2 mb-4 border border-blue-100">
+                      <ShoppingBag size={14} />
+                      <p className="text-xs font-semibold">Shop & Ship available — traveler can purchase items at destination</p>
                     </div>
                   )}
 
-                  {/* Action Buttons */}
+                  {/* Fee preview */}
+                  <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deal Preview</p>
+                      <span className="badge badge-purple">{fees.fetchrPct}% Fetchr fee</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-gray-400">Deal value</p>
+                        <p className="text-base font-bold text-gray-900">${fees.subtotal.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400">Shipper pays</p>
+                        <p className="text-base font-bold text-violet-600">${fees.totalCharged.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400">Traveler gets</p>
+                        <p className="text-base font-bold text-emerald-600">${fees.travelerReceives.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Other party */}
+                  <button
+                    onClick={() => fetchProfile(other?.id)}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100 mb-4 group">
+                    <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center text-sm font-bold text-violet-600 flex-shrink-0 overflow-hidden">
+                      {avatarUrl
+                        ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" />
+                        : getInitials(other?.full_name)
+                      }
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-bold text-gray-900">{other?.full_name || 'User'}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {other?.rating > 0 ? (
+                          <div className="flex items-center gap-1">
+                            {[1,2,3,4,5].map(s => (
+                              <Star key={s} size={11}
+                                className={s <= Math.round(other.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
+                            ))}
+                            <span className="text-xs text-gray-500 ml-0.5">{other.rating.toFixed(1)} ({other.total_reviews})</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">New member</span>
+                        )}
+                        {other?.verified && (
+                          <span className="badge badge-blue"><Shield size={9} /> Verified</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-violet-500 font-semibold group-hover:gap-2 transition-all">
+                      View profile <ChevronRight size={14} />
+                    </div>
+                  </button>
+
+                  {/* Item photo */}
+                  {match.request?.item_photo_url && (
+                    <div className="mb-4 rounded-xl overflow-hidden border border-gray-100">
+                      <img src={match.request.item_photo_url} alt={match.request.item_name}
+                        className="w-full h-36 object-cover" />
+                    </div>
+                  )}
+
+                  {/* Actions */}
                   {!myAccepted ? (
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleDecline(match.id)}
                         disabled={!!acting[match.id]}
-                        className="flex-1 flex items-center justify-center gap-2 border border-gray-200 text-gray-500 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition disabled:opacity-50"
-                      >
+                        className="flex-1 flex items-center justify-center gap-2 border-2 border-gray-200 text-gray-500 rounded-xl py-3 text-sm font-semibold hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50">
                         <XCircle size={16} />
                         {acting[match.id] === 'declining' ? 'Declining...' : 'Decline'}
                       </button>
                       <button
                         onClick={() => handleAccept(match.id)}
                         disabled={!!acting[match.id]}
-                        className="flex-2 flex-[2] flex items-center justify-center gap-2 bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50"
-                      >
+                        className="flex-[2] flex items-center justify-center gap-2 btn-primary py-3 rounded-xl text-sm disabled:opacity-50">
                         <CheckCircle size={16} />
                         {acting[match.id] === 'accepting' ? 'Accepting...' : 'Accept Match'}
                       </button>
                     </div>
                   ) : (
-                    <div className="bg-green-50 rounded-xl p-3 flex items-center gap-2">
-                      <CheckCircle size={16} className="text-green-500" />
-                      <p className="text-sm text-green-700 font-semibold">
+                    <div className="flex items-center gap-3 bg-emerald-50 rounded-xl p-3.5 border border-emerald-100">
+                      <CheckCircle size={18} className="text-emerald-500 flex-shrink-0" />
+                      <p className="text-sm text-emerald-700 font-semibold">
                         You accepted — waiting for {isTraveler(match) ? 'shipper' : 'traveler'} to confirm
                       </p>
                     </div>
@@ -341,49 +327,44 @@ const Matches = ({ session }) => {
 
       {/* Profile Modal */}
       {viewingProfile && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between rounded-t-2xl">
-              <h3 className="font-bold text-gray-800">User Profile</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-float animate-slide-up">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-3xl">
+              <h3 className="font-bold text-gray-900">User Profile</h3>
               <button onClick={() => setViewingProfile(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+                className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
                 <X size={18} className="text-gray-500" />
               </button>
             </div>
 
             {profileLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <p className="text-gray-400 text-sm">Loading profile...</p>
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
               <div className="p-5">
-                {/* Avatar + Name */}
+                {/* Avatar + name */}
                 <div className="flex items-center gap-4 mb-5">
-                  <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center text-xl font-bold text-purple-600 overflow-hidden flex-shrink-0">
+                  <div className="w-18 h-18 rounded-2xl bg-violet-100 flex items-center justify-center text-xl font-bold text-violet-600 overflow-hidden flex-shrink-0 w-16 h-16">
                     {viewingProfile?.avatar_url ? (
-                      <img
-                        src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
-                        alt={viewingProfile.full_name}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
+                        alt={viewingProfile.full_name} className="w-full h-full object-cover" />
                     ) : getInitials(viewingProfile?.full_name)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold text-gray-800">{viewingProfile?.full_name || 'User'}</h2>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-bold text-gray-900">{viewingProfile?.full_name || 'User'}</h2>
                       {viewingProfile?.verified && (
-                        <span className="flex items-center gap-1 bg-blue-50 text-blue-600 text-xs font-semibold px-2 py-0.5 rounded-full">
-                          <Shield size={10} /> Verified
-                        </span>
+                        <span className="badge badge-blue"><Shield size={10} /> Verified</span>
                       )}
                     </div>
                     {viewingProfile?.rating > 0 ? (
                       <div className="flex items-center gap-1 mt-1">
-                        {[1,2,3,4,5].map(star => (
-                          <Star key={star} size={14}
-                            className={star <= Math.round(viewingProfile.rating) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'} />
+                        {[1,2,3,4,5].map(s => (
+                          <Star key={s} size={14}
+                            className={s <= Math.round(viewingProfile.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
                         ))}
-                        <span className="text-sm font-semibold text-gray-700 ml-1">{viewingProfile.rating.toFixed(1)}</span>
+                        <span className="text-sm font-bold text-gray-700 ml-1">{viewingProfile.rating.toFixed(1)}</span>
                         <span className="text-xs text-gray-400">({viewingProfile.total_reviews} reviews)</span>
                       </div>
                     ) : (
@@ -394,49 +375,43 @@ const Matches = ({ session }) => {
 
                 {/* Bio */}
                 {viewingProfile?.bio && (
-                  <div className="bg-gray-50 rounded-xl p-3 mb-4">
-                    <p className="text-sm text-gray-600 italic">"{viewingProfile.bio}"</p>
+                  <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
+                    <p className="text-sm text-gray-600 italic leading-relaxed">"{viewingProfile.bio}"</p>
                   </div>
                 )}
 
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="bg-purple-50 rounded-xl p-3 text-center">
-                    <p className="text-xl font-bold text-purple-600">{viewingProfile?.totalDeals || 0}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Deals Done</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-xl p-3 text-center">
-                    <p className="text-xl font-bold text-blue-600">{viewingProfile?.totalFlights || 0}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Flights</p>
-                  </div>
-                  <div className="bg-green-50 rounded-xl p-3 text-center">
-                    <p className="text-xl font-bold text-green-600">
-                      {viewingProfile?.response_rate || 100}%
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">Response</p>
-                  </div>
+                  {[
+                    { label: 'Deals Done', value: viewingProfile?.totalDeals || 0, color: 'bg-violet-50 text-violet-700' },
+                    { label: 'Flights', value: viewingProfile?.totalFlights || 0, color: 'bg-blue-50 text-blue-700' },
+                    { label: 'Response', value: `${viewingProfile?.response_rate || 100}%`, color: 'bg-emerald-50 text-emerald-700' },
+                  ].map((stat, i) => (
+                    <div key={i} className={`${stat.color} rounded-xl p-3 text-center`}>
+                      <p className="text-xl font-bold">{stat.value}</p>
+                      <p className="text-xs font-medium mt-0.5 opacity-70">{stat.label}</p>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Details */}
-                <div className="space-y-2">
+                <div className="space-y-2.5 mb-5">
                   {viewingProfile?.nationality && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Globe size={15} className="text-purple-400" />
+                    <div className="flex items-center gap-2.5 text-sm text-gray-600">
+                      <Globe size={15} className="text-violet-400 flex-shrink-0" />
                       <span>{viewingProfile.nationality}</span>
                     </div>
                   )}
                   {viewingProfile?.languages?.length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Award size={15} className="text-purple-400" />
+                    <div className="flex items-center gap-2.5 text-sm text-gray-600">
+                      <Award size={15} className="text-violet-400 flex-shrink-0" />
                       <span>{viewingProfile.languages.join(', ')}</span>
                     </div>
                   )}
                 </div>
 
-                <button
-                  onClick={() => setViewingProfile(null)}
-                  className="w-full mt-5 bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition"
-                >
+                <button onClick={() => setViewingProfile(null)}
+                  className="w-full btn-primary py-3 rounded-xl">
                   Close Profile
                 </button>
               </div>
