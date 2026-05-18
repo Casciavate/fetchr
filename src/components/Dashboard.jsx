@@ -669,6 +669,11 @@ const Dashboard = ({ session }) => {
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+export default Dashboard;
             <button
               key={item.id}
               onClick={() => navigate(item.id)}
