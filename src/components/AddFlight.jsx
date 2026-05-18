@@ -326,8 +326,8 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
   const ref = useRef(null);
 
   React.useEffect(() => {
-    if (value?.code && !query) {
-      setQuery(`${value.city} (${value.code})`);
+    if (value && value.code && !query) {
+      setQuery(value.city + ' (' + value.code + ')');
     }
   }, [value]);
 
@@ -353,7 +353,7 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
   };
 
   const handleSelect = (airport) => {
-    setQuery(`${airport.city} (${airport.code})`);
+    setQuery(airport.city + ' (' + airport.code + ')');
     setOpen(false);
     setResults([]);
     onChange(airport);
@@ -387,7 +387,7 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-800">{airport.city}</p>
-                <p className="text-xs text-gray-400 truncate">{airport.name} • {airport.country}</p>
+                <p className="text-xs text-gray-400 truncate">{airport.name} - {airport.country}</p>
               </div>
             </button>
           ))}
@@ -423,24 +423,26 @@ const AddFlight = ({ session }) => {
     setSearching(true);
     const upper = flightNumberSearch.toUpperCase().trim();
     const airlineCode = upper.replace(/[0-9\s]/g, '');
-    const airline = Object.entries(AIRLINE_CODES).find(([, code]) => code === airlineCode)?.[0];
+    const found = Object.entries(AIRLINE_CODES).find(function(entry) { return entry[1] === airlineCode; });
+    const airline = found ? found[0] : null;
     if (airline) {
-      setForm(prev => ({ ...prev, airline, flight_number: upper }));
+      setForm(function(prev) { return Object.assign({}, prev, { airline: airline, flight_number: upper }); });
       setError('');
     } else {
       setError('Airline not detected. Please select it manually below.');
-      setForm(prev => ({ ...prev, flight_number: upper }));
+      setForm(function(prev) { return Object.assign({}, prev, { flight_number: upper }); });
     }
     setSearching(false);
   };
 
   const toggleCategory = (cat) => {
-    setForm(prev => ({
-      ...prev,
-      categories: prev.categories.includes(cat)
-        ? prev.categories.filter(c => c !== cat)
-        : [...prev.categories, cat]
-    }));
+    setForm(function(prev) {
+      return Object.assign({}, prev, {
+        categories: prev.categories.includes(cat)
+          ? prev.categories.filter(function(c) { return c !== cat; })
+          : prev.categories.concat([cat])
+      });
+    });
   };
 
   const validateStep1 = () => {
@@ -478,7 +480,7 @@ const AddFlight = ({ session }) => {
   const saveFlight = async () => {
     setLoading(true);
     setError('');
-    const { error } = await supabase.from('flights').insert([{
+    const result = await supabase.from('flights').insert([{
       user_id: session.user.id,
       from_city: form.from_city,
       from_code: form.from_code,
@@ -497,8 +499,8 @@ const AddFlight = ({ session }) => {
       handover_location_departure: form.handover_location_departure,
       handover_location_arrival: form.handover_location_arrival,
     }]);
-    if (error) {
-      setError(error.message);
+    if (result.error) {
+      setError(result.error.message);
     } else {
       setSuccess(true);
     }
@@ -517,7 +519,6 @@ const AddFlight = ({ session }) => {
     });
   };
 
-  // Earnings calculations
   const grossEarnings = form.available_kg && form.price_per_kg
     ? parseFloat(form.available_kg) * parseFloat(form.price_per_kg) : 0;
   const netShippingEarnings = grossEarnings * 0.90;
@@ -533,21 +534,25 @@ const AddFlight = ({ session }) => {
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Flight Listed!</h2>
         <p className="text-gray-400 mb-6">
-          Your flight from <strong>{form.from_city}</strong> to <strong>{form.to_city}</strong> is now live.
+          Your flight from {form.from_city} to {form.to_city} is now live.
         </p>
         <div className="bg-purple-50 rounded-2xl p-4 mb-6 text-left space-y-2">
-          {[
-            { label: 'Route', value: `${form.from_code} -> ${form.to_code}` },
-            { label: 'Date', value: new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
-            { label: 'Capacity', value: `${form.available_kg}kg @ $${form.price_per_kg}/kg` },
-            { label: 'Service', value: form.delivery_type === 'both' ? `Handover + Shop and Ship (+$${shopFeeGross}/trip)` : 'Handover only' },
-            { label: 'Max net earnings', value: `$${netWithShop} (after Fetchr 10%)` },
-          ].map((row, i) => (
-            <div key={i} className="flex justify-between text-sm">
-              <span className="text-gray-500">{row.label}</span>
-              <span className="font-semibold text-gray-800">{row.value}</span>
-            </div>
-          ))}
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Route</span>
+            <span className="font-semibold">{form.from_code} to {form.to_code}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Date</span>
+            <span className="font-semibold">{new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Capacity</span>
+            <span className="font-semibold">{form.available_kg}kg at ${form.price_per_kg}/kg</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Max net earnings</span>
+            <span className="font-semibold text-green-600">${netWithShop} after Fetchr 10%</span>
+          </div>
         </div>
         <button onClick={resetForm}
           className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
@@ -564,22 +569,18 @@ const AddFlight = ({ session }) => {
         <p className="text-gray-400 text-sm mt-1">Earn money by delivering items on your next trip</p>
       </div>
 
-      {/* Progress */}
       <div className="flex items-center gap-2 mb-8">
         {[{ n: 1, label: 'Flight Info' }, { n: 2, label: 'Capacity' }, { n: 3, label: 'Delivery' }].map((s, i) => (
           <React.Fragment key={s.n}>
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition ${
-                step > s.n ? 'bg-green-500 text-white' :
-                step === s.n ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-400'
-              }`}>
+              <div className={'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition ' + (step > s.n ? 'bg-green-500 text-white' : step === s.n ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-400')}>
                 {step > s.n ? <CheckCircle size={16} /> : s.n}
               </div>
-              <span className={`text-xs font-medium hidden sm:block ${step === s.n ? 'text-purple-600' : 'text-gray-400'}`}>
+              <span className={'text-xs font-medium hidden sm:block ' + (step === s.n ? 'text-purple-600' : 'text-gray-400')}>
                 {s.label}
               </span>
             </div>
-            {i < 2 && <div className={`flex-1 h-0.5 ${step > s.n ? 'bg-green-400' : 'bg-gray-200'}`} />}
+            {i < 2 && <div className={'flex-1 h-0.5 ' + (step > s.n ? 'bg-green-400' : 'bg-gray-200')} />}
           </React.Fragment>
         ))}
       </div>
@@ -590,21 +591,18 @@ const AddFlight = ({ session }) => {
         </div>
       )}
 
-      {/* STEP 1 */}
       {step === 1 && (
         <div className="space-y-4">
           <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-purple-700 mb-1">Quick Fill — Flight Number</p>
-            <p className="text-xs text-gray-500 mb-2">
-              Auto-detects your airline. You still need to select airports and date below.
-            </p>
+            <p className="text-sm font-semibold text-purple-700 mb-1">Quick Fill - Flight Number</p>
+            <p className="text-xs text-gray-500 mb-2">Auto-detects your airline. Select airports and date below.</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 placeholder="e.g. EK203, QR542..."
                 value={flightNumberSearch}
                 onChange={e => setFlightNumberSearch(e.target.value.toUpperCase())}
-                onKeyDown={e => e.key === 'Enter' && searchByFlightNumber()}
+                onKeyDown={e => { if (e.key === 'Enter') searchByFlightNumber(); }}
                 className="flex-1 border border-purple-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
               />
               <button type="button" onClick={searchByFlightNumber} disabled={searching}
@@ -621,14 +619,14 @@ const AddFlight = ({ session }) => {
           <AirportSearch
             label="Departure Airport *"
             value={{ city: form.from_city, code: form.from_code }}
-            onChange={airport => setForm(prev => ({ ...prev, from_city: airport.city, from_code: airport.code }))}
+            onChange={airport => setForm(prev => Object.assign({}, prev, { from_city: airport.city, from_code: airport.code }))}
             placeholder="Search city, airport or code..."
           />
 
           <AirportSearch
             label="Arrival Airport *"
             value={{ city: form.to_city, code: form.to_code }}
-            onChange={airport => setForm(prev => ({ ...prev, to_city: airport.city, to_code: airport.code }))}
+            onChange={airport => setForm(prev => Object.assign({}, prev, { to_city: airport.city, to_code: airport.code }))}
             placeholder="Search city, airport or code..."
           />
 
@@ -637,7 +635,7 @@ const AddFlight = ({ session }) => {
             <div className="relative">
               <Calendar size={16} className="absolute left-3 top-3.5 text-gray-400" />
               <input type="date" min={today} value={form.flight_date}
-                onChange={e => setForm({ ...form, flight_date: e.target.value })}
+                onChange={e => setForm(Object.assign({}, form, { flight_date: e.target.value }))}
                 className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
             </div>
           </div>
@@ -646,7 +644,7 @@ const AddFlight = ({ session }) => {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Airline *</label>
             <div className="relative">
               <Plane size={16} className="absolute left-3 top-3.5 text-gray-400" />
-              <select value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })}
+              <select value={form.airline} onChange={e => setForm(Object.assign({}, form, { airline: e.target.value }))}
                 className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 appearance-none text-gray-700">
                 <option value="">Select airline...</option>
                 {AIRLINES.sort().map(a => <option key={a} value={a}>{a}</option>)}
@@ -659,7 +657,7 @@ const AddFlight = ({ session }) => {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Flight Number</label>
             <input type="text" placeholder="e.g. EK203"
               value={form.flight_number}
-              onChange={e => setForm({ ...form, flight_number: e.target.value.toUpperCase() })}
+              onChange={e => setForm(Object.assign({}, form, { flight_number: e.target.value.toUpperCase() }))}
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
           </div>
 
@@ -670,7 +668,6 @@ const AddFlight = ({ session }) => {
         </div>
       )}
 
-      {/* STEP 2 */}
       {step === 2 && (
         <div className="space-y-4">
           <div className="bg-gray-50 rounded-xl p-3 flex items-center gap-2 text-sm">
@@ -678,19 +675,16 @@ const AddFlight = ({ session }) => {
             <span className="font-semibold">{form.from_city} ({form.from_code})</span>
             <span className="text-gray-400">to</span>
             <span className="font-semibold">{form.to_city} ({form.to_code})</span>
-            <span className="text-gray-400 ml-auto text-xs">
-              {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
-            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Available Weight (kg) *</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Available kg *</label>
               <div className="relative">
                 <Weight size={16} className="absolute left-3 top-3.5 text-gray-400" />
                 <input type="number" placeholder="e.g. 10" min="0.5" max="50" step="0.5"
                   value={form.available_kg}
-                  onChange={e => setForm({ ...form, available_kg: e.target.value })}
+                  onChange={e => setForm(Object.assign({}, form, { available_kg: e.target.value }))}
                   className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
               </div>
             </div>
@@ -700,7 +694,7 @@ const AddFlight = ({ session }) => {
                 <DollarSign size={16} className="absolute left-3 top-3.5 text-gray-400" />
                 <input type="number" placeholder="e.g. 10" min="1" step="0.5"
                   value={form.price_per_kg}
-                  onChange={e => setForm({ ...form, price_per_kg: e.target.value })}
+                  onChange={e => setForm(Object.assign({}, form, { price_per_kg: e.target.value }))}
                   className="w-full pl-9 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
               </div>
             </div>
@@ -708,9 +702,7 @@ const AddFlight = ({ session }) => {
 
           {grossEarnings > 0 && (
             <div className="bg-green-50 border border-green-100 rounded-xl p-4">
-              <p className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1">
-                <Info size={13} /> Earnings Estimate (if fully booked)
-              </p>
+              <p className="text-xs font-semibold text-green-700 mb-2">Earnings Estimate (if fully booked)</p>
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between text-gray-600">
                   <span>Gross ({form.available_kg}kg x ${form.price_per_kg})</span>
@@ -729,17 +721,11 @@ const AddFlight = ({ session }) => {
           )}
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              What items can you carry? *
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">What items can you carry? *</label>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(cat => (
                 <button key={cat} type="button" onClick={() => toggleCategory(cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                    form.categories.includes(cat)
-                      ? 'bg-purple-600 text-white border-purple-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
-                  }`}>
+                  className={'px-3 py-1.5 rounded-full text-xs font-medium border transition ' + (form.categories.includes(cat) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300')}>
                   {cat}
                 </button>
               ))}
@@ -748,8 +734,8 @@ const AddFlight = ({ session }) => {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Notes (optional)</label>
-            <textarea placeholder="Any special conditions or restrictions..."
-              value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+            <textarea placeholder="Any special conditions..."
+              value={form.notes} onChange={e => setForm(Object.assign({}, form, { notes: e.target.value }))}
               rows={2} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none" />
           </div>
 
@@ -759,14 +745,13 @@ const AddFlight = ({ session }) => {
               Back
             </button>
             <button onClick={handleNext}
-              className="flex-2 flex-[2] bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
+              className="flex-1 bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 transition">
               Continue to Delivery
             </button>
           </div>
         </div>
       )}
 
-      {/* STEP 3 */}
       {step === 3 && (
         <div className="space-y-4">
           <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1">
@@ -776,72 +761,46 @@ const AddFlight = ({ session }) => {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Capacity</span>
-              <span className="font-semibold">{form.available_kg}kg @ ${form.price_per_kg}/kg</span>
+              <span className="font-semibold">{form.available_kg}kg at ${form.price_per_kg}/kg</span>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              What delivery service do you offer? *
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Delivery service *</label>
             <div className="space-y-2">
               {[
-                {
-                  value: 'handover',
-                  icon: '🤝',
-                  label: 'Handover Only',
-                  desc: 'Shipper hands item to you at departure. You hand it to recipient at arrival.'
-                },
-                {
-                  value: 'both',
-                  icon: '🛍️',
-                  label: 'Handover + Shop and Ship',
-                  desc: 'You can also purchase items at the destination for an additional service fee.'
-                },
+                { value: 'handover', icon: '🤝', label: 'Handover Only', desc: 'Shipper hands item to you at departure. You hand it to recipient at arrival.' },
+                { value: 'both', icon: '🛍️', label: 'Handover + Shop and Ship', desc: 'You can also purchase items at the destination for an additional fee.' },
               ].map(opt => (
                 <button key={opt.value} type="button"
-                  onClick={() => setForm({ ...form, delivery_type: opt.value })}
-                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition text-left ${
-                    form.delivery_type === opt.value
-                      ? 'border-purple-400 bg-purple-50'
-                      : 'border-gray-200 hover:border-purple-200 bg-white'
-                  }`}>
+                  onClick={() => setForm(Object.assign({}, form, { delivery_type: opt.value }))}
+                  className={'w-full flex items-start gap-3 p-4 rounded-xl border-2 transition text-left ' + (form.delivery_type === opt.value ? 'border-purple-400 bg-purple-50' : 'border-gray-200 hover:border-purple-200 bg-white')}>
                   <span className="text-2xl flex-shrink-0">{opt.icon}</span>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-800">{opt.label}</p>
-                      {form.delivery_type === opt.value && <CheckCircle size={15} className="text-purple-600" />}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{opt.desc}</p>
+                    <p className="text-sm font-bold text-gray-800">{opt.label}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
                   </div>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Departure Handover Location
-              </label>
-              <p className="text-xs text-gray-400 mb-1.5">Where should the shipper hand the item to you before departure?</p>
-              <input type="text"
-                placeholder="e.g. Dubai Airport Terminal 3 departures, Hotel lobby..."
-                value={form.handover_location_departure}
-                onChange={e => setForm({ ...form, handover_location_departure: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Arrival Handover Location
-              </label>
-              <p className="text-xs text-gray-400 mb-1.5">Where will you hand the item to the recipient at the destination?</p>
-              <input type="text"
-                placeholder="e.g. Heathrow arrivals hall, Agreed meeting point..."
-                value={form.handover_location_arrival}
-                onChange={e => setForm({ ...form, handover_location_arrival: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
-            </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Departure Handover Location</label>
+            <p className="text-xs text-gray-400 mb-1.5">Where should the shipper hand the item to you before departure?</p>
+            <input type="text" placeholder="e.g. Dubai Airport Terminal 3 departures..."
+              value={form.handover_location_departure}
+              onChange={e => setForm(Object.assign({}, form, { handover_location_departure: e.target.value }))}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Arrival Handover Location</label>
+            <p className="text-xs text-gray-400 mb-1.5">Where will you hand the item to the recipient at the destination?</p>
+            <input type="text" placeholder="e.g. Heathrow arrivals hall..."
+              value={form.handover_location_arrival}
+              onChange={e => setForm(Object.assign({}, form, { handover_location_arrival: e.target.value }))}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
           </div>
 
           {form.delivery_type === 'both' && (
@@ -850,93 +809,43 @@ const AddFlight = ({ session }) => {
                 <ShoppingBag size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-semibold text-blue-700">Shop and Ship Service Fee</p>
-                  <p className="text-xs text-blue-600 mt-0.5">
-                    Your fee for going to the store and purchasing. Item purchase price is added separately by the shipper via escrow.
-                  </p>
+                  <p className="text-xs text-blue-600 mt-0.5">Your fee for going to the store. Item purchase price added separately by shipper.</p>
                 </div>
               </div>
               <div className="relative">
                 <DollarSign size={15} className="absolute left-3 top-3.5 text-gray-400" />
                 <input type="number" placeholder="e.g. 15.00" min="0" step="0.5"
                   value={form.shop_and_ship_fee}
-                  onChange={e => setForm({ ...form, shop_and_ship_fee: e.target.value })}
+                  onChange={e => setForm(Object.assign({}, form, { shop_and_ship_fee: e.target.value }))}
                   className="w-full pl-8 border border-blue-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
               </div>
-
               {grossEarnings > 0 && (
                 <div className="bg-white rounded-xl p-3 space-y-1 text-xs">
-                  <p className="font-semibold text-gray-700 mb-2">Your potential earnings</p>
+                  <p className="font-semibold text-gray-700 mb-1">Your potential earnings</p>
                   <div className="flex justify-between text-gray-500">
-                    <span>Net shipping earnings (after 10%)</span>
+                    <span>Net shipping (after 10%)</span>
                     <span>${netShippingEarnings.toFixed(2)}</span>
                   </div>
                   {shopFeeGross > 0 && (
-                    <>
+                    <div>
                       <div className="flex justify-between text-gray-500">
                         <span>Shop and Ship fee (gross)</span>
                         <span>${shopFeeGross.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-red-400">
-                        <span>Fetchr commission on Shop and Ship (10%)</span>
+                        <span>Fetchr commission (10%)</span>
                         <span>-${(shopFeeGross * 0.10).toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-gray-500">
-                        <span>Net Shop and Ship earnings</span>
-                        <span>${shopFeeNet.toFixed(2)}</span>
-                      </div>
-                    </>
+                    </div>
                   )}
                   <div className="flex justify-between font-bold text-green-700 border-t border-gray-100 pt-1">
-                    <span>Total net earnings per booking</span>
+                    <span>Total net per booking</span>
                     <span>${netWithShop}</span>
                   </div>
-                  <p className="text-gray-400 pt-1">Item purchase price paid separately by shipper</p>
                 </div>
               )}
             </div>
           )}
-
-          <div className="bg-purple-50 rounded-xl p-4 space-y-2">
-            <p className="text-xs font-bold text-purple-700 mb-2">Listing Preview</p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <p className="text-gray-400">Route</p>
-                <p className="font-semibold text-gray-700">{form.from_city} to {form.to_city}</p>
-              </div>
-              <div>
-                <p className="text-gray-400">Date</p>
-                <p className="font-semibold text-gray-700">
-                  {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not set'}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400">Capacity</p>
-                <p className="font-semibold text-gray-700">{form.available_kg}kg @ ${form.price_per_kg}/kg</p>
-              </div>
-              <div>
-                <p className="text-gray-400">Net earnings</p>
-                <p className="font-semibold text-green-600">${netWithShop}</p>
-              </div>
-              {form.categories.length > 0 && (
-                <div className="col-span-2">
-                  <p className="text-gray-400">Categories</p>
-                  <p className="font-semibold text-gray-700">{form.categories.join(', ')}</p>
-                </div>
-              )}
-              {form.handover_location_departure && (
-                <div className="col-span-2">
-                  <p className="text-gray-400">Departure handover</p>
-                  <p className="font-semibold text-gray-700">{form.handover_location_departure}</p>
-                </div>
-              )}
-              {form.handover_location_arrival && (
-                <div className="col-span-2">
-                  <p className="text-gray-400">Arrival handover</p>
-                  <p className="font-semibold text-gray-700">{form.handover_location_arrival}</p>
-                </div>
-              )}
-            </div>
-          </div>
 
           <div className="flex gap-3">
             <button onClick={() => setStep(2)}
@@ -944,11 +853,8 @@ const AddFlight = ({ session }) => {
               Back
             </button>
             <button onClick={saveFlight} disabled={loading}
-              className="flex-[2] bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
-              {loading
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Publishing...</>
-                : <><Plane size={16} />Publish Flight Listing</>
-              }
+              className="flex-1 bg-purple-600 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+              {loading ? 'Publishing...' : 'Publish Flight'}
             </button>
           </div>
         </div>
