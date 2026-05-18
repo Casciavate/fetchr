@@ -671,7 +671,6 @@ const Dashboard = ({ session }) => {
       </div>
     </div>
   );
-);
 };
 
 export default Dashboard;
