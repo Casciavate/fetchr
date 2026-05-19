@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Package, DollarSign, Weight, Calendar,
   CheckCircle, AlertCircle, Camera, X,
-  ShoppingBag, MapPin, Link, Search, User, Phone
+  ShoppingBag, MapPin, Link, User, Phone,
+  AlertTriangle, Shield, Search, Info
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -20,7 +21,7 @@ const CURRENCIES = [
   { code: 'AED', symbol: 'AED', name: 'UAE Dirham' },
   { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal' },
   { code: 'QAR', symbol: 'QAR', name: 'Qatari Riyal' },
-  { code: 'KWD', symbol: 'KWD', name: 'Kuwaiti Dinar' },
+  { code: 'KWI', symbol: 'KWD', name: 'Kuwaiti Dinar' },
   { code: 'BHD', symbol: 'BHD', name: 'Bahraini Dinar' },
   { code: 'OMR', symbol: 'OMR', name: 'Omani Rial' },
   { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
@@ -40,68 +41,120 @@ const AIRPORTS = [
   { code: 'AUH', city: 'Abu Dhabi', name: 'Zayed International', country: 'UAE' },
   { code: 'SHJ', city: 'Sharjah', name: 'Sharjah International', country: 'UAE' },
   { code: 'RKT', city: 'Ras Al Khaimah', name: 'RAK International', country: 'UAE' },
+  { code: 'FJR', city: 'Fujairah', name: 'Fujairah International', country: 'UAE' },
   { code: 'DOH', city: 'Doha', name: 'Hamad International', country: 'Qatar' },
   { code: 'KWI', city: 'Kuwait City', name: 'Kuwait International', country: 'Kuwait' },
   { code: 'BAH', city: 'Manama', name: 'Bahrain International', country: 'Bahrain' },
   { code: 'RUH', city: 'Riyadh', name: 'King Khalid International', country: 'Saudi Arabia' },
   { code: 'JED', city: 'Jeddah', name: 'King Abdulaziz International', country: 'Saudi Arabia' },
   { code: 'DMM', city: 'Dammam', name: 'King Fahd International', country: 'Saudi Arabia' },
+  { code: 'MED', city: 'Medina', name: 'Prince Mohammad Bin Abdulaziz', country: 'Saudi Arabia' },
   { code: 'MCT', city: 'Muscat', name: 'Muscat International', country: 'Oman' },
+  { code: 'SLL', city: 'Salalah', name: 'Salalah Airport', country: 'Oman' },
   { code: 'AMM', city: 'Amman', name: 'Queen Alia International', country: 'Jordan' },
   { code: 'BEY', city: 'Beirut', name: 'Rafic Hariri International', country: 'Lebanon' },
   { code: 'CAI', city: 'Cairo', name: 'Cairo International', country: 'Egypt' },
+  { code: 'HRG', city: 'Hurghada', name: 'Hurghada International', country: 'Egypt' },
+  { code: 'SSH', city: 'Sharm El Sheikh', name: 'Sharm El Sheikh International', country: 'Egypt' },
   { code: 'TLV', city: 'Tel Aviv', name: 'Ben Gurion International', country: 'Israel' },
+  { code: 'BGW', city: 'Baghdad', name: 'Baghdad International', country: 'Iraq' },
+  { code: 'GYD', city: 'Baku', name: 'Heydar Aliyev International', country: 'Azerbaijan' },
+  { code: 'TBS', city: 'Tbilisi', name: 'Shota Rustaveli International', country: 'Georgia' },
   { code: 'LHR', city: 'London', name: 'Heathrow', country: 'UK' },
   { code: 'LGW', city: 'London', name: 'Gatwick', country: 'UK' },
   { code: 'STN', city: 'London', name: 'Stansted', country: 'UK' },
+  { code: 'LTN', city: 'London', name: 'Luton', country: 'UK' },
   { code: 'MAN', city: 'Manchester', name: 'Manchester Airport', country: 'UK' },
   { code: 'BHX', city: 'Birmingham', name: 'Birmingham Airport', country: 'UK' },
   { code: 'EDI', city: 'Edinburgh', name: 'Edinburgh Airport', country: 'UK' },
+  { code: 'GLA', city: 'Glasgow', name: 'Glasgow Airport', country: 'UK' },
   { code: 'CDG', city: 'Paris', name: 'Charles de Gaulle', country: 'France' },
   { code: 'ORY', city: 'Paris', name: 'Orly', country: 'France' },
   { code: 'NCE', city: 'Nice', name: 'Nice Cote d Azur', country: 'France' },
+  { code: 'LYS', city: 'Lyon', name: 'Saint-Exupery', country: 'France' },
+  { code: 'MRS', city: 'Marseille', name: 'Marseille Provence', country: 'France' },
   { code: 'FRA', city: 'Frankfurt', name: 'Frankfurt Airport', country: 'Germany' },
   { code: 'MUC', city: 'Munich', name: 'Munich Airport', country: 'Germany' },
   { code: 'BER', city: 'Berlin', name: 'Brandenburg Airport', country: 'Germany' },
-  { code: 'AMS', city: 'Amsterdam', name: 'Schiphol', country: 'Netherlands' },
-  { code: 'MAD', city: 'Madrid', name: 'Adolfo Suarez Barajas', country: 'Spain' },
-  { code: 'BCN', city: 'Barcelona', name: 'El Prat', country: 'Spain' },
-  { code: 'FCO', city: 'Rome', name: 'Fiumicino', country: 'Italy' },
-  { code: 'MXP', city: 'Milan', name: 'Malpensa', country: 'Italy' },
-  { code: 'VCE', city: 'Venice', name: 'Marco Polo', country: 'Italy' },
-  { code: 'IST', city: 'Istanbul', name: 'Istanbul Airport', country: 'Turkey' },
-  { code: 'SAW', city: 'Istanbul', name: 'Sabiha Gokcen', country: 'Turkey' },
-  { code: 'ATH', city: 'Athens', name: 'Eleftherios Venizelos', country: 'Greece' },
+  { code: 'HAM', city: 'Hamburg', name: 'Hamburg Airport', country: 'Germany' },
+  { code: 'DUS', city: 'Dusseldorf', name: 'Dusseldorf Airport', country: 'Germany' },
+  { code: 'STR', city: 'Stuttgart', name: 'Stuttgart Airport', country: 'Germany' },
   { code: 'ZRH', city: 'Zurich', name: 'Zurich Airport', country: 'Switzerland' },
   { code: 'GVA', city: 'Geneva', name: 'Geneva Airport', country: 'Switzerland' },
+  { code: 'BSL', city: 'Basel', name: 'EuroAirport Basel-Mulhouse', country: 'Switzerland' },
+  { code: 'AMS', city: 'Amsterdam', name: 'Schiphol', country: 'Netherlands' },
+  { code: 'EIN', city: 'Eindhoven', name: 'Eindhoven Airport', country: 'Netherlands' },
+  { code: 'MAD', city: 'Madrid', name: 'Adolfo Suarez Barajas', country: 'Spain' },
+  { code: 'BCN', city: 'Barcelona', name: 'El Prat', country: 'Spain' },
+  { code: 'AGP', city: 'Malaga', name: 'Malaga Airport', country: 'Spain' },
+  { code: 'VLC', city: 'Valencia', name: 'Valencia Airport', country: 'Spain' },
+  { code: 'PMI', city: 'Palma', name: 'Palma de Mallorca', country: 'Spain' },
+  { code: 'FCO', city: 'Rome', name: 'Fiumicino', country: 'Italy' },
+  { code: 'MXP', city: 'Milan', name: 'Malpensa', country: 'Italy' },
+  { code: 'LIN', city: 'Milan', name: 'Linate', country: 'Italy' },
+  { code: 'BGY', city: 'Milan', name: 'Bergamo Orio al Serio', country: 'Italy' },
+  { code: 'VCE', city: 'Venice', name: 'Marco Polo', country: 'Italy' },
+  { code: 'NAP', city: 'Naples', name: 'Naples International', country: 'Italy' },
+  { code: 'IST', city: 'Istanbul', name: 'Istanbul Airport', country: 'Turkey' },
+  { code: 'SAW', city: 'Istanbul', name: 'Sabiha Gokcen', country: 'Turkey' },
+  { code: 'AYT', city: 'Antalya', name: 'Antalya Airport', country: 'Turkey' },
+  { code: 'ATH', city: 'Athens', name: 'Eleftherios Venizelos', country: 'Greece' },
+  { code: 'SKG', city: 'Thessaloniki', name: 'Macedonia Airport', country: 'Greece' },
+  { code: 'HER', city: 'Heraklion', name: 'Nikos Kazantzakis', country: 'Greece' },
   { code: 'VIE', city: 'Vienna', name: 'Vienna International', country: 'Austria' },
   { code: 'BRU', city: 'Brussels', name: 'Brussels Airport', country: 'Belgium' },
   { code: 'CPH', city: 'Copenhagen', name: 'Kastrup', country: 'Denmark' },
   { code: 'ARN', city: 'Stockholm', name: 'Arlanda', country: 'Sweden' },
+  { code: 'GOT', city: 'Gothenburg', name: 'Landvetter', country: 'Sweden' },
   { code: 'HEL', city: 'Helsinki', name: 'Helsinki-Vantaa', country: 'Finland' },
   { code: 'OSL', city: 'Oslo', name: 'Gardermoen', country: 'Norway' },
   { code: 'WAW', city: 'Warsaw', name: 'Chopin Airport', country: 'Poland' },
+  { code: 'KRK', city: 'Krakow', name: 'John Paul II', country: 'Poland' },
   { code: 'PRG', city: 'Prague', name: 'Vaclav Havel', country: 'Czech Republic' },
   { code: 'BUD', city: 'Budapest', name: 'Ferenc Liszt', country: 'Hungary' },
+  { code: 'OTP', city: 'Bucharest', name: 'Henri Coanda', country: 'Romania' },
+  { code: 'SOF', city: 'Sofia', name: 'Sofia Airport', country: 'Bulgaria' },
   { code: 'LIS', city: 'Lisbon', name: 'Humberto Delgado', country: 'Portugal' },
+  { code: 'OPO', city: 'Porto', name: 'Francisco Sa Carneiro', country: 'Portugal' },
+  { code: 'FAO', city: 'Faro', name: 'Faro Airport', country: 'Portugal' },
   { code: 'DUB', city: 'Dublin', name: 'Dublin Airport', country: 'Ireland' },
+  { code: 'RIX', city: 'Riga', name: 'Riga International', country: 'Latvia' },
+  { code: 'TLL', city: 'Tallinn', name: 'Lennart Meri', country: 'Estonia' },
+  { code: 'LUX', city: 'Luxembourg', name: 'Luxembourg Findel', country: 'Luxembourg' },
+  { code: 'MLA', city: 'Malta', name: 'Malta International', country: 'Malta' },
+  { code: 'LCA', city: 'Larnaca', name: 'Larnaca International', country: 'Cyprus' },
   { code: 'JFK', city: 'New York', name: 'John F Kennedy', country: 'USA' },
   { code: 'EWR', city: 'New York', name: 'Newark Liberty', country: 'USA' },
+  { code: 'LGA', city: 'New York', name: 'LaGuardia', country: 'USA' },
   { code: 'LAX', city: 'Los Angeles', name: 'Los Angeles International', country: 'USA' },
   { code: 'ORD', city: 'Chicago', name: 'O Hare International', country: 'USA' },
+  { code: 'MDW', city: 'Chicago', name: 'Midway International', country: 'USA' },
   { code: 'ATL', city: 'Atlanta', name: 'Hartsfield-Jackson', country: 'USA' },
+  { code: 'DFW', city: 'Dallas', name: 'Dallas Fort Worth', country: 'USA' },
   { code: 'MIA', city: 'Miami', name: 'Miami International', country: 'USA' },
   { code: 'SFO', city: 'San Francisco', name: 'San Francisco International', country: 'USA' },
   { code: 'BOS', city: 'Boston', name: 'Logan International', country: 'USA' },
-  { code: 'DFW', city: 'Dallas', name: 'Dallas Fort Worth', country: 'USA' },
+  { code: 'IAD', city: 'Washington DC', name: 'Dulles International', country: 'USA' },
   { code: 'SEA', city: 'Seattle', name: 'Seattle-Tacoma', country: 'USA' },
+  { code: 'LAS', city: 'Las Vegas', name: 'Harry Reid International', country: 'USA' },
+  { code: 'DEN', city: 'Denver', name: 'Denver International', country: 'USA' },
+  { code: 'PHX', city: 'Phoenix', name: 'Sky Harbor International', country: 'USA' },
+  { code: 'MCO', city: 'Orlando', name: 'Orlando International', country: 'USA' },
   { code: 'YYZ', city: 'Toronto', name: 'Pearson International', country: 'Canada' },
   { code: 'YVR', city: 'Vancouver', name: 'Vancouver International', country: 'Canada' },
   { code: 'YUL', city: 'Montreal', name: 'Pierre Elliott Trudeau', country: 'Canada' },
+  { code: 'YYC', city: 'Calgary', name: 'Calgary International', country: 'Canada' },
   { code: 'GRU', city: 'Sao Paulo', name: 'Guarulhos International', country: 'Brazil' },
+  { code: 'GIG', city: 'Rio de Janeiro', name: 'Galeao International', country: 'Brazil' },
   { code: 'EZE', city: 'Buenos Aires', name: 'Ministro Pistarini', country: 'Argentina' },
+  { code: 'SCL', city: 'Santiago', name: 'Arturo Merino Benitez', country: 'Chile' },
+  { code: 'LIM', city: 'Lima', name: 'Jorge Chavez International', country: 'Peru' },
+  { code: 'BOG', city: 'Bogota', name: 'El Dorado International', country: 'Colombia' },
+  { code: 'MEX', city: 'Mexico City', name: 'Benito Juarez International', country: 'Mexico' },
+  { code: 'CUN', city: 'Cancun', name: 'Cancun International', country: 'Mexico' },
   { code: 'SIN', city: 'Singapore', name: 'Changi Airport', country: 'Singapore' },
   { code: 'BKK', city: 'Bangkok', name: 'Suvarnabhumi', country: 'Thailand' },
+  { code: 'DMK', city: 'Bangkok', name: 'Don Mueang', country: 'Thailand' },
   { code: 'HKT', city: 'Phuket', name: 'Phuket International', country: 'Thailand' },
   { code: 'KUL', city: 'Kuala Lumpur', name: 'KLIA', country: 'Malaysia' },
   { code: 'CGK', city: 'Jakarta', name: 'Soekarno-Hatta', country: 'Indonesia' },
@@ -117,6 +170,8 @@ const AIRPORTS = [
   { code: 'PVG', city: 'Shanghai', name: 'Pudong International', country: 'China' },
   { code: 'PEK', city: 'Beijing', name: 'Capital International', country: 'China' },
   { code: 'CAN', city: 'Guangzhou', name: 'Baiyun International', country: 'China' },
+  { code: 'SZX', city: 'Shenzhen', name: 'Bao an International', country: 'China' },
+  { code: 'CTU', city: 'Chengdu', name: 'Tianfu International', country: 'China' },
   { code: 'SYD', city: 'Sydney', name: 'Kingsford Smith', country: 'Australia' },
   { code: 'MEL', city: 'Melbourne', name: 'Melbourne Airport', country: 'Australia' },
   { code: 'BNE', city: 'Brisbane', name: 'Brisbane Airport', country: 'Australia' },
@@ -128,6 +183,7 @@ const AIRPORTS = [
   { code: 'MAA', city: 'Chennai', name: 'Chennai International', country: 'India' },
   { code: 'HYD', city: 'Hyderabad', name: 'Rajiv Gandhi International', country: 'India' },
   { code: 'COK', city: 'Kochi', name: 'Cochin International', country: 'India' },
+  { code: 'GOI', city: 'Goa', name: 'Dabolim Airport', country: 'India' },
   { code: 'ISB', city: 'Islamabad', name: 'New Islamabad International', country: 'Pakistan' },
   { code: 'LHE', city: 'Lahore', name: 'Allama Iqbal International', country: 'Pakistan' },
   { code: 'KHI', city: 'Karachi', name: 'Jinnah International', country: 'Pakistan' },
@@ -140,10 +196,113 @@ const AIRPORTS = [
   { code: 'ADD', city: 'Addis Ababa', name: 'Bole International', country: 'Ethiopia' },
   { code: 'LOS', city: 'Lagos', name: 'Murtala Muhammed', country: 'Nigeria' },
   { code: 'CMN', city: 'Casablanca', name: 'Mohammed V International', country: 'Morocco' },
-  { code: 'GYD', city: 'Baku', name: 'Heydar Aliyev International', country: 'Azerbaijan' },
-  { code: 'TBS', city: 'Tbilisi', name: 'Shota Rustaveli International', country: 'Georgia' },
+  { code: 'RAK', city: 'Marrakech', name: 'Menara Airport', country: 'Morocco' },
+  { code: 'TUN', city: 'Tunis', name: 'Carthage International', country: 'Tunisia' },
+  { code: 'ALG', city: 'Algiers', name: 'Houari Boumediene', country: 'Algeria' },
+  { code: 'NBO', city: 'Nairobi', name: 'Jomo Kenyatta International', country: 'Kenya' },
+  { code: 'MRU', city: 'Mauritius', name: 'Sir Seewoosagur Ramgoolam', country: 'Mauritius' },
+  { code: 'ISB', city: 'Islamabad', name: 'New Islamabad International', country: 'Pakistan' },
+  { code: 'ALA', city: 'Almaty', name: 'Almaty International', country: 'Kazakhstan' },
+  { code: 'TAS', city: 'Tashkent', name: 'Islam Karimov International', country: 'Uzbekistan' },
   { code: 'OTHER', city: 'Other', name: 'Not listed — enter manually', country: '' },
 ];
+
+// Google Places store search component
+const StoreSearch = ({ value, onChange }) => {
+  const [query, setQuery] = useState(value?.name || '');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const ref = useRef(null);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const searchPlaces = async (q) => {
+    if (q.length < 3) { setResults([]); setOpen(false); return; }
+    setSearching(true);
+    try {
+      // Use Nominatim (free, no API key needed) for store/place search
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      setResults(data.map(p => ({
+        name: p.display_name.split(',').slice(0, 2).join(',').trim(),
+        address: p.display_name,
+        lat: parseFloat(p.lat),
+        lng: parseFloat(p.lon),
+      })));
+      setOpen(true);
+    } catch (e) {
+      console.error(e);
+    }
+    setSearching(false);
+  };
+
+  const handleChange = (q) => {
+    setQuery(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchPlaces(q), 500);
+  };
+
+  const handleSelect = (place) => {
+    setQuery(place.name);
+    onChange(place);
+    setOpen(false);
+    setResults([]);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+        Store Name & Location *
+      </label>
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        {searching && (
+          <div className="absolute right-3.5 top-3.5">
+            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        <input
+          type="text"
+          value={query}
+          onChange={e => handleChange(e.target.value)}
+          placeholder="Search for store name and location..."
+          className="input-field pl-9 pr-10"
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+          {results.map((place, i) => (
+            <button key={i} type="button" onClick={() => handleSelect(place)}
+              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
+              <MapPin size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-800 truncate">{place.name}</p>
+                <p className="text-xs text-gray-400 truncate">{place.address}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {value?.address && (
+        <div className="mt-2 bg-emerald-50 rounded-xl px-3 py-2 flex items-start gap-2 border border-emerald-100">
+          <MapPin size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-emerald-700 leading-relaxed">{value.address}</p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AirportSearch = ({ label, value, onChange, placeholder }) => {
   const [query, setQuery] = useState('');
@@ -152,15 +311,15 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
   const [showManual, setShowManual] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [manualCity, setManualCity] = useState('');
-  const ref = React.useRef(null);
+  const ref = useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (value?.code && value.code !== 'OTHER' && value.code !== '') {
       setQuery(`${value.city} (${value.code})`);
     }
   }, [value?.code]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleClick = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
@@ -206,7 +365,7 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
     <div ref={ref} className="relative">
       <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</label>
       <div className="relative">
-        <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+        <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
         <input
           type="text"
           value={query}
@@ -252,6 +411,44 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
   );
 };
 
+// Currency + Amount input component
+const CurrencyAmountInput = ({ label, required, currencyValue, amountValue, onCurrencyChange, onAmountChange, placeholder }) => {
+  const selected = CURRENCIES.find(c => c.code === currencyValue) || CURRENCIES[0];
+  return (
+    <div>
+      {label && (
+        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+          {label}{required && ' *'}
+        </label>
+      )}
+      <div className="flex rounded-xl border border-gray-200 overflow-hidden focus-within:ring-2 focus-within:ring-violet-500/20 focus-within:border-violet-400 transition-all bg-gray-50 focus-within:bg-white">
+        <select
+          value={currencyValue}
+          onChange={e => onCurrencyChange(e.target.value)}
+          className="bg-transparent border-0 border-r border-gray-200 text-xs font-bold text-gray-700 px-3 py-3 focus:outline-none cursor-pointer flex-shrink-0 w-20">
+          {CURRENCIES.map(c => (
+            <option key={c.code} value={c.code}>{c.code}</option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none">
+            {selected.symbol !== selected.code ? selected.symbol : ''}
+          </span>
+          <input
+            type="number"
+            placeholder={placeholder || '0.00'}
+            value={amountValue}
+            onChange={e => onAmountChange(e.target.value)}
+            min="0"
+            step="0.01"
+            className={`w-full bg-transparent border-0 focus:outline-none text-sm text-gray-800 py-3 pr-4 ${selected.symbol !== selected.code ? 'pl-6' : 'pl-3'}`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const NewRequest = ({ session }) => {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -261,19 +458,23 @@ const NewRequest = ({ session }) => {
     from_city: '', from_code: '',
     to_city: '', to_code: '',
     weight_kg: '',
-    budget_per_kg: '',
-    currency: 'USD',
+    dimensions: '',
+    max_budget: '',
+    budget_currency: 'USD',
     needed_by: '',
     notes: '',
-    // Handover details
-    handover_type: 'self', // 'self' or 'trusted_person'
+    // Delivery type: 'handover' or 'purchase'
+    delivery_mode: null,
+    // Handover sub-type: 'self' or 'trusted_person'
+    handover_type: 'self',
     trusted_person_name: '',
     trusted_person_phone: '',
+    trusted_person_location: '',
     trusted_person_notes: '',
-    // Shop & Ship
-    requires_purchase: false,
-    purchase_store: '',
+    // Purchase
+    purchase_store: null, // { name, address, lat, lng }
     purchase_price: '',
+    purchase_currency: 'USD',
     purchase_url: '',
     purchase_details: '',
   });
@@ -287,7 +488,7 @@ const NewRequest = ({ session }) => {
   const fileInputRef = useRef(null);
   const today = new Date().toISOString().split('T')[0];
 
-  const selectedCurrency = CURRENCIES.find(c => c.code === form.currency) || CURRENCIES[0];
+  const budgetCurrency = CURRENCIES.find(c => c.code === form.budget_currency) || CURRENCIES[0];
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -297,6 +498,12 @@ const NewRequest = ({ session }) => {
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
     setError('');
+  };
+
+  const formatDateForDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
   };
 
   const validateStep1 = () => {
@@ -310,20 +517,29 @@ const NewRequest = ({ session }) => {
     if (!form.from_code) { setError('Please select departure airport.'); return false; }
     if (!form.to_code) { setError('Please select arrival airport.'); return false; }
     if (!form.weight_kg || parseFloat(form.weight_kg) <= 0) { setError('Please enter item weight.'); return false; }
-    if (!form.budget_per_kg || parseFloat(form.budget_per_kg) <= 0) { setError('Please enter budget per kg.'); return false; }
     return true;
   };
 
   const validateStep3 = () => {
-    if (!safetyAcknowledged) { setError('Please accept the safety & legal declaration.'); return false; }
-    if (form.handover_type === 'trusted_person') {
-      if (!form.trusted_person_name.trim()) { setError('Please enter the trusted person\'s name.'); return false; }
-      if (!form.trusted_person_phone.trim()) { setError('Please enter the trusted person\'s phone number.'); return false; }
+    if (!form.delivery_mode) { setError('Please select a delivery option.'); return false; }
+
+    if (form.delivery_mode === 'handover') {
+      if (form.handover_type === 'trusted_person') {
+        if (!form.trusted_person_name.trim()) { setError('Please enter the trusted person\'s name.'); return false; }
+        if (!form.trusted_person_phone.trim()) { setError('Please enter their phone number.'); return false; }
+        if (!form.trusted_person_location.trim()) { setError('Please enter the meeting location.'); return false; }
+      }
     }
-    if (form.requires_purchase) {
-      if (!form.purchase_store.trim()) { setError('Please enter the store name.'); return false; }
+
+    if (form.delivery_mode === 'purchase') {
+      if (!form.purchase_store) { setError('Please search for and select the store.'); return false; }
       if (!form.purchase_price || parseFloat(form.purchase_price) <= 0) { setError('Please enter the purchase price.'); return false; }
+      if (!form.purchase_url && !form.purchase_details.trim()) {
+        setError('Please provide either a product link or product specifications (or both).'); return false;
+      }
     }
+
+    if (!safetyAcknowledged) { setError('Please accept the Safety & Legal Declaration to continue.'); return false; }
     return true;
   };
 
@@ -351,6 +567,14 @@ const NewRequest = ({ session }) => {
       setUploadingPhoto(false);
     }
 
+    const isPurchase = form.delivery_mode === 'purchase';
+
+    // Build trusted person notes string
+    let trustedPersonNote = null;
+    if (form.delivery_mode === 'handover' && form.handover_type === 'trusted_person') {
+      trustedPersonNote = `Handover contact: ${form.trusted_person_name} · ${form.trusted_person_phone} · Meeting location: ${form.trusted_person_location}${form.trusted_person_notes ? ` · ${form.trusted_person_notes}` : ''}`;
+    }
+
     const { error } = await supabase.from('shipment_requests').insert([{
       user_id: session.user.id,
       item_name: form.item_name,
@@ -361,20 +585,32 @@ const NewRequest = ({ session }) => {
       to_city: form.to_city || form.to_code,
       to_code: form.to_code.toUpperCase(),
       weight_kg: parseFloat(form.weight_kg),
-      budget_per_kg: parseFloat(form.budget_per_kg),
+      budget_per_kg: form.max_budget ? parseFloat(form.max_budget) : null,
       needed_by: form.needed_by || null,
-      notes: form.notes,
+      notes: [
+        form.notes,
+        form.dimensions ? `Dimensions: ${form.dimensions}` : null,
+        trustedPersonNote,
+      ].filter(Boolean).join('\n') || null,
       item_photo_url: photoUrl,
       status: 'open',
-      requires_purchase: form.requires_purchase,
-      purchase_store: form.requires_purchase ? form.purchase_store : null,
-      purchase_price: form.requires_purchase ? parseFloat(form.purchase_price) : null,
-      purchase_url: form.requires_purchase ? form.purchase_url : null,
-      purchase_details: form.requires_purchase
-        ? `${form.purchase_details}${form.trusted_person_name ? `\n\nHandover contact: ${form.trusted_person_name} · ${form.trusted_person_phone}${form.trusted_person_notes ? ` · ${form.trusted_person_notes}` : ''}` : ''}`
-        : form.trusted_person_name
-          ? `Trusted handover person: ${form.trusted_person_name} · ${form.trusted_person_phone}${form.trusted_person_notes ? ` · ${form.trusted_person_notes}` : ''}`
-          : null,
+      requires_purchase: isPurchase,
+      purchase_store: isPurchase ? form.purchase_store?.name : null,
+      purchase_store_address: isPurchase ? form.purchase_store?.address : null,
+      purchase_store_lat: isPurchase ? form.purchase_store?.lat : null,
+      purchase_store_lng: isPurchase ? form.purchase_store?.lng : null,
+      purchase_price: isPurchase ? parseFloat(form.purchase_price) : null,
+      purchase_currency: isPurchase ? form.purchase_currency : null,
+      purchase_url: isPurchase ? form.purchase_url : null,
+      purchase_details: isPurchase ? form.purchase_details : null,
+      handover_type: form.delivery_mode === 'handover' ? form.handover_type : null,
+      trusted_person_name: form.handover_type === 'trusted_person' ? form.trusted_person_name : null,
+      trusted_person_phone: form.handover_type === 'trusted_person' ? form.trusted_person_phone : null,
+      trusted_person_location: form.handover_type === 'trusted_person' ? form.trusted_person_location : null,
+      trusted_person_notes: form.handover_type === 'trusted_person' ? form.trusted_person_notes : null,
+      item_dimensions: form.dimensions || null,
+      max_budget: form.max_budget ? parseFloat(form.max_budget) : null,
+      budget_currency: form.budget_currency,
     }]);
 
     if (error) { setError(error.message); } else { setSuccess(true); }
@@ -386,19 +622,16 @@ const NewRequest = ({ session }) => {
     setForm({
       item_name: '', description: '', category: '',
       from_city: '', from_code: '', to_city: '', to_code: '',
-      weight_kg: '', budget_per_kg: '', currency: 'USD',
+      weight_kg: '', dimensions: '', max_budget: '', budget_currency: 'USD',
       needed_by: '', notes: '',
-      handover_type: 'self',
-      trusted_person_name: '', trusted_person_phone: '', trusted_person_notes: '',
-      requires_purchase: false,
-      purchase_store: '', purchase_price: '', purchase_url: '', purchase_details: '',
+      delivery_mode: null, handover_type: 'self',
+      trusted_person_name: '', trusted_person_phone: '',
+      trusted_person_location: '', trusted_person_notes: '',
+      purchase_store: null, purchase_price: '', purchase_currency: 'USD',
+      purchase_url: '', purchase_details: '',
     });
     setPhotoFile(null); setPhotoPreview(null); setSafetyAcknowledged(false);
   };
-
-  const totalBudget = form.weight_kg && form.budget_per_kg
-    ? (parseFloat(form.weight_kg) * parseFloat(form.budget_per_kg)).toFixed(2)
-    : null;
 
   if (success) return (
     <div className="max-w-xl mx-auto py-16 px-6 text-center animate-fade-in">
@@ -409,23 +642,23 @@ const NewRequest = ({ session }) => {
       <p className="text-gray-500 mb-6">
         Your request for <strong>{form.item_name}</strong> is live. We'll notify you when a traveler matches.
       </p>
-      <div className="bg-gray-50 rounded-2xl p-5 mb-6 text-left space-y-2 border border-gray-100">
+      <div className="bg-gray-50 rounded-2xl p-5 mb-6 text-left space-y-2.5 border border-gray-100">
         {[
           { label: 'Item', value: form.item_name },
           { label: 'Category', value: form.category },
           { label: 'Route', value: `${form.from_city || form.from_code} → ${form.to_city || form.to_code}` },
-          { label: 'Weight', value: `${form.weight_kg}kg` },
-          { label: 'Budget', value: `${selectedCurrency.symbol}${form.budget_per_kg}/kg · ~${selectedCurrency.symbol}${totalBudget}` },
-        ].map((row, i) => (
+          { label: 'Weight', value: `${form.weight_kg}kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
+          { label: 'Delivery', value: form.delivery_mode === 'purchase' ? '🛍️ Shop & Ship' : form.handover_type === 'trusted_person' ? '🤝 Via trusted person' : '🙋 Self handover' },
+          form.max_budget && { label: 'Max budget', value: `${budgetCurrency.symbol}${form.max_budget}` },
+          form.needed_by && { label: 'Needed by', value: formatDateForDisplay(form.needed_by) },
+        ].filter(Boolean).map((row, i) => (
           <div key={i} className="flex justify-between text-sm">
             <span className="text-gray-500">{row.label}</span>
             <span className="font-semibold text-gray-900">{row.value}</span>
           </div>
         ))}
       </div>
-      <button onClick={resetForm} className="w-full btn-primary py-3">
-        Post Another Request
-      </button>
+      <button onClick={resetForm} className="w-full btn-primary py-3">Post Another Request</button>
     </div>
   );
 
@@ -440,29 +673,22 @@ const NewRequest = ({ session }) => {
       <div className="flex items-center gap-2 mb-8">
         {[
           { n: 1, label: 'Item Details' },
-          { n: 2, label: 'Route & Budget' },
+          { n: 2, label: 'Route & Size' },
           { n: 3, label: 'Delivery & Safety' },
         ].map((s, i) => (
           <React.Fragment key={s.n}>
             <div className="flex items-center gap-2">
               <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold transition-all ${
                 step > s.n ? 'bg-emerald-500 text-white' :
-                step === s.n ? 'bg-violet-600 text-white shadow-button' :
-                'bg-gray-100 text-gray-400'
+                step === s.n ? 'bg-violet-600 text-white shadow-button' : 'bg-gray-100 text-gray-400'
               }`}>
                 {step > s.n ? <CheckCircle size={16} /> : s.n}
               </div>
-              <span className={`text-xs font-semibold hidden sm:block ${
-                step === s.n ? 'text-violet-600' : 'text-gray-400'
-              }`}>
+              <span className={`text-xs font-semibold hidden sm:block ${step === s.n ? 'text-violet-600' : 'text-gray-400'}`}>
                 {s.label}
               </span>
             </div>
-            {i < 2 && (
-              <div className={`flex-1 h-0.5 rounded-full transition-all ${
-                step > s.n ? 'bg-emerald-400' : 'bg-gray-200'
-              }`} />
-            )}
+            {i < 2 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > s.n ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
           </React.Fragment>
         ))}
       </div>
@@ -476,31 +702,21 @@ const NewRequest = ({ session }) => {
       {/* ── STEP 1: Item Details ── */}
       {step === 1 && (
         <div className="space-y-4">
-
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Item Name *
-            </label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Item Name *</label>
             <div className="relative">
-              <Package size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="e.g. iPhone 15 Pro, Nike Air Max..."
-                value={form.item_name}
-                onChange={e => setForm({ ...form, item_name: e.target.value })}
-                className="input-field pl-9"
-              />
+              <Package size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <input type="text" placeholder="e.g. iPhone 15 Pro, Nike Air Max..."
+                value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })}
+                className="input-field pl-9" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              Category *
-            </label>
+            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Category *</label>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(cat => (
-                <button key={cat} type="button"
-                  onClick={() => setForm({ ...form, category: cat })}
+                <button key={cat} type="button" onClick={() => setForm({ ...form, category: cat })}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
                     form.category === cat
                       ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
@@ -513,64 +729,45 @@ const NewRequest = ({ session }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Description *
-            </label>
-            <textarea
-              placeholder="Describe the item in detail — brand, model, color, size, condition..."
-              value={form.description}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              className="input-field resize-none"
-            />
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Description *</label>
+            <textarea placeholder="Describe the item — brand, model, color, size, condition..."
+              value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+              rows={3} className="input-field resize-none" />
           </div>
 
-          {/* Photo upload */}
+          {/* Photo */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Item Photo{' '}
-              <span className="text-gray-300 font-normal normal-case">(optional but recommended)</span>
+              Item Photo <span className="text-gray-300 font-normal normal-case">(optional but recommended)</span>
             </label>
             {photoPreview ? (
               <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50" style={{ height: '176px' }}>
-                <img
-                  src={photoPreview}
-                  alt="Preview"
-                  className="w-full h-full object-contain"
-                />
-                <button
-                  onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                <img src={photoPreview} alt="Preview" className="w-full h-full object-contain" />
+                <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
                   className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-lg flex items-center justify-center hover:bg-red-600 shadow-sm">
                   <X size={14} />
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
+              <button type="button" onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 hover:border-violet-300 hover:bg-violet-50/30 transition-all group">
                 <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-violet-100 transition">
                   <Camera size={20} className="text-gray-400 group-hover:text-violet-500 transition" />
                 </div>
-                <p className="text-sm text-gray-400 group-hover:text-violet-500 transition font-medium">
-                  Click to upload photo
-                </p>
+                <p className="text-sm text-gray-400 group-hover:text-violet-500 font-medium">Click to upload photo</p>
                 <p className="text-xs text-gray-300">JPG, PNG up to 5MB</p>
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </div>
 
-          <button onClick={handleNext} className="w-full btn-primary py-3.5">
-            Continue to Route & Budget
-          </button>
+          <button onClick={handleNext} className="w-full btn-primary py-3.5">Continue to Route & Size</button>
         </div>
       )}
 
-      {/* ── STEP 2: Route & Budget ── */}
+      {/* ── STEP 2: Route & Size ── */}
       {step === 2 && (
         <div className="space-y-4">
-
           {/* Item summary */}
           <div className="bg-gray-50 rounded-xl p-3.5 flex items-center gap-3 border border-gray-100">
             {photoPreview ? (
@@ -602,98 +799,86 @@ const NewRequest = ({ session }) => {
             placeholder="Search city, airport or code..."
           />
 
+          {/* Weight + Dimensions side by side */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                Weight (kg) *
+                Total Weight (kg) *
               </label>
               <div className="relative">
-                <Weight size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-                <input
-                  type="number" placeholder="e.g. 2" min="0.1" max="30" step="0.1"
-                  value={form.weight_kg}
-                  onChange={e => setForm({ ...form, weight_kg: e.target.value })}
-                  className="input-field pl-9"
-                />
+                <Weight size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+                <input type="number" placeholder="e.g. 2.5" min="0.1" max="50" step="0.1"
+                  value={form.weight_kg} onChange={e => setForm({ ...form, weight_kg: e.target.value })}
+                  className="input-field pl-9" />
               </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                Budget/kg *
+                Dimensions <span className="text-gray-300 font-normal normal-case">(optional)</span>
               </label>
-              <div className="flex gap-1.5">
-                <select
-                  value={form.currency}
-                  onChange={e => setForm({ ...form, currency: e.target.value })}
-                  className="input-field py-3 px-2 w-24 flex-shrink-0 text-xs font-semibold">
-                  {CURRENCIES.map(c => (
-                    <option key={c.code} value={c.code}>{c.code}</option>
-                  ))}
-                </select>
-                <div className="relative flex-1">
-                  <DollarSign size={15} className="absolute left-3 top-3.5 text-gray-400" />
-                  <input
-                    type="number" placeholder="e.g. 10" min="1" step="0.5"
-                    value={form.budget_per_kg}
-                    onChange={e => setForm({ ...form, budget_per_kg: e.target.value })}
-                    className="input-field pl-8"
-                  />
-                </div>
-              </div>
+              <input type="text" placeholder="e.g. 30×20×10cm"
+                value={form.dimensions} onChange={e => setForm({ ...form, dimensions: e.target.value })}
+                className="input-field" />
             </div>
           </div>
 
-          {totalBudget && (
+          {/* Max budget — currency + amount nicely aligned */}
+          <CurrencyAmountInput
+            label={`Max Budget ${budgetCurrency.symbol ? `(${budgetCurrency.code})` : ''}`}
+            required={false}
+            currencyValue={form.budget_currency}
+            amountValue={form.max_budget}
+            onCurrencyChange={val => setForm({ ...form, budget_currency: val })}
+            onAmountChange={val => setForm({ ...form, max_budget: val })}
+            placeholder="Optional max you'll pay"
+          />
+
+          {form.max_budget && (
             <div className="bg-violet-50 rounded-xl p-3.5 flex items-center justify-between border border-violet-100">
-              <span className="text-sm text-gray-600 font-medium">Estimated shipping budget</span>
+              <span className="text-sm text-gray-600 font-medium">Your maximum budget</span>
               <span className="text-base font-bold text-violet-700">
-                {selectedCurrency.symbol}{totalBudget} {form.currency !== 'USD' ? form.currency : ''}
+                {budgetCurrency.symbol !== budgetCurrency.code ? budgetCurrency.symbol : ''}{form.max_budget} {form.budget_currency}
               </span>
             </div>
           )}
 
+          {/* Needed by — dd/mm/yyyy display */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Needed By{' '}
-              <span className="text-gray-300 font-normal normal-case">(optional)</span>
+              Needed By <span className="text-gray-300 font-normal normal-case">(dd/mm/yyyy, optional)</span>
             </label>
             <div className="relative">
-              <Calendar size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-              <input
-                type="date" min={today}
-                value={form.needed_by}
-                onChange={e => setForm({ ...form, needed_by: e.target.value })}
-                className="input-field pl-9"
-              />
+              <Calendar size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <input type="date" min={today}
+                value={form.needed_by} onChange={e => setForm({ ...form, needed_by: e.target.value })}
+                className="input-field pl-9" />
             </div>
+            {form.needed_by && (
+              <p className="text-xs text-gray-400 mt-1 ml-1">
+                Selected: {formatDateForDisplay(form.needed_by)}
+              </p>
+            )}
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Notes{' '}
-              <span className="text-gray-300 font-normal normal-case">(optional)</span>
+              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
             </label>
-            <textarea
-              placeholder="Special handling, fragile items, packaging requirements..."
-              value={form.notes}
-              onChange={e => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="input-field resize-none"
-            />
+            <textarea placeholder="Fragile, special packaging, any other requirements..."
+              value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+              rows={2} className="input-field resize-none" />
           </div>
 
           <div className="flex gap-3">
             <button onClick={() => setStep(1)} className="flex-1 btn-secondary py-3">Back</button>
-            <button onClick={handleNext} className="flex-1 btn-primary py-3">
-              Continue to Delivery
-            </button>
+            <button onClick={handleNext} className="flex-1 btn-primary py-3">Continue to Delivery</button>
           </div>
         </div>
       )}
 
       {/* ── STEP 3: Delivery & Safety ── */}
       {step === 3 && (
-        <div className="space-y-4">
+        <div className="space-y-5">
 
           {/* Summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-1.5 text-sm">
@@ -708,37 +893,45 @@ const NewRequest = ({ session }) => {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Budget</span>
-              <span className="font-semibold text-violet-700">
-                {selectedCurrency.symbol}{form.budget_per_kg}/kg · ~{selectedCurrency.symbol}{totalBudget}
+              <span className="text-gray-500">Weight</span>
+              <span className="font-semibold text-gray-900">
+                {form.weight_kg}kg{form.dimensions ? ` · ${form.dimensions}` : ''}
               </span>
             </div>
+            {form.max_budget && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Max budget</span>
+                <span className="font-semibold text-violet-700">
+                  {budgetCurrency.symbol !== budgetCurrency.code ? budgetCurrency.symbol : ''}{form.max_budget} {form.budget_currency}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* ── Handover arrangement ── */}
+          {/* ── Delivery mode — either/or ── */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              How will the item be handed over? *
+              How should this be delivered? *
             </label>
             <div className="space-y-2">
               {[
                 {
-                  value: 'self',
-                  icon: '🙋',
-                  label: 'I will hand it over myself',
-                  desc: 'You will personally meet the traveler at the departure location and hand over the item.',
+                  value: 'handover',
+                  icon: '📦',
+                  label: 'I have the item and will hand it to the traveler',
+                  desc: 'You or a trusted person will provide the item directly to the traveler before their flight.',
                 },
                 {
-                  value: 'trusted_person',
-                  icon: '🤝',
-                  label: 'A trusted person will hand it over on my behalf',
-                  desc: 'Someone you trust (family, friend, colleague) will meet the traveler and hand over the item. You\'ll need to provide their contact details.',
+                  value: 'purchase',
+                  icon: '🛍️',
+                  label: 'I need the traveler to purchase the item for me',
+                  desc: 'The traveler buys the item at the destination. You pay the item cost plus their service fee via secure escrow.',
                 },
               ].map(opt => (
                 <button key={opt.value} type="button"
-                  onClick={() => setForm({ ...form, handover_type: opt.value })}
+                  onClick={() => setForm({ ...form, delivery_mode: opt.value })}
                   className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${
-                    form.handover_type === opt.value
+                    form.delivery_mode === opt.value
                       ? 'border-violet-400 bg-violet-50'
                       : 'border-gray-200 hover:border-violet-200 bg-white'
                   }`}>
@@ -746,7 +939,7 @@ const NewRequest = ({ session }) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-gray-900">{opt.label}</p>
-                      {form.handover_type === opt.value && (
+                      {form.delivery_mode === opt.value && (
                         <CheckCircle size={15} className="text-violet-600 flex-shrink-0" />
                       )}
                     </div>
@@ -757,247 +950,201 @@ const NewRequest = ({ session }) => {
             </div>
           </div>
 
-          {/* Trusted person details */}
-          {form.handover_type === 'trusted_person' && (
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
-                <User size={13} /> Trusted Person Details
-              </p>
-              <p className="text-xs text-indigo-600 leading-relaxed">
-                These details will be shared with the matched traveler so they can coordinate the handover.
-              </p>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Full Name *
-                </label>
-                <div className="relative">
-                  <User size={14} className="absolute left-3.5 top-3 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="e.g. Sarah Johnson"
-                    value={form.trusted_person_name}
-                    onChange={e => setForm({ ...form, trusted_person_name: e.target.value })}
-                    className="input-field pl-8 py-2.5"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Phone / WhatsApp *
-                </label>
-                <div className="relative">
-                  <Phone size={14} className="absolute left-3.5 top-3 text-gray-400" />
-                  <input
-                    type="tel"
-                    placeholder="e.g. +971 50 123 4567"
-                    value={form.trusted_person_phone}
-                    onChange={e => setForm({ ...form, trusted_person_phone: e.target.value })}
-                    className="input-field pl-8 py-2.5"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Additional Notes{' '}
-                  <span className="text-gray-300 font-normal normal-case">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Will be at Dubai Mall entrance at 2pm..."
-                  value={form.trusted_person_notes}
-                  onChange={e => setForm({ ...form, trusted_person_notes: e.target.value })}
-                  className="input-field py-2.5"
-                />
-              </div>
-            </div>
-          )}
+          {/* ── HANDOVER sub-flow ── */}
+          {form.delivery_mode === 'handover' && (
+            <div className="space-y-4">
 
-          {/* ── Purchase type ── */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              Do you need the traveler to purchase the item? *
-            </label>
-            <div className="space-y-2">
-              {[
-                {
-                  value: false,
-                  icon: '📦',
-                  label: 'No — I already have the item',
-                  desc: 'You or your trusted person will provide the item to the traveler.',
-                },
-                {
-                  value: true,
-                  icon: '🛍️',
-                  label: 'Yes — the traveler should purchase it for me',
-                  desc: 'The traveler buys the item at the destination. You pay item price + their service fee via escrow.',
-                },
-              ].map(opt => (
-                <button key={String(opt.value)} type="button"
-                  onClick={() => setForm({ ...form, requires_purchase: opt.value })}
-                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${
-                    form.requires_purchase === opt.value
-                      ? 'border-violet-400 bg-violet-50'
-                      : 'border-gray-200 hover:border-violet-200 bg-white'
-                  }`}>
-                  <span className="text-2xl flex-shrink-0">{opt.icon}</span>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900">{opt.label}</p>
-                      {form.requires_purchase === opt.value && (
-                        <CheckCircle size={15} className="text-violet-600 flex-shrink-0" />
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{opt.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Shop & Ship purchase details */}
-          {form.requires_purchase && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <ShoppingBag size={16} className="text-blue-600" />
-                <p className="text-sm font-bold text-blue-700">Purchase Details</p>
-              </div>
-              <p className="text-xs text-blue-600 mb-2 leading-relaxed">
-                Provide as much detail as possible so the traveler can find and purchase the exact item.
-              </p>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Store Name & Location *
-                </label>
-                <div className="relative">
-                  <Search size={14} className="absolute left-3.5 top-3 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="e.g. Apple Store Regent Street London, Zara Oxford Street..."
-                    value={form.purchase_store}
-                    onChange={e => setForm({ ...form, purchase_store: e.target.value })}
-                    className="input-field pl-8 py-2.5"
-                  />
-                </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Include the store name and city/area so the traveler can find it easily.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Anticipated Purchase Price *
-                </label>
-                <div className="flex gap-1.5">
-                  <select
-                    value={form.currency}
-                    onChange={e => setForm({ ...form, currency: e.target.value })}
-                    className="input-field py-2.5 px-2 w-24 flex-shrink-0 text-xs font-semibold">
-                    {CURRENCIES.map(c => (
-                      <option key={c.code} value={c.code}>{c.code}</option>
-                    ))}
-                  </select>
-                  <div className="relative flex-1">
-                    <DollarSign size={14} className="absolute left-3 top-3 text-gray-400" />
-                    <input
-                      type="number" placeholder="e.g. 299.00" min="0" step="0.01"
-                      value={form.purchase_price}
-                      onChange={e => setForm({ ...form, purchase_price: e.target.value })}
-                      className="input-field pl-8 py-2.5"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Product Link{' '}
-                  <span className="text-gray-300 font-normal normal-case">(optional but very helpful)</span>
-                </label>
-                <div className="relative">
-                  <Link size={14} className="absolute left-3.5 top-3 text-gray-400" />
-                  <input
-                    type="url"
-                    placeholder="https://www.apple.com/iphone-15-pro..."
-                    value={form.purchase_url}
-                    onChange={e => setForm({ ...form, purchase_url: e.target.value })}
-                    className="input-field pl-8 py-2.5"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Product Specifications
-                </label>
-                <textarea
-                  placeholder="Size, color, model number, storage capacity, specific variants the traveler must get..."
-                  value={form.purchase_details}
-                  onChange={e => setForm({ ...form, purchase_details: e.target.value })}
-                  rows={3}
-                  className="input-field resize-none py-2.5"
-                />
-              </div>
-
-              {form.purchase_price && totalBudget && (
-                <div className="bg-white rounded-xl p-3.5 space-y-1.5 text-xs border border-blue-100">
-                  <p className="font-bold text-gray-700 mb-2">Indicative Total Escrow</p>
-                  <p className="text-gray-400 italic mb-2">
-                    This is an estimate only. The final amount is agreed between you and the traveler during the deal negotiation in chat.
+              {/* Safety warning about traveler running away */}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-red-700 mb-1">⚠️ Item Security Notice</p>
+                  <p className="text-xs text-red-600 leading-relaxed">
+                    <strong>Do not hand over the item until escrow is confirmed paid.</strong> Once the deal is matched and terms agreed, the shipper must pay escrow before you release the item. The traveler's identity is logged in the deal. Fetchr's escrow covers the shipping fee — the item itself is your responsibility until handover. Always verify the traveler's identity before releasing the item.
                   </p>
-                  <div className="flex justify-between text-gray-500">
-                    <span>Shipping budget</span>
-                    <span>{selectedCurrency.symbol}{totalBudget}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                  Who will hand over the item? *
+                </label>
+                <div className="space-y-2">
+                  {[
+                    {
+                      value: 'self',
+                      icon: '🙋',
+                      label: 'I will hand it over myself',
+                      desc: 'You will personally meet the traveler and hand over the item.',
+                    },
+                    {
+                      value: 'trusted_person',
+                      icon: '🤝',
+                      label: 'A trusted person will hand it over on my behalf',
+                      desc: 'A family member, friend, or colleague will meet the traveler. Provide their contact details below.',
+                    },
+                  ].map(opt => (
+                    <button key={opt.value} type="button"
+                      onClick={() => setForm({ ...form, handover_type: opt.value })}
+                      className={`w-full flex items-start gap-3 p-3.5 rounded-xl border-2 transition-all text-left ${
+                        form.handover_type === opt.value
+                          ? 'border-violet-400 bg-violet-50'
+                          : 'border-gray-200 hover:border-violet-200 bg-white'
+                      }`}>
+                      <span className="text-xl flex-shrink-0">{opt.icon}</span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-gray-900">{opt.label}</p>
+                          {form.handover_type === opt.value && (
+                            <CheckCircle size={14} className="text-violet-600 flex-shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Trusted person details */}
+              {form.handover_type === 'trusted_person' && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
+                    <User size={13} /> Trusted Person Details
+                  </p>
+                  <p className="text-xs text-indigo-600 leading-relaxed">
+                    These details will be shared with the matched traveler so they can coordinate the handover.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Full Name *</label>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                      <input type="text" placeholder="e.g. Sarah Johnson"
+                        value={form.trusted_person_name}
+                        onChange={e => setForm({ ...form, trusted_person_name: e.target.value })}
+                        className="input-field pl-8 py-2.5" />
+                    </div>
                   </div>
-                  <div className="flex justify-between text-gray-500">
-                    <span>Item purchase price</span>
-                    <span>{selectedCurrency.symbol}{parseFloat(form.purchase_price).toFixed(2)}</span>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Phone / WhatsApp *</label>
+                    <div className="relative">
+                      <Phone size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                      <input type="tel" placeholder="e.g. +971 50 123 4567"
+                        value={form.trusted_person_phone}
+                        onChange={e => setForm({ ...form, trusted_person_phone: e.target.value })}
+                        className="input-field pl-8 py-2.5" />
+                    </div>
                   </div>
-                  <div className="flex justify-between text-gray-400 italic">
-                    <span>Traveler's service fee</span>
-                    <span>TBD by traveler</span>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Meeting Location *</label>
+                    <div className="relative">
+                      <MapPin size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                      <input type="text" placeholder="e.g. Dubai Mall main entrance, Ground floor Carrefour..."
+                        value={form.trusted_person_location}
+                        onChange={e => setForm({ ...form, trusted_person_location: e.target.value })}
+                        className="input-field pl-8 py-2.5" />
+                    </div>
                   </div>
-                  <div className="flex justify-between text-gray-400 italic">
-                    <span>Fetchr service fees</span>
-                    <span>calculated at checkout</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-violet-700 border-t border-gray-100 pt-1.5">
-                    <span>Minimum estimate</span>
-                    <span>
-                      ~{selectedCurrency.symbol}{(
-                        parseFloat(totalBudget) + parseFloat(form.purchase_price)
-                      ).toFixed(2)}+
-                    </span>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                      Additional Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                    </label>
+                    <input type="text" placeholder="e.g. Available weekdays 9am-6pm, will call ahead..."
+                      value={form.trusted_person_notes}
+                      onChange={e => setForm({ ...form, trusted_person_notes: e.target.value })}
+                      className="input-field py-2.5" />
                   </div>
                 </div>
               )}
             </div>
           )}
 
+          {/* ── PURCHASE sub-flow ── */}
+          {form.delivery_mode === 'purchase' && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <ShoppingBag size={16} className="text-blue-600" />
+                <p className="text-sm font-bold text-blue-700">Purchase Details</p>
+              </div>
+              <p className="text-xs text-blue-600 leading-relaxed">
+                Provide as much detail as possible so the traveler can find and purchase the exact item. The final price is agreed in the deal chat.
+              </p>
+
+              <StoreSearch
+                value={form.purchase_store}
+                onChange={place => setForm({ ...form, purchase_store: place })}
+              />
+
+              <CurrencyAmountInput
+                label="Anticipated Purchase Price"
+                required={true}
+                currencyValue={form.purchase_currency}
+                amountValue={form.purchase_price}
+                onCurrencyChange={val => setForm({ ...form, purchase_currency: val })}
+                onAmountChange={val => setForm({ ...form, purchase_price: val })}
+                placeholder="e.g. 299.00"
+              />
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                  Product Link <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                </label>
+                <div className="relative">
+                  <Link size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                  <input type="url" placeholder="https://www.apple.com/iphone-15-pro..."
+                    value={form.purchase_url}
+                    onChange={e => setForm({ ...form, purchase_url: e.target.value })}
+                    className="input-field pl-8 py-2.5" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                  Product Specifications{' '}
+                  {!form.purchase_url && <span className="text-red-400">*</span>}
+                  {form.purchase_url && <span className="text-gray-300 font-normal normal-case">(optional if link provided)</span>}
+                </label>
+                <textarea
+                  placeholder="Size, color, model number, storage, specific variants the traveler must get..."
+                  value={form.purchase_details}
+                  onChange={e => setForm({ ...form, purchase_details: e.target.value })}
+                  rows={3}
+                  className="input-field resize-none py-2.5"
+                />
+                {!form.purchase_url && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <Info size={11} /> Required when no product link is provided
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Safety & Legal Declaration ── */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="text-xs font-bold text-amber-800 mb-3 flex items-center gap-1.5">
-              ⚠️ Safety & Legal Declaration
+              <Shield size={13} /> Safety & Legal Declaration
             </p>
             <div className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                id="safety-ack-req"
-                checked={safetyAcknowledged}
+              <input type="checkbox" id="safety-ack-req" checked={safetyAcknowledged}
                 onChange={e => setSafetyAcknowledged(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0"
-              />
+                className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0" />
               <label htmlFor="safety-ack-req" className="text-xs text-amber-800 leading-relaxed cursor-pointer">
                 I confirm that:
-                <ul className="mt-1.5 space-y-1 list-disc list-inside">
-                  <li>The item I am requesting to transport is <strong>legal</strong> and complies with all airline regulations and customs laws.</li>
-                  <li>I am <strong>not</strong> requesting the transport of illegal substances, weapons, counterfeit goods, currency above legal limits, or any restricted/prohibited items.</li>
+                <ul className="mt-1.5 space-y-1 list-disc list-inside ml-1">
+                  <li>The item is <strong>legal</strong> and complies with all airline regulations and customs laws of origin and destination countries.</li>
+                  <li>I am <strong>not</strong> requesting transport of illegal substances, weapons, counterfeit goods, currency above legal limits, or any prohibited items.</li>
                   <li>I accept <strong>full legal responsibility</strong> for this shipment.</li>
-                  <li>Fetchr is a <strong>matchmaking and payment platform only</strong> and bears no liability for items transported, customs issues, or any legal consequences.</li>
-                  <li>Violation of these terms will result in <strong>immediate account termination</strong> and may be reported to law enforcement.</li>
+                  <li>Fetchr is a <strong>matchmaking and payment platform only</strong> — no liability for items transported.</li>
+                  <li>Violation results in <strong>immediate account termination</strong> and may be reported to authorities.</li>
                 </ul>
               </label>
             </div>
+            {!safetyAcknowledged && (
+              <p className="text-xs text-amber-700 font-semibold mt-3 flex items-center gap-1.5">
+                <AlertCircle size={12} /> You must accept this declaration to post the request.
+              </p>
+            )}
           </div>
 
           {error && (
@@ -1008,9 +1155,7 @@ const NewRequest = ({ session }) => {
 
           <div className="flex gap-3">
             <button onClick={() => setStep(2)} className="flex-1 btn-secondary py-3">Back</button>
-            <button
-              onClick={saveRequest}
-              disabled={loading || uploadingPhoto}
+            <button onClick={saveRequest} disabled={loading || uploadingPhoto || !safetyAcknowledged}
               className="flex-1 btn-primary py-3.5 flex items-center justify-center gap-2 disabled:opacity-50">
               {loading || uploadingPhoto
                 ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Posting...</>
