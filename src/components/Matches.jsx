@@ -2,15 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, Plane, Package, Star, CheckCircle, XCircle,
-  ChevronRight, MapPin, Calendar, Shield, X, Award,
-  Globe, Clock, Zap, TrendingUp, ShoppingBag
+  ChevronRight, Shield, X, Award,
+  Globe, Clock, Zap, ShoppingBag
 } from 'lucide-react';
 
 const Matches = ({ session }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState({});
-  const [selectedMatch, setSelectedMatch] = useState(null);
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
@@ -36,9 +35,12 @@ const Matches = ({ session }) => {
   const fetchProfile = async (userId) => {
     setProfileLoading(true);
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    const { count: flightsCount } = await supabase.from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
-    const { count: dealsCount } = await supabase.from('matches').select('id', { count: 'exact' })
-      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`).eq('status', 'completed');
+    const { count: flightsCount } = await supabase.from('flights')
+      .select('id', { count: 'exact' }).eq('user_id', userId);
+    const { count: dealsCount } = await supabase.from('matches')
+      .select('id', { count: 'exact' })
+      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+      .eq('status', 'completed');
     setViewingProfile({ ...data, totalFlights: flightsCount || 0, totalDeals: dealsCount || 0 });
     setProfileLoading(false);
   };
@@ -52,9 +54,9 @@ const Matches = ({ session }) => {
   const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
     const match = matches.find(m => m.id === matchId);
-    const isTraveler = match.traveler_id === session.user.id;
-    const myField = isTraveler ? 'traveler_accepted' : 'shipper_accepted';
-    const otherAccepted = isTraveler ? match.shipper_accepted : match.traveler_accepted;
+    const isTrav = match.traveler_id === session.user.id;
+    const myField = isTrav ? 'traveler_accepted' : 'shipper_accepted';
+    const otherAccepted = isTrav ? match.shipper_accepted : match.traveler_accepted;
 
     if (otherAccepted) {
       await supabase.from('matches').update({ [myField]: true, status: 'accepted' }).eq('id', matchId);
@@ -67,7 +69,6 @@ const Matches = ({ session }) => {
     } else {
       await supabase.from('matches').update({ [myField]: true, status: 'awaiting_other' }).eq('id', matchId);
     }
-    setSelectedMatch(null);
     await fetchMatches();
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -75,7 +76,6 @@ const Matches = ({ session }) => {
   const handleDecline = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'declining' }));
     await supabase.from('matches').update({ status: 'rejected' }).eq('id', matchId);
-    setSelectedMatch(null);
     setMatches(prev => prev.filter(m => m.id !== matchId));
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -94,7 +94,7 @@ const Matches = ({ session }) => {
     return data?.publicUrl;
   };
 
-const getFeePreview = (match) => {
+  const getFeePreview = (match) => {
     const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
     let fetchrPct = 10;
     if (subtotal >= 500) fetchrPct = 7;
@@ -130,7 +130,7 @@ const getFeePreview = (match) => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Your Matches</h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} • Auto-refreshes
+            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} · Auto-refreshes every 5s
           </p>
         </div>
         <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
@@ -169,9 +169,10 @@ const getFeePreview = (match) => {
                 }`} style={{ width: `${match.match_score}%` }} />
 
                 <div className="p-5">
-                  {/* Header */}
+
+                  {/* Header badges */}
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className={`badge ${getScoreBadge(match.match_score)}`}>
                         <Zap size={10} /> {match.match_score}% Match
                       </span>
@@ -204,9 +205,11 @@ const getFeePreview = (match) => {
                         {match.flight?.from_city} → {match.flight?.to_city}
                       </p>
                       <p className="text-xs font-semibold text-violet-600 mt-2">
-                        {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', {
-                          day: 'numeric', month: 'short', year: 'numeric'
-                        }) : ''}
+                        {match.flight?.flight_date
+                          ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', {
+                              day: '2-digit', month: '2-digit', year: 'numeric'
+                            })
+                          : ''}
                       </p>
                     </div>
                     <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
@@ -229,29 +232,35 @@ const getFeePreview = (match) => {
                     </div>
                   )}
 
-{/* Fee preview */}
+                  {/* Fee preview — single combined fee */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deal Preview</p>
-                    </div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deal Preview</p>
                     <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <p className="text-xs text-gray-400">Deal value</p>
-                        <p className="text-base font-bold text-gray-900">${fees.subtotal.toFixed(2)}</p>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-400 mb-1">Deal value</p>
+                        <p className="text-base font-bold text-gray-900">
+                          ${fees.subtotal.toFixed(2)}
+                        </p>
                       </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Shipper pays</p>
-                        <p className="text-base font-bold text-violet-600">${fees.totalCharged.toFixed(2)}</p>
-                        <p className="text-xs text-gray-400">incl. ${fees.totalFee.toFixed(2)} fees</p>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-400 mb-1">Shipper pays</p>
+                        <p className="text-base font-bold text-violet-600">
+                          ${fees.totalCharged.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          incl. ${fees.totalFee.toFixed(2)} fees
+                        </p>
                       </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Traveler gets</p>
-                        <p className="text-base font-bold text-emerald-600">${fees.travelerReceives.toFixed(2)}</p>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-400 mb-1">Traveler gets</p>
+                        <p className="text-base font-bold text-emerald-600">
+                          ${fees.travelerReceives.toFixed(2)}
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Other party */}
+                  {/* Other party profile button */}
                   <button
                     onClick={() => fetchProfile(other?.id)}
                     className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100 mb-4 group">
@@ -263,14 +272,18 @@ const getFeePreview = (match) => {
                     </div>
                     <div className="flex-1 text-left">
                       <p className="text-sm font-bold text-gray-900">{other?.full_name || 'User'}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {other?.rating > 0 ? (
                           <div className="flex items-center gap-1">
                             {[1,2,3,4,5].map(s => (
                               <Star key={s} size={11}
-                                className={s <= Math.round(other.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
+                                className={s <= Math.round(other.rating)
+                                  ? 'text-amber-400 fill-amber-400'
+                                  : 'text-gray-200'} />
                             ))}
-                            <span className="text-xs text-gray-500 ml-0.5">{other.rating.toFixed(1)} ({other.total_reviews})</span>
+                            <span className="text-xs text-gray-500 ml-0.5">
+                              {other.rating.toFixed(1)} ({other.total_reviews})
+                            </span>
                           </div>
                         ) : (
                           <span className="text-xs text-gray-400">New member</span>
@@ -280,7 +293,7 @@ const getFeePreview = (match) => {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-violet-500 font-semibold group-hover:gap-2 transition-all">
+                    <div className="flex items-center gap-1 text-xs text-violet-500 font-semibold group-hover:gap-2 transition-all flex-shrink-0">
                       View profile <ChevronRight size={14} />
                     </div>
                   </button>
@@ -329,7 +342,7 @@ const getFeePreview = (match) => {
       {/* Profile Modal */}
       {viewingProfile && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-float animate-slide-up">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl animate-slide-up">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-3xl">
               <h3 className="font-bold text-gray-900">User Profile</h3>
               <button onClick={() => setViewingProfile(null)}
@@ -346,10 +359,13 @@ const getFeePreview = (match) => {
               <div className="p-5">
                 {/* Avatar + name */}
                 <div className="flex items-center gap-4 mb-5">
-                  <div className="w-18 h-18 rounded-2xl bg-violet-100 flex items-center justify-center text-xl font-bold text-violet-600 overflow-hidden flex-shrink-0 w-16 h-16">
+                  <div className="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center text-xl font-bold text-violet-600 overflow-hidden flex-shrink-0">
                     {viewingProfile?.avatar_url ? (
-                      <img src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
-                        alt={viewingProfile.full_name} className="w-full h-full object-cover" />
+                      <img
+                        src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
+                        alt={viewingProfile.full_name}
+                        className="w-full h-full object-cover"
+                      />
                     ) : getInitials(viewingProfile?.full_name)}
                   </div>
                   <div>
@@ -363,10 +379,16 @@ const getFeePreview = (match) => {
                       <div className="flex items-center gap-1 mt-1">
                         {[1,2,3,4,5].map(s => (
                           <Star key={s} size={14}
-                            className={s <= Math.round(viewingProfile.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
+                            className={s <= Math.round(viewingProfile.rating)
+                              ? 'text-amber-400 fill-amber-400'
+                              : 'text-gray-200'} />
                         ))}
-                        <span className="text-sm font-bold text-gray-700 ml-1">{viewingProfile.rating.toFixed(1)}</span>
-                        <span className="text-xs text-gray-400">({viewingProfile.total_reviews} reviews)</span>
+                        <span className="text-sm font-bold text-gray-700 ml-1">
+                          {viewingProfile.rating.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          ({viewingProfile.total_reviews} reviews)
+                        </span>
                       </div>
                     ) : (
                       <p className="text-xs text-gray-400 mt-1">No reviews yet</p>

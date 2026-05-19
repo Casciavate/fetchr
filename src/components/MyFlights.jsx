@@ -6,6 +6,13 @@ import {
   MapPin, ShoppingBag, Calendar
 } from 'lucide-react';
 
+const CATEGORIES = [
+  'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
+  'Food & Beverages', 'Books & Stationery', 'Toys & Games',
+  'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
+  'Home & Living', 'Documents', 'Other'
+];
+
 const AIRLINE_CODES = {
   'Emirates': 'EK', 'Qatar Airways': 'QR', 'Etihad Airways': 'EY',
   'Lufthansa': 'LH', 'British Airways': 'BA', 'Air France': 'AF',
@@ -21,40 +28,34 @@ const AIRLINE_CODES = {
   'Thai Airways': 'TG', 'Malaysia Airlines': 'MH', 'LATAM': 'LA',
   'Air Canada': 'AC', 'IndiGo': '6E', 'flynas': 'XY',
   'Jazeera Airways': 'J9', 'Pegasus Airlines': 'PC', 'Royal Jordanian': 'RJ',
-  'Middle East Airlines': 'ME', 'flyadeal': 'F3', 'WizzAir': 'W6',
-  'Vueling': 'VY', 'TAP Air Portugal': 'TP', 'Aer Lingus': 'EI',
-  'Norwegian': 'DY', 'Air Asia': 'AK', 'Garuda Indonesia': 'GA',
-  'Philippine Airlines': 'PR', 'Vietnam Airlines': 'VN',
+  'Middle East Airlines': 'ME', 'WizzAir': 'W6', 'Vueling': 'VY',
+  'TAP Air Portugal': 'TP', 'Aer Lingus': 'EI', 'Norwegian': 'DY',
+  'Air Asia': 'AK', 'Garuda Indonesia': 'GA', 'Philippine Airlines': 'PR',
+  'Vietnam Airlines': 'VN', 'China Eastern': 'MU', 'China Southern': 'CZ',
+  'Air China': 'CA', 'Hainan Airlines': 'HU', 'SunExpress': 'XQ',
 };
 
-const <AirlineLogo airline={flight.airline} />
+const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];
   if (!code) return (
-    <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center">
-      <Plane size={18} className="text-violet-400" />
+    <div className="w-12 h-12 bg-violet-50 rounded-2xl flex items-center justify-center flex-shrink-0">
+      <Plane size={22} className="text-violet-400" />
     </div>
   );
   return (
-    <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm">
+    <div className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
       <img
         src={`https://www.gstatic.com/flights/airline_logos/70px/${code}.png`}
         alt={airline}
-        className="w-8 h-8 object-contain"
+        className="w-9 h-9 object-contain"
         onError={e => {
           e.target.style.display = 'none';
-          e.target.parentNode.innerHTML = `<span class="text-xs font-bold text-violet-600">${code}</span>`;
+          e.target.parentNode.innerHTML = `<span style="font-size:11px;font-weight:800;color:#6c47ff">${code}</span>`;
         }}
       />
     </div>
   );
 };
-
-const CATEGORIES = [
-  'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
-  'Food & Beverages', 'Books & Stationery', 'Toys & Games',
-  'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
-  'Home & Living', 'Documents', 'Other'
-];
 
 const MyFlights = ({ session, onAddFlight }) => {
   const [flights, setFlights] = useState([]);
@@ -73,7 +74,10 @@ const MyFlights = ({ session, onAddFlight }) => {
       .from('flights').select('*').eq('user_id', session.user.id)
       .in('status', ['active', 'expired'])
       .order('flight_date', { ascending: true });
-    if (!error && data) { setFlights(data); await fetchFlightStatuses(data); }
+    if (!error && data) {
+      setFlights(data);
+      await fetchFlightStatuses(data);
+    }
     setLoading(false);
   };
 
@@ -81,7 +85,9 @@ const MyFlights = ({ session, onAddFlight }) => {
     const statuses = {};
     for (const flight of flightList) {
       const { data } = await supabase.from('matches').select('status')
-        .eq('flight_id', flight.id).in('status', ['accepted', 'in_escrow']).limit(1);
+        .eq('flight_id', flight.id)
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .limit(1);
       if (data && data.length > 0) statuses[flight.id] = data[0].status;
     }
     setFlightStatuses(statuses);
@@ -124,8 +130,10 @@ const MyFlights = ({ session, onAddFlight }) => {
       handover_location_arrival: editForm.handover_location_arrival,
     }).eq('id', flightId);
     if (error) { setError(error.message); } else {
-      setSuccess('Flight updated!'); setEditingFlight(null); setEditForm({});
-      await fetchFlights(); setTimeout(() => setSuccess(''), 3000);
+      setSuccess('Flight updated!');
+      setEditingFlight(null); setEditForm({});
+      await fetchFlights();
+      setTimeout(() => setSuccess(''), 3000);
     }
     setSaving(false);
   };
@@ -149,6 +157,8 @@ const MyFlights = ({ session, onAddFlight }) => {
   const getStatusBadge = (flight) => {
     const status = flightStatuses[flight.id];
     if (status === 'in_escrow') return <span className="badge badge-blue">🔒 Escrow Active</span>;
+    if (status === 'proof_uploaded') return <span className="badge badge-indigo">📸 Proof Uploaded</span>;
+    if (status === 'terms_agreed') return <span className="badge badge-yellow">✅ Terms Agreed</span>;
     if (status === 'accepted') return <span className="badge badge-yellow">🤝 Deal Accepted</span>;
     if (flight.status === 'expired') return <span className="badge badge-gray">✈️ Flight Passed</span>;
     return <span className="badge badge-green">✅ Active</span>;
@@ -196,14 +206,10 @@ const MyFlights = ({ session, onAddFlight }) => {
           {flights.map(flight => (
             <div key={flight.id}
               className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
-
-              {/* Header */}
               <div className="p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-violet-50 rounded-2xl flex items-center justify-center flex-shrink-0">
-                      <Plane size={22} className="text-violet-600" />
-                    </div>
+                    <AirlineLogo airline={flight.airline} />
                     <div>
                       <p className="text-xl font-bold text-gray-900 tracking-tight">
                         {flight.from_code} → {flight.to_code}
@@ -212,14 +218,13 @@ const MyFlights = ({ session, onAddFlight }) => {
                         {flight.from_city} → {flight.to_city}
                       </p>
                       <p className="text-xs text-violet-600 font-semibold mt-1">
-                        {flight.airline} {flight.flight_number} · {new Date(flight.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {flight.airline} {flight.flight_number && `· ${flight.flight_number}`} · {new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </p>
                     </div>
                   </div>
                   {getStatusBadge(flight)}
                 </div>
 
-                {/* Expired notice */}
                 {flight.status === 'expired' && (
                   <div className="flex items-start gap-2 bg-amber-50 rounded-xl p-3 mb-4 border border-amber-100">
                     <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
@@ -229,7 +234,6 @@ const MyFlights = ({ session, onAddFlight }) => {
                   </div>
                 )}
 
-                {/* Active deal warning */}
                 {hasActiveMatch(flight.id) && (
                   <div className="flex items-start gap-2 bg-blue-50 rounded-xl p-3 mb-4 border border-blue-100">
                     <AlertTriangle size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
@@ -237,7 +241,6 @@ const MyFlights = ({ session, onAddFlight }) => {
                   </div>
                 )}
 
-                {/* View mode */}
                 {editingFlight !== flight.id && (
                   <>
                     <div className="grid grid-cols-3 gap-3 mb-4">
@@ -251,9 +254,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
                         <p className="text-xs text-gray-400 mb-1">Service</p>
-                        <p className="text-base font-bold text-gray-900">
-                          {flight.delivery_type === 'both' ? '🛍️' : '🤝'}
-                        </p>
+                        <p className="text-lg">{flight.delivery_type === 'both' ? '🛍️' : '🤝'}</p>
                       </div>
                     </div>
 
@@ -292,7 +293,6 @@ const MyFlights = ({ session, onAddFlight }) => {
                   </>
                 )}
 
-                {/* Edit mode */}
                 {editingFlight === flight.id && (
                   <div className="border-t border-gray-100 pt-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -378,14 +378,14 @@ const MyFlights = ({ session, onAddFlight }) => {
                     )}
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">📍 Departure Handover</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">📍 Departure Handover Location</label>
                       <input type="text" placeholder="e.g. Dubai Airport T3 departures..." value={editForm.handover_location_departure}
                         onChange={e => setEditForm({ ...editForm, handover_location_departure: e.target.value })}
                         className="input-field py-2.5" />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">📍 Arrival Handover</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">📍 Arrival Handover Location</label>
                       <input type="text" placeholder="e.g. Heathrow arrivals hall..." value={editForm.handover_location_arrival}
                         onChange={e => setEditForm({ ...editForm, handover_location_arrival: e.target.value })}
                         className="input-field py-2.5" />
@@ -399,8 +399,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                     </div>
 
                     <div className="flex gap-2">
-                      <button onClick={cancelEditing}
-                        className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2.5">
+                      <button onClick={cancelEditing} className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2.5">
                         <X size={14} /> Cancel
                       </button>
                       <button onClick={() => saveEdit(flight.id)} disabled={saving}
