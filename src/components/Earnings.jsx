@@ -114,7 +114,7 @@ const Earnings = ({ session }) => {
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: 'Gross Earnings', value: `$${stats.totalEarned.toFixed(2)}`, color: 'bg-gray-50 text-gray-700 border-gray-100' },
-            { label: 'Fetchr Fees (10%)', value: `-$${stats.totalFees.toFixed(2)}`, color: 'bg-red-50 text-red-600 border-red-100' },
+            { label: 'Service Fees', value: `-$${stats.totalFees.toFixed(2)}`, color: 'bg-red-50 text-red-600 border-red-100' },
             { label: 'Net Earnings', value: `$${stats.netEarnings.toFixed(2)}`, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
           ].map((item, i) => (
             <div key={i} className={`${item.color} border rounded-xl p-3.5 text-center`}>
@@ -214,7 +214,7 @@ const Earnings = ({ session }) => {
                           <span>${val.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-red-500">
-                          <span>Fetchr fee (10%)</span>
+                          <span>Fetchr service fee</span>
                           <span>-${fee.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">

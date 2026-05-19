@@ -94,7 +94,7 @@ const Matches = ({ session }) => {
     return data?.publicUrl;
   };
 
-  const getFeePreview = (match) => {
+const getFeePreview = (match) => {
     const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
     let fetchrPct = 10;
     if (subtotal >= 500) fetchrPct = 7;
@@ -102,9 +102,10 @@ const Matches = ({ session }) => {
     else if (subtotal < 20) fetchrPct = 12;
     const fetchrFee = subtotal * fetchrPct / 100;
     const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
-    const totalCharged = subtotal + fetchrFee + stripeFee;
+    const totalFee = fetchrFee + stripeFee;
+    const totalCharged = subtotal + totalFee;
     const travelerReceives = subtotal - fetchrFee;
-    return { subtotal, fetchrPct, fetchrFee, stripeFee, totalCharged, travelerReceives };
+    return { subtotal, totalFee, totalCharged, travelerReceives };
   };
 
   const getScoreBadge = (score) => {
@@ -228,11 +229,10 @@ const Matches = ({ session }) => {
                     </div>
                   )}
 
-                  {/* Fee preview */}
+{/* Fee preview */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-3">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deal Preview</p>
-                      <span className="badge badge-purple">{fees.fetchrPct}% Fetchr fee</span>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
@@ -242,6 +242,7 @@ const Matches = ({ session }) => {
                       <div>
                         <p className="text-xs text-gray-400">Shipper pays</p>
                         <p className="text-base font-bold text-violet-600">${fees.totalCharged.toFixed(2)}</p>
+                        <p className="text-xs text-gray-400">incl. ${fees.totalFee.toFixed(2)} fees</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-400">Traveler gets</p>

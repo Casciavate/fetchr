@@ -5,6 +5,153 @@ import {
   MapPin, Weight, DollarSign, Calendar, ShoppingBag, Link
 } from 'lucide-react';
 
+const AIRPORTS = [
+  { code: 'DXB', city: 'Dubai', name: 'Dubai International', country: 'UAE' },
+  { code: 'AUH', city: 'Abu Dhabi', name: 'Zayed International', country: 'UAE' },
+  { code: 'DOH', city: 'Doha', name: 'Hamad International', country: 'Qatar' },
+  { code: 'LHR', city: 'London', name: 'Heathrow', country: 'UK' },
+  { code: 'LGW', city: 'London', name: 'Gatwick', country: 'UK' },
+  { code: 'CDG', city: 'Paris', name: 'Charles de Gaulle', country: 'France' },
+  { code: 'FRA', city: 'Frankfurt', name: 'Frankfurt Airport', country: 'Germany' },
+  { code: 'AMS', city: 'Amsterdam', name: 'Schiphol', country: 'Netherlands' },
+  { code: 'MAD', city: 'Madrid', name: 'Adolfo Suarez Barajas', country: 'Spain' },
+  { code: 'BCN', city: 'Barcelona', name: 'El Prat', country: 'Spain' },
+  { code: 'FCO', city: 'Rome', name: 'Fiumicino', country: 'Italy' },
+  { code: 'MXP', city: 'Milan', name: 'Malpensa', country: 'Italy' },
+  { code: 'IST', city: 'Istanbul', name: 'Istanbul Airport', country: 'Turkey' },
+  { code: 'ATH', city: 'Athens', name: 'Eleftherios Venizelos', country: 'Greece' },
+  { code: 'JFK', city: 'New York', name: 'John F Kennedy', country: 'USA' },
+  { code: 'LAX', city: 'Los Angeles', name: 'Los Angeles International', country: 'USA' },
+  { code: 'ORD', city: 'Chicago', name: 'O Hare International', country: 'USA' },
+  { code: 'SFO', city: 'San Francisco', name: 'San Francisco International', country: 'USA' },
+  { code: 'MIA', city: 'Miami', name: 'Miami International', country: 'USA' },
+  { code: 'YYZ', city: 'Toronto', name: 'Pearson International', country: 'Canada' },
+  { code: 'SIN', city: 'Singapore', name: 'Changi Airport', country: 'Singapore' },
+  { code: 'BKK', city: 'Bangkok', name: 'Suvarnabhumi', country: 'Thailand' },
+  { code: 'KUL', city: 'Kuala Lumpur', name: 'KLIA', country: 'Malaysia' },
+  { code: 'HKG', city: 'Hong Kong', name: 'Hong Kong International', country: 'Hong Kong' },
+  { code: 'NRT', city: 'Tokyo', name: 'Narita International', country: 'Japan' },
+  { code: 'ICN', city: 'Seoul', name: 'Incheon International', country: 'South Korea' },
+  { code: 'SYD', city: 'Sydney', name: 'Kingsford Smith', country: 'Australia' },
+  { code: 'MEL', city: 'Melbourne', name: 'Melbourne Airport', country: 'Australia' },
+  { code: 'DEL', city: 'New Delhi', name: 'Indira Gandhi International', country: 'India' },
+  { code: 'BOM', city: 'Mumbai', name: 'Chhatrapati Shivaji Maharaj', country: 'India' },
+  { code: 'JNB', city: 'Johannesburg', name: 'OR Tambo International', country: 'South Africa' },
+  { code: 'CAI', city: 'Cairo', name: 'Cairo International', country: 'Egypt' },
+  { code: 'RUH', city: 'Riyadh', name: 'King Khalid International', country: 'Saudi Arabia' },
+  { code: 'JED', city: 'Jeddah', name: 'King Abdulaziz International', country: 'Saudi Arabia' },
+  { code: 'MCT', city: 'Muscat', name: 'Muscat International', country: 'Oman' },
+  { code: 'KWI', city: 'Kuwait City', name: 'Kuwait International', country: 'Kuwait' },
+  { code: 'BAH', city: 'Manama', name: 'Bahrain International', country: 'Bahrain' },
+  { code: 'AMM', city: 'Amman', name: 'Queen Alia International', country: 'Jordan' },
+  { code: 'BEY', city: 'Beirut', name: 'Rafic Hariri International', country: 'Lebanon' },
+  { code: 'GRU', city: 'Sao Paulo', name: 'Guarulhos International', country: 'Brazil' },
+  { code: 'EZE', city: 'Buenos Aires', name: 'Ministro Pistarini', country: 'Argentina' },
+  { code: 'LIM', city: 'Lima', name: 'Jorge Chavez International', country: 'Peru' },
+  { code: 'ISB', city: 'Islamabad', name: 'New Islamabad International', country: 'Pakistan' },
+  { code: 'LHE', city: 'Lahore', name: 'Allama Iqbal International', country: 'Pakistan' },
+  { code: 'KHI', city: 'Karachi', name: 'Jinnah International', country: 'Pakistan' },
+  { code: 'DAC', city: 'Dhaka', name: 'Hazrat Shahjalal International', country: 'Bangladesh' },
+  { code: 'CMB', city: 'Colombo', name: 'Bandaranaike International', country: 'Sri Lanka' },
+  { code: 'OTHER', city: 'Other', name: 'Not listed — enter manually', country: '' },
+];
+
+const AirportSearch = ({ label, value, onChange, placeholder }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualCode, setManualCode] = useState('');
+  const [manualCity, setManualCity] = useState('');
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (value?.code && value.code !== 'OTHER') setQuery(`${value.city} (${value.code})`);
+  }, [value]);
+
+  React.useEffect(() => {
+    const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleSearch = (q) => {
+    setQuery(q);
+    if (q.length < 1) { setResults([]); setOpen(false); return; }
+    const filtered = AIRPORTS.filter(a =>
+      a.city.toLowerCase().includes(q.toLowerCase()) ||
+      a.code.toLowerCase().includes(q.toLowerCase()) ||
+      a.name.toLowerCase().includes(q.toLowerCase()) ||
+      a.country.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 8);
+    setResults(filtered);
+    setOpen(true);
+  };
+
+  const handleSelect = (airport) => {
+    if (airport.code === 'OTHER') {
+      setShowManual(true);
+      setOpen(false);
+      setQuery('Other (manual entry)');
+      return;
+    }
+    setQuery(`${airport.city} (${airport.code})`);
+    setOpen(false);
+    setResults([]);
+    setShowManual(false);
+    onChange(airport);
+  };
+
+  const handleManualSave = () => {
+    if (!manualCode || !manualCity) return;
+    onChange({ code: manualCode.toUpperCase(), city: manualCity, name: manualCity, country: 'Other' });
+    setQuery(`${manualCity} (${manualCode.toUpperCase()})`);
+    setShowManual(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</label>
+      <div className="relative">
+        <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+        <input type="text" value={query} onChange={e => handleSearch(e.target.value)}
+          onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
+          placeholder={placeholder}
+          className="input-field pl-9" />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+          {results.map(airport => (
+            <button key={airport.code} type="button" onClick={() => handleSelect(airport)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
+              <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-violet-600">{airport.code}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800">{airport.city}</p>
+                <p className="text-xs text-gray-400 truncate">{airport.name}{airport.country ? ` · ${airport.country}` : ''}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {showManual && (
+        <div className="mt-2 bg-gray-50 rounded-xl p-3 border border-gray-200 space-y-2">
+          <p className="text-xs font-semibold text-gray-600">Enter airport details manually</p>
+          <input type="text" placeholder="Airport code (e.g. XYZ)" value={manualCode}
+            onChange={e => setManualCode(e.target.value.toUpperCase())} maxLength={3}
+            className="input-field py-2 text-sm uppercase" />
+          <input type="text" placeholder="City name" value={manualCity}
+            onChange={e => setManualCity(e.target.value)}
+            className="input-field py-2 text-sm" />
+          <button onClick={handleManualSave}
+            className="w-full btn-primary py-2 text-xs">Confirm</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MyRequests = ({ session, onNewRequest }) => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);

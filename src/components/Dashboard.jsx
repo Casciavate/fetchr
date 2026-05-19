@@ -12,8 +12,8 @@ import Profile from './Profile';
 import Earnings from './Earnings';
 import WalletScreen from './Wallet';
 import {
-  Home, Plane, PlusCircle, DollarSign, User, Package,
-  FileText, Bell, MessageCircle, Wallet, Star, Heart,
+  Home, Plane, PlusCircle, User, Package,
+  Bell, MessageCircle, Wallet, Star,
   ChevronRight, Shield, LogOut, CheckCircle, Search,
   Menu, X, TrendingUp, Zap, ArrowUpRight
 } from 'lucide-react';
@@ -28,11 +28,23 @@ const AIRLINE_CODES = {
 
 const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];
-  if (!code) return <Plane size={16} className="text-brand-600" />;
+  if (!code) return (
+    <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center">
+      <Plane size={18} className="text-violet-400" />
+    </div>
+  );
   return (
-    <img src={`https://www.gstatic.com/flights/airline_logos/70px/${code}.png`}
-      alt={airline} className="w-8 h-8 object-contain"
-      onError={e => { e.target.style.display = 'none'; }} />
+    <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm">
+      <img
+        src={`https://www.gstatic.com/flights/airline_logos/70px/${code}.png`}
+        alt={airline}
+        className="w-8 h-8 object-contain"
+        onError={e => {
+          e.target.style.display = 'none';
+          e.target.parentNode.innerHTML = `<span style="font-size:10px;font-weight:700;color:#6c47ff">${code}</span>`;
+        }}
+      />
+    </div>
   );
 };
 
@@ -47,7 +59,6 @@ const Dashboard = ({ session }) => {
   });
   const [recentMatches, setRecentMatches] = useState([]);
   const [upcomingFlights, setUpcomingFlights] = useState([]);
-  const [recentChats, setRecentChats] = useState([]);
   const [activeDeals, setActiveDeals] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -85,7 +96,7 @@ const Dashboard = ({ session }) => {
     ] = await Promise.all([
       supabase.from('matches').select('id', { count: 'exact' })
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['accepted', 'in_escrow']),
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded']),
       supabase.from('flights').select('id', { count: 'exact' })
         .eq('user_id', userId).eq('status', 'active')
         .gte('flight_date', new Date().toISOString().split('T')[0]),
@@ -93,7 +104,7 @@ const Dashboard = ({ session }) => {
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .eq('status', 'completed'),
       supabase.from('shipment_requests').select('id', { count: 'exact' })
-        .eq('user_id', userId),
+        .eq('user_id', userId).in('status', ['open', 'matched']),
     ]);
 
     setStats({
@@ -121,22 +132,12 @@ const Dashboard = ({ session }) => {
       .order('flight_date', { ascending: true }).limit(3);
     setUpcomingFlights(flightsData || []);
 
-    const { data: chatsData } = await supabase
-      .from('matches')
-      .select(`*, flight:flights(*), request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(*),
-        shipper:profiles!matches_shipper_id_fkey(*)`)
-      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-      .in('status', ['accepted', 'in_escrow', 'completed'])
-      .order('created_at', { ascending: false }).limit(4);
-    setRecentChats(chatsData || []);
-
     const { data: activeDealsData } = await supabase
       .from('matches')
       .select(`*, flight:flights(*), request:shipment_requests(*)`)
       .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-      .in('status', ['accepted', 'in_escrow'])
-      .order('created_at', { ascending: false }).limit(2);
+      .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+      .order('created_at', { ascending: false }).limit(3);
     setActiveDeals(activeDealsData || []);
 
     if (showLoading) setLoading(false);
@@ -145,15 +146,15 @@ const Dashboard = ({ session }) => {
   useEffect(() => {
     fetchDashboardData(true);
     const userId = session.user.id;
+    const pollInterval = setInterval(() => fetchDashboardData(false), 10000);
     const sub = supabase.channel(`dashboard-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `traveler_id=eq.${userId}` }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `shipper_id=eq.${userId}` }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'flights', filter: `user_id=eq.${userId}` }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests', filter: `user_id=eq.${userId}` }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flights', filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests', filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, () => fetchDashboardData(false))
       .subscribe();
-    return () => supabase.removeChannel(sub);
+    return () => { clearInterval(pollInterval); supabase.removeChannel(sub); };
   }, []);
 
   const navGroups = [
@@ -207,6 +208,14 @@ const Dashboard = ({ session }) => {
 
   const navigate = (id) => { setActiveNav(id); setSidebarOpen(false); };
 
+  const statCards = [
+    { label: 'Active Deals', value: stats.activeDeals, icon: Zap, textColor: 'text-violet-600', bg: 'bg-violet-50', nav: 'active-deals' },
+    { label: 'Flights Listed', value: stats.upcomingFlights, icon: Plane, textColor: 'text-blue-600', bg: 'bg-blue-50', nav: 'flights' },
+    { label: 'My Requests', value: stats.totalRequests, icon: Package, textColor: 'text-indigo-600', bg: 'bg-indigo-50', nav: 'my-requests' },
+    { label: 'Deals Done', value: stats.completedDeals, icon: CheckCircle, textColor: 'text-emerald-600', bg: 'bg-emerald-50', nav: 'completed' },
+    { label: 'Wallet', value: `$${(stats.walletBalance || 0).toFixed(2)}`, icon: Wallet, textColor: 'text-amber-600', bg: 'bg-amber-50', nav: 'wallet' },
+  ];
+
   const renderMain = () => {
     switch (activeNav) {
       case 'add-flight': return <AddFlight session={session} />;
@@ -224,61 +233,19 @@ const Dashboard = ({ session }) => {
     }
   };
 
-  const statCards = [
-    {
-      label: 'Active Deals',
-      value: stats.activeDeals,
-      icon: Zap,
-      color: 'from-violet-500 to-purple-600',
-      textColor: 'text-violet-600',
-      bg: 'bg-violet-50',
-      nav: 'active-deals',
-      suffix: null,
-    },
-    {
-      label: 'Flights Listed',
-      value: stats.upcomingFlights,
-      icon: Plane,
-      color: 'from-blue-500 to-indigo-600',
-      textColor: 'text-blue-600',
-      bg: 'bg-blue-50',
-      nav: 'flights',
-      suffix: null,
-    },
-    {
-      label: 'Deals Done',
-      value: stats.completedDeals,
-      icon: CheckCircle,
-      color: 'from-emerald-500 to-green-600',
-      textColor: 'text-emerald-600',
-      bg: 'bg-emerald-50',
-      nav: 'completed',
-      suffix: null,
-    },
-    {
-      label: 'Wallet',
-      value: stats.walletBalance,
-      icon: Wallet,
-      color: 'from-amber-500 to-orange-600',
-      textColor: 'text-amber-600',
-      bg: 'bg-amber-50',
-      nav: 'wallet',
-      prefix: '$',
-    },
-  ];
+  const getHour = () => new Date().getHours();
 
   const renderDashboard = () => (
     <div className="animate-fade-in">
-      {/* Hero greeting */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
-          Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {userName} 👋
+          Good {getHour() < 12 ? 'morning' : getHour() < 18 ? 'afternoon' : 'evening'}, {userName} 👋
         </h1>
         <p className="text-gray-500 mt-1">Here's what's happening with your deliveries today.</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {statCards.map((stat, i) => (
           <button key={i} onClick={() => navigate(stat.nav)}
             className="group bg-white rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-all duration-300 text-left border border-gray-100/80">
@@ -288,11 +255,7 @@ const Dashboard = ({ session }) => {
               </div>
               <ArrowUpRight size={16} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
-            <p className="text-2xl font-bold text-gray-900 tracking-tight">
-              {stat.prefix || ''}{typeof stat.value === 'number' && stat.prefix === '$'
-                ? stat.value.toFixed(2)
-                : stat.value}
-            </p>
+            <p className="text-2xl font-bold text-gray-900 tracking-tight">{stat.value}</p>
             <p className="text-sm text-gray-500 mt-0.5 font-medium">{stat.label}</p>
           </button>
         ))}
@@ -313,9 +276,7 @@ const Dashboard = ({ session }) => {
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1,2,3].map(i => (
-              <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />
-            ))}
+            {[1,2,3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />)}
           </div>
         ) : recentMatches.length === 0 ? (
           <div className="text-center py-10 bg-gray-50 rounded-xl">
@@ -324,40 +285,32 @@ const Dashboard = ({ session }) => {
             </div>
             <p className="text-gray-600 font-medium text-sm mb-1">No matches yet</p>
             <p className="text-gray-400 text-xs mb-4">Add a flight or request to start matching</p>
-            <button onClick={() => navigate('matches')}
-              className="btn-primary">
-              Find Matches
-            </button>
+            <button onClick={() => navigate('matches')} className="btn-primary">Find Matches</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {recentMatches.map(match => {
               const other = getOtherParty(match);
               return (
-                <div key={match.id}
-                  onClick={() => navigate('matches')}
+                <div key={match.id} onClick={() => navigate('matches')}
                   className="group border border-gray-100 rounded-xl p-4 hover:border-violet-200 hover:bg-violet-50/30 transition-all cursor-pointer">
                   <div className="flex items-center justify-between mb-3">
-                    <span className={`badge ${
-                      match.match_score >= 90 ? 'badge-green' :
-                      match.match_score >= 75 ? 'badge-blue' : 'badge-yellow'
-                    }`}>
+                    <span className={`badge ${match.match_score >= 90 ? 'badge-green' : match.match_score >= 75 ? 'badge-blue' : 'badge-yellow'}`}>
                       ⚡ {match.match_score}% match
                     </span>
-                    <Heart size={14} className="text-gray-300 group-hover:text-violet-400 transition-colors" />
                   </div>
                   <p className="font-bold text-gray-900 text-sm mb-0.5">
                     {match.flight?.from_city} → {match.flight?.to_city}
                   </p>
                   <p className="text-xs text-gray-400 mb-3">
-                    {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}
+                    {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB') : ''}
                   </p>
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600">
                       {getInitials(other?.full_name)}
                     </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-800">{other?.full_name || 'User'}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 truncate">{other?.full_name || 'User'}</p>
                       {other?.rating > 0 && (
                         <div className="flex items-center gap-0.5">
                           <Star size={10} className="text-amber-400 fill-amber-400" />
@@ -365,9 +318,8 @@ const Dashboard = ({ session }) => {
                         </div>
                       )}
                     </div>
-                    <div className="ml-auto text-right">
+                    <div className="text-right flex-shrink-0">
                       <p className="text-xs font-bold text-violet-600">${match.flight?.price_per_kg}/kg</p>
-                      <p className="text-xs text-gray-400">{match.flight?.available_kg}kg</p>
                     </div>
                   </div>
                 </div>
@@ -377,7 +329,7 @@ const Dashboard = ({ session }) => {
         )}
       </div>
 
-      {/* Two column bottom */}
+      {/* Bottom two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Upcoming Flights */}
@@ -393,30 +345,23 @@ const Dashboard = ({ session }) => {
             <div className="text-center py-8 bg-gray-50 rounded-xl">
               <Plane size={24} className="text-gray-300 mx-auto mb-2" />
               <p className="text-gray-500 text-sm font-medium mb-3">No upcoming flights</p>
-              <button onClick={() => navigate('add-flight')} className="btn-primary text-xs">
-                + Add Flight
-              </button>
+              <button onClick={() => navigate('add-flight')} className="btn-primary text-xs">+ Add Flight</button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {upcomingFlights.map((flight, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition group">
-                  <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center border border-gray-100 flex-shrink-0 overflow-hidden">
-                    <AirlineLogo airline={flight.airline} />
-                  </div>
+                <button key={i} onClick={() => navigate('flights')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left group">
+                  <AirlineLogo airline={flight.airline} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900">
-                      {flight.from_code} → {flight.to_code}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(flight.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </p>
+                    <p className="text-sm font-bold text-gray-900">{flight.from_code} → {flight.to_code}</p>
+                    <p className="text-xs text-gray-400">{new Date(flight.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-violet-600">${flight.price_per_kg}/kg</p>
-                    <p className="text-xs text-gray-400">{flight.available_kg}kg free</p>
+                    <p className="text-xs text-gray-400">{flight.available_kg}kg</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -435,33 +380,28 @@ const Dashboard = ({ session }) => {
             <div className="text-center py-8 bg-gray-50 rounded-xl">
               <Zap size={24} className="text-gray-300 mx-auto mb-2" />
               <p className="text-gray-500 text-sm font-medium mb-3">No active deals</p>
-              <button onClick={() => navigate('matches')} className="btn-primary text-xs">
-                Browse Matches
-              </button>
+              <button onClick={() => navigate('matches')} className="btn-primary text-xs">Browse Matches</button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {activeDeals.map((deal, i) => {
                 const dealValue = (deal.flight?.price_per_kg || 0) * (deal.request?.weight_kg || 0);
+                const stageLabel = deal.status === 'in_escrow' ? '🔒 Escrow' :
+                  deal.status === 'proof_uploaded' ? '📸 Proof' :
+                  deal.status === 'terms_agreed' ? '✅ Terms' : '🤝 Matched';
                 return (
                   <button key={i} onClick={() => navigate('messages')}
                     className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left group">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      deal.status === 'in_escrow' ? 'bg-blue-50' : 'bg-amber-50'
-                    }`}>
-                      <span className="text-lg">{deal.status === 'in_escrow' ? '🔒' : '🤝'}</span>
+                    <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0 text-lg">
+                      {deal.status === 'in_escrow' ? '🔒' : deal.status === 'proof_uploaded' ? '📸' : '🤝'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-900 truncate">{deal.request?.item_name}</p>
-                      <p className="text-xs text-gray-400">
-                        {deal.flight?.from_code} → {deal.flight?.to_code}
-                      </p>
+                      <p className="text-xs text-gray-400">{deal.flight?.from_code} → {deal.flight?.to_code}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-bold text-gray-800">${dealValue.toFixed(0)}</p>
-                      <span className={`text-xs font-semibold ${deal.status === 'in_escrow' ? 'text-blue-500' : 'text-amber-500'}`}>
-                        {deal.status === 'in_escrow' ? 'Escrow' : 'Pending'}
-                      </span>
+                      <p className="text-xs text-violet-500 font-semibold">{stageLabel}</p>
                     </div>
                   </button>
                 );
@@ -476,7 +416,6 @@ const Dashboard = ({ session }) => {
   return (
     <div className="flex h-screen bg-[#f8f7ff] overflow-hidden">
 
-      {/* Sidebar overlay on mobile */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setSidebarOpen(false)} />
@@ -490,7 +429,6 @@ const Dashboard = ({ session }) => {
         transform transition-transform duration-300 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        {/* Logo */}
         <div className="flex items-center justify-between px-5 py-5 border-b border-gray-100">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-purple-700 rounded-xl flex items-center justify-center shadow-button">
@@ -503,29 +441,22 @@ const Dashboard = ({ session }) => {
           </button>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-6">
           <button onClick={() => navigate('dashboard')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeNav === 'dashboard'
-                ? 'bg-violet-600 text-white shadow-button'
-                : 'text-gray-600 hover:bg-gray-100'
+              activeNav === 'dashboard' ? 'bg-violet-600 text-white shadow-button' : 'text-gray-600 hover:bg-gray-100'
             }`}>
             <Home size={16} /> Dashboard
           </button>
 
           {navGroups.map(group => (
             <div key={group.label}>
-              <p className="text-xs font-semibold text-gray-400 px-3 mb-2 uppercase tracking-widest">
-                {group.label}
-              </p>
+              <p className="text-xs font-semibold text-gray-400 px-3 mb-2 uppercase tracking-widest">{group.label}</p>
               <div className="space-y-0.5">
                 {group.items.map(item => (
                   <button key={item.id} onClick={() => navigate(item.id)}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                      activeNav === item.id
-                        ? 'bg-violet-50 text-violet-700 font-semibold'
-                        : 'text-gray-600 hover:bg-gray-100'
+                      activeNav === item.id ? 'bg-violet-50 text-violet-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'
                     }`}>
                     <span className="flex items-center gap-3">
                       <item.icon size={15} /> {item.label}
@@ -542,7 +473,6 @@ const Dashboard = ({ session }) => {
           ))}
         </nav>
 
-        {/* Bottom */}
         <div className="px-3 pb-4 space-y-1 border-t border-gray-100 pt-4">
           <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-xl p-4 mb-3">
             <p className="text-xs font-bold text-white mb-0.5">Refer & Earn</p>
@@ -569,7 +499,7 @@ const Dashboard = ({ session }) => {
               <Menu size={20} />
             </button>
             <div className="hidden md:block">
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-sm font-semibold text-gray-900 capitalize">
                 {activeNav === 'dashboard' ? 'Dashboard' :
                  activeNav === 'add-flight' ? 'Add Flight' :
                  activeNav === 'flights' ? 'My Flights' :
@@ -623,7 +553,7 @@ const Dashboard = ({ session }) => {
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 z-30 px-2 py-2 safe-area-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 z-30 px-2 py-2">
         <div className="flex items-center justify-around">
           {bottomNavItems.map(item => (
             <button key={item.id} onClick={() => navigate(item.id)}
@@ -636,9 +566,7 @@ const Dashboard = ({ session }) => {
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-violet-600 rounded-full" />
                 )}
               </div>
-              <span className={`text-xs font-medium ${activeNav === item.id ? 'font-bold' : ''}`}>
-                {item.label}
-              </span>
+              <span className={`text-xs ${activeNav === item.id ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
             </button>
           ))}
           <button onClick={async () => { await supabase.auth.signOut(); }}
