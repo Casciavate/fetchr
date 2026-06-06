@@ -191,20 +191,35 @@ const MyRequests = ({ session, onNewRequest }) => {
                     {getStatusBadge(req)}
                   </div>
 
-                  {/* Stats row */}
+{/* Stats row */}
                   <div className="grid grid-cols-3 gap-3 mb-4">
                     <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
                       <p className="text-xs text-gray-400 mb-1">Weight</p>
                       <p className="text-base font-bold text-gray-900">{req.weight_kg}kg</p>
+                      {req.item_dimensions && (
+                        <p className="text-xs text-gray-400 mt-0.5">{req.item_dimensions}</p>
+                      )}
                     </div>
                     <div className="bg-violet-50 rounded-xl p-3 text-center border border-violet-100">
-                      <p className="text-xs text-gray-400 mb-1">Budget</p>
-                      <p className="text-base font-bold text-violet-700">${req.budget_per_kg}/kg</p>
+                      <p className="text-xs text-gray-400 mb-1">Max Budget</p>
+                      {req.max_budget ? (
+                        <>
+                          <p className="text-base font-bold text-violet-700">
+                            {req.budget_currency || 'USD'} {parseFloat(req.max_budget).toFixed(0)}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">total max</p>
+                        </>
+                      ) : (
+                        <p className="text-base font-bold text-gray-400">Open</p>
+                      )}
                     </div>
                     <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
-                      <p className="text-xs text-gray-400 mb-1">Est. Total</p>
-                      <p className="text-base font-bold text-gray-900">
-                        ~${(req.weight_kg * req.budget_per_kg).toFixed(0)}
+                      <p className="text-xs text-gray-400 mb-1">Delivery</p>
+                      <p className="text-lg">
+                        {req.requires_purchase ? '🛍️' : req.handover_type === 'trusted_person' ? '🤝' : '🙋'}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {req.requires_purchase ? 'Purchase' : req.handover_type === 'trusted_person' ? 'Via contact' : 'Self'}
                       </p>
                     </div>
                   </div>
@@ -291,43 +306,43 @@ const MyRequests = ({ session, onNewRequest }) => {
                       )}
                     </div>
 
-                    {/* ── Indicative escrow ── */}
+{/* ── Budget & sizing ── */}
                     <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
-                      <p className="text-xs font-bold text-violet-700 mb-1">
-                        Indicative Escrow Amount
-                      </p>
-                      <p className="text-xs text-violet-500 italic mb-3">
-                        This is an estimate only. The final amount is agreed between you and the traveler during negotiation in chat.
-                      </p>
+                      <p className="text-xs font-bold text-violet-700 mb-3">Budget & Size</p>
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between text-gray-600">
-                          <span>Shipping ({req.weight_kg}kg × ${req.budget_per_kg})</span>
-                          <span className="font-semibold">
-                            ${(req.weight_kg * req.budget_per_kg).toFixed(2)}
-                          </span>
+                          <span>Total weight</span>
+                          <span className="font-semibold">{req.weight_kg}kg</span>
                         </div>
+                        {req.item_dimensions && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>Dimensions</span>
+                            <span className="font-semibold">{req.item_dimensions}</span>
+                          </div>
+                        )}
+                        {req.max_budget ? (
+                          <div className="flex justify-between font-bold text-violet-700 border-t border-violet-200 pt-1.5">
+                            <span>Maximum budget</span>
+                            <span>{req.budget_currency || 'USD'} {parseFloat(req.max_budget).toFixed(2)}</span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between text-gray-400 italic border-t border-violet-200 pt-1.5">
+                            <span>Budget</span>
+                            <span>Open to offers — negotiate in chat</span>
+                          </div>
+                        )}
                         {req.requires_purchase && req.purchase_price && (
                           <div className="flex justify-between text-gray-600">
-                            <span>Item purchase price</span>
+                            <span>Purchase price estimate</span>
                             <span className="font-semibold">
-                              ${parseFloat(req.purchase_price).toFixed(2)}
+                              {req.purchase_currency || 'USD'} {parseFloat(req.purchase_price).toFixed(2)}
                             </span>
                           </div>
                         )}
-                        <div className="flex justify-between text-gray-400 italic">
-                          <span>Fetchr service fees</span>
-                          <span>calculated at checkout</span>
-                        </div>
-                        <div className="flex justify-between font-bold text-violet-700 border-t border-violet-200 pt-1.5">
-                          <span>Minimum estimate</span>
-                          <span>
-                            ~${(
-                              req.weight_kg * req.budget_per_kg +
-                              (req.requires_purchase ? parseFloat(req.purchase_price || 0) : 0)
-                            ).toFixed(2)}+
-                          </span>
-                        </div>
                       </div>
+                      <p className="text-xs text-violet-500 italic mt-3">
+                        Final deal price agreed between you and the traveler in chat.
+                      </p>
                     </div>
 
                     {/* ── Shop & Ship details ── */}
@@ -484,6 +499,27 @@ const MyRequests = ({ session, onNewRequest }) => {
                                 <p className="text-xs text-gray-700 italic">"{deal.agreed_notes}"</p>
                               </div>
                             )}
+
+                            {/* Trusted person details */}
+                      {req.handover_type === 'trusted_person' && req.trusted_person_name && (
+                        <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+                          <p className="text-xs font-bold text-indigo-700 mb-2 flex items-center gap-1.5">
+                            <User size={12} /> Handover Contact
+                          </p>
+                          <div className="space-y-1 text-xs">
+                            <p className="text-gray-700 font-semibold">{req.trusted_person_name}</p>
+                            <p className="text-gray-500">{req.trusted_person_phone}</p>
+                            {req.trusted_person_location && (
+                              <p className="text-gray-500 flex items-center gap-1">
+                                <MapPin size={10} /> {req.trusted_person_location}
+                              </p>
+                            )}
+                            {req.trusted_person_notes && (
+                              <p className="text-gray-400 italic">{req.trusted_person_notes}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                             {/* Completion status */}
                             <div className="flex items-center gap-3 text-xs">
