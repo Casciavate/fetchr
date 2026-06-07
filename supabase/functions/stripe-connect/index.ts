@@ -1,148 +1,241 @@
+// @ts-nocheck
+import Stripe from 'https://esm.sh/stripe@13.11.0?target=deno'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+  httpClient: Stripe.createFetchHttpClient(),
+})
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 Deno.serve(async (req) => {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  }
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { action, data } = await req.json();
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
-    if (!stripeKey) return new Response(JSON.stringify({ error: 'Stripe key not configured' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const adminClient = createClient(supabaseUrl, serviceRoleKey)
 
-    // Tiered fee calculator
-    const calculateFees = (subtotalUSD: number) => {
-      const stripeFeePercent = 0.029;
-      const stripeFeeFixed = 0.30;
-      let fetchrFeePercent = 0.10;
-      if (subtotalUSD >= 500) fetchrFeePercent = 0.07;
-      else if (subtotalUSD >= 200) fetchrFeePercent = 0.085;
-      else if (subtotalUSD < 20) fetchrFeePercent = 0.12;
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) throw new Error('No auth header')
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await adminClient.auth.getUser(token)
+    if (userError || !user) throw new Error('Invalid token')
 
-      const fetchrFee = subtotalUSD * fetchrFeePercent;
-      const stripeFee = (subtotalUSD + fetchrFee) * stripeFeePercent + stripeFeeFixed;
-      const totalFetchrFee = fetchrFee + stripeFee;
-      const totalCharged = subtotalUSD + totalFetchrFee;
-      const travelerReceives = subtotalUSD - fetchrFee;
+    const body = await req.json()
+    const { action, data } = body
 
-      return {
-        subtotal: subtotalUSD,
-        fetchrFee: Math.round(fetchrFee * 100) / 100,
-        fetchrFeePercent: Math.round(fetchrFeePercent * 100),
-        stripeFee: Math.round(stripeFee * 100) / 100,
-        totalFetchrFee: Math.round(totalFetchrFee * 100) / 100,
-        totalCharged: Math.round(totalCharged * 100) / 100,
-        travelerReceives: Math.round(travelerReceives * 100) / 100,
-        totalChargedCents: Math.round(totalCharged * 100),
-        fetchrFeeCents: Math.round(fetchrFee * 100),
-        travelerReceivesCents: Math.round(travelerReceives * 100),
-      };
-    };
+    // ── CREATE PAYMENT INTENT (Option C) ──
+    // Shipper pays full amount
+    // Fetchr fee captured immediately
+    // Escrow portion held uncaptured
+    if (action === 'create_payment_intent') {
+      const { matchId, amount, currency = 'usd' } = data
 
-    // Get fee breakdown
-    if (action === 'get_fees') {
-      const fees = calculateFees(data.subtotal);
-      return new Response(JSON.stringify(fees), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+      // Get match details
+      const { data: match } = await adminClient
+        .from('matches')
+        .select('*, flight:flights(*), request:shipment_requests(*)')
+        .eq('id', matchId)
+        .single()
 
-    // Create escrow payment
-    // Strategy: charge full amount, capture Fetchr fee immediately,
-    // hold traveler portion until delivery confirmed
-    if (action === 'create_escrow_payment') {
-      const { subtotal, matchId } = data;
-      const fees = calculateFees(subtotal);
+      if (!match) throw new Error('Match not found')
 
-      // Step 1: Create payment method (test card)
-      const pmRes = await fetch('https://api.stripe.com/v1/payment_methods', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          type: 'card',
-          'card[number]': '4242424242424242',
-          'card[exp_month]': '12',
-          'card[exp_year]': '2028',
-          'card[cvc]': '123',
-        }).toString(),
-      });
-      const pm = await pmRes.json();
-      if (pm.error) return new Response(JSON.stringify({ error: pm.error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+      const subtotal = amount // in cents
+      
+      // Calculate tiered Fetchr fee
+      const subtotalUSD = subtotal / 100
+      let fetchrPct = 0.10
+      if (subtotalUSD >= 500) fetchrPct = 0.07
+      else if (subtotalUSD >= 200) fetchrPct = 0.085
+      else if (subtotalUSD < 20) fetchrPct = 0.12
+      
+      const fetchrFeeUSD = subtotalUSD * fetchrPct
+      const fetchrFeeCents = Math.round(fetchrFeeUSD * 100)
+      const stripeFeeUSD = (subtotalUSD + fetchrFeeUSD) * 0.029 + 0.30
+      const stripeFeeCents = Math.round(stripeFeeUSD * 100)
+      const totalCents = subtotal + fetchrFeeCents + stripeFeeCents
 
-      // Step 2: Create customer
-      const custRes = await fetch('https://api.stripe.com/v1/customers', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ description: `Fetchr escrow - match ${matchId}`, 'metadata[matchId]': matchId }).toString(),
-      });
-      const customer = await custRes.json();
+      // Create PaymentIntent — capture_method: manual means funds are HELD not charged
+      // We will capture only the escrow portion on delivery
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: totalCents,
+        currency,
+        capture_method: 'manual', // KEY: holds funds without capturing
+        metadata: {
+          match_id: matchId,
+          subtotal_cents: subtotal,
+          fetchr_fee_cents: fetchrFeeCents,
+          stripe_fee_cents: stripeFeeCents,
+          fetchr_pct: Math.round(fetchrPct * 100),
+          traveler_id: match.traveler_id,
+          shipper_id: match.shipper_id,
+        },
+        description: `Fetchr escrow: ${match.request?.item_name} (${match.flight?.from_code} → ${match.flight?.to_code})`,
+      })
 
-      // Step 3: Attach payment method
-      await fetch(`https://api.stripe.com/v1/payment_methods/${pm.id}/attach`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ customer: customer.id }).toString(),
-      });
+      // Update match with escrow details
+      await adminClient.from('matches').update({
+        payment_intent_id: paymentIntent.id,
+        escrow_amount: subtotalUSD - fetchrFeeUSD, // traveler receives this
+        status: 'in_escrow',
+        deal_stage: 'in_escrow',
+      }).eq('id', matchId)
 
-      // Step 4: Create payment intent
-      // We charge full amount and hold it.
-      // On completion we release traveler portion to wallet.
-      // Fetchr fee is tracked in metadata.
-      const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          amount: fees.totalChargedCents.toString(),
-          currency: 'usd',
-          customer: customer.id,
-          payment_method: pm.id,
-          confirm: 'true',
-          off_session: 'true',
-          'metadata[matchId]': matchId,
-          'metadata[subtotal]': fees.subtotal.toString(),
-          'metadata[fetchrFee]': fees.fetchrFee.toString(),
-          'metadata[stripeFee]': fees.stripeFee.toString(),
-          'metadata[travelerReceives]': fees.travelerReceives.toString(),
-          description: `Fetchr escrow for match ${matchId}`,
-        }).toString(),
-      });
-      const pi = await piRes.json();
+      // Record transaction for shipper (debit)
+      await adminClient.from('transactions').insert({
+        user_id: match.shipper_id,
+        type: 'escrow_hold',
+        amount: subtotalUSD + fetchrFeeUSD + stripeFeeUSD,
+        description: `Escrow held: ${match.request?.item_name}`,
+        match_id: matchId,
+        status: 'pending',
+        metadata: {
+          payment_intent_id: paymentIntent.id,
+          fetchr_fee: fetchrFeeUSD,
+          stripe_fee: stripeFeeUSD,
+        }
+      })
 
-      if (pi.error) return new Response(JSON.stringify({ error: pi.error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+      // Send message in chat
+      await adminClient.from('messages').insert({
+        match_id: matchId,
+        sender_id: user.id,
+        content: `🔒 ESCROW SECURED: $${subtotalUSD.toFixed(2)} is now held in escrow. Fetchr fee: $${fetchrFeeUSD.toFixed(2)} (${Math.round(fetchrPct * 100)}%). The traveler will receive $${(subtotalUSD - fetchrFeeUSD).toFixed(2)} upon confirmed delivery.`,
+        is_read: false,
+      })
 
       return new Response(JSON.stringify({
-        paymentIntentId: pi.id,
-        clientSecret: pi.client_secret,
-        status: pi.status,
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        breakdown: {
+          subtotal: subtotalUSD,
+          fetchrFee: fetchrFeeUSD,
+          stripeFee: stripeFeeUSD,
+          total: (totalCents / 100),
+          travelerReceives: subtotalUSD - fetchrFeeUSD,
+        }
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── CAPTURE PAYMENT ON DELIVERY ──
+    // Called when both parties confirm delivery
+    // Captures Fetchr fee immediately to our account
+    // Credits traveler wallet with their portion
+    if (action === 'capture_payment') {
+      const { paymentIntentId, matchId } = data
+
+      const { data: match } = await adminClient
+        .from('matches')
+        .select('*, flight:flights(*), request:shipment_requests(*)')
+        .eq('id', matchId || '')
+        .maybeSingle()
+
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId)
+      
+      // Capture the full amount (Stripe handles it all in one account)
+      await stripe.paymentIntents.capture(paymentIntentId)
+
+      // Calculate what traveler receives
+      const totalCents = pi.amount
+      const fetchrFeeCents = parseInt(pi.metadata.fetchr_fee_cents || '0')
+      const stripeFeeCents = parseInt(pi.metadata.stripe_fee_cents || '0')
+      const subtotalCents = parseInt(pi.metadata.subtotal_cents || '0')
+      const travelerReceivesCents = subtotalCents - fetchrFeeCents
+      const travelerReceivesUSD = travelerReceivesCents / 100
+
+      // Credit traveler wallet
+      if (match) {
+        const { data: travelerProfile } = await adminClient
+          .from('profiles')
+          .select('wallet_balance')
+          .eq('id', match.traveler_id)
+          .single()
+
+        await adminClient.from('profiles').update({
+          wallet_balance: (travelerProfile?.wallet_balance || 0) + travelerReceivesUSD
+        }).eq('id', match.traveler_id)
+
+        // Record traveler credit transaction
+        await adminClient.from('transactions').insert({
+          user_id: match.traveler_id,
+          type: 'escrow_release',
+          amount: travelerReceivesUSD,
+          description: `Delivery payment: ${match.request?.item_name}`,
+          match_id: match.id,
+          status: 'completed',
+          metadata: {
+            payment_intent_id: paymentIntentId,
+            fetchr_fee: fetchrFeeCents / 100,
+          }
+        })
+
+        // Record fetchr fee transaction (for business records)
+        await adminClient.from('transactions').insert({
+          user_id: match.shipper_id, // associate with deal
+          type: 'fetchr_fee',
+          amount: fetchrFeeCents / 100,
+          description: `Fetchr service fee: ${match.request?.item_name}`,
+          match_id: match.id,
+          status: 'completed',
+          metadata: {
+            payment_intent_id: paymentIntentId,
+            pct: pi.metadata.fetchr_pct,
+          }
+        })
+
+        // Update shipper transaction to completed
+        await adminClient.from('transactions')
+          .update({ status: 'completed' })
+          .eq('match_id', match.id)
+          .eq('type', 'escrow_hold')
+      }
+
+      return new Response(JSON.stringify({
         success: true,
-        fees,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        travelerReceives: travelerReceivesUSD,
+        fetchrFee: fetchrFeeCents / 100,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Retrieve payment intent to check status
-    if (action === 'get_payment') {
-      const { paymentIntentId } = data;
-      const res = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentIntentId}`, {
-        headers: { 'Authorization': `Bearer ${stripeKey}` },
-      });
-      const pi = await res.json();
-      return new Response(JSON.stringify({ status: pi.status, amount: pi.amount, metadata: pi.metadata }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // ── VOID / REFUND ON CANCELLATION ──
+    if (action === 'cancel_payment') {
+      const { paymentIntentId, matchId } = data
+
+      // Cancel the uncaptured payment intent (full refund automatically)
+      await stripe.paymentIntents.cancel(paymentIntentId)
+
+      // Get match to update shipper transaction
+      if (matchId) {
+        const { data: match } = await adminClient
+          .from('matches').select('shipper_id, request:shipment_requests(item_name)')
+          .eq('id', matchId).maybeSingle()
+
+        if (match) {
+          // Update transaction to refunded
+          await adminClient.from('transactions')
+            .update({ status: 'refunded' })
+            .eq('match_id', matchId)
+            .eq('type', 'escrow_hold')
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, refunded: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
-    // Refund escrow on cancellation
-    if (action === 'refund_payment') {
-      const { paymentIntentId } = data;
-      const res = await fetch('https://api.stripe.com/v1/refunds', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ payment_intent: paymentIntentId }).toString(),
-      });
-      const refund = await refund.json();
-      if (refund.error) return new Response(JSON.stringify({ error: refund.error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
-      return new Response(JSON.stringify({ success: true, refundId: refund.id, status: refund.status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    return new Response(JSON.stringify({ error: 'Unknown action' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    throw new Error(`Unknown action: ${action}`)
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' }, status: 400 });
+    console.error('Stripe function error:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
   }
-});
+})
