@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, Plane, Package, Star, CheckCircle, XCircle,
-  ChevronRight, Shield, X, Award,
-  Globe, Clock, Zap, ShoppingBag
+  ChevronRight, Shield, X, Award, Globe, Clock, Zap, ShoppingBag
 } from 'lucide-react';
 
 const Matches = ({ session }) => {
@@ -13,7 +12,7 @@ const Matches = ({ session }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
-const fetchMatches = async () => {
+  const fetchMatches = async () => {
     setLoading(true);
     await supabase.rpc('find_matches');
     const { data, error } = await supabase
@@ -34,14 +33,19 @@ const fetchMatches = async () => {
 
   const fetchProfile = async (userId) => {
     setProfileLoading(true);
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    const { count: flightsCount } = await supabase.from('flights')
-      .select('id', { count: 'exact' }).eq('user_id', userId);
-    const { count: dealsCount } = await supabase.from('matches')
-      .select('id', { count: 'exact' })
+    const { data } = await supabase
+      .from('profiles').select('*').eq('id', userId).single();
+    const { count: flightsCount } = await supabase
+      .from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
+    const { count: dealsCount } = await supabase
+      .from('matches').select('id', { count: 'exact' })
       .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
       .eq('status', 'completed');
-    setViewingProfile({ ...data, totalFlights: flightsCount || 0, totalDeals: dealsCount || 0 });
+    setViewingProfile({
+      ...data,
+      totalFlights: flightsCount || 0,
+      totalDeals: dealsCount || 0
+    });
     setProfileLoading(false);
   };
 
@@ -51,7 +55,7 @@ const fetchMatches = async () => {
     return () => clearInterval(interval);
   }, []);
 
-const handleAccept = async (matchId) => {
+  const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
     const match = matches.find(m => m.id === matchId);
     const isTrav = match.traveler_id === session.user.id;
@@ -59,7 +63,7 @@ const handleAccept = async (matchId) => {
     const otherAccepted = isTrav ? match.shipper_accepted : match.traveler_accepted;
 
     if (otherAccepted) {
-      // Both accepted — move to accepted
+      // Both accepted — move to accepted, open chat
       await supabase.from('matches').update({
         [myField]: true,
         status: 'accepted',
@@ -70,17 +74,17 @@ const handleAccept = async (matchId) => {
         match_id: matchId,
         sender_id: session.user.id,
         content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery.`,
-        is_read: false
+        is_read: false,
       }]);
     } else {
-      // First to accept — stay visible, show awaiting
+      // First to accept — stay visible with awaiting_other status
       await supabase.from('matches').update({
         [myField]: true,
         status: 'awaiting_other',
       }).eq('id', matchId);
     }
 
-    // Refresh matches — do NOT remove from list
+    // Refresh but do NOT remove from list
     await fetchMatches();
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -106,16 +110,19 @@ const handleAccept = async (matchId) => {
     return data?.publicUrl;
   };
 
-const getFeePreview = (match) => {
-  const agreedPrice = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
-  let fetchrPct = 0.10;
-  if (agreedPrice >= 500) fetchrPct = 0.07;
-  else if (agreedPrice >= 200) fetchrPct = 0.085;
-  else if (agreedPrice < 20) fetchrPct = 0.12;
-  const fetchrFee = agreedPrice * fetchrPct;
-  const travelerReceives = agreedPrice - fetchrFee;
-  return { agreedPrice, fetchrFee, fetchrPct, travelerReceives };
-};
+  // Fetchr takes a cut FROM the traveler's share
+  // Shipper always pays exactly the agreed price — no additions
+  const getFeePreview = (match) => {
+    const agreedPrice = (match.flight?.price_per_kg || 0) *
+      (match.request?.weight_kg || 0);
+    let fetchrPct = 0.10;
+    if (agreedPrice >= 500) fetchrPct = 0.07;
+    else if (agreedPrice >= 200) fetchrPct = 0.085;
+    else if (agreedPrice < 20 && agreedPrice > 0) fetchrPct = 0.12;
+    const fetchrFee = agreedPrice * fetchrPct;
+    const travelerReceives = agreedPrice - fetchrFee;
+    return { agreedPrice, fetchrFee, fetchrPct, travelerReceives };
+  };
 
   const getScoreBadge = (score) => {
     if (score >= 90) return 'badge-green';
@@ -163,18 +170,25 @@ const getFeePreview = (match) => {
           {matches.map(match => {
             const other = getOtherParty(match);
             const avatarUrl = getAvatarUrl(other);
-            const myAccepted = isTraveler(match) ? match.traveler_accepted : match.shipper_accepted;
+            const myAccepted = isTraveler(match)
+              ? match.traveler_accepted
+              : match.shipper_accepted;
+            const otherAccepted = isTraveler(match)
+              ? match.shipper_accepted
+              : match.traveler_accepted;
             const fees = getFeePreview(match);
 
             return (
               <div key={match.id}
                 className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
 
-                {/* Score bar */}
+                {/* Match score bar */}
                 <div className={`h-1 ${
-                  match.match_score >= 90 ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
-                  match.match_score >= 75 ? 'bg-gradient-to-r from-blue-400 to-indigo-500' :
-                  'bg-gradient-to-r from-amber-400 to-orange-500'
+                  match.match_score >= 90
+                    ? 'bg-gradient-to-r from-emerald-400 to-green-500'
+                    : match.match_score >= 75
+                      ? 'bg-gradient-to-r from-blue-400 to-indigo-500'
+                      : 'bg-gradient-to-r from-amber-400 to-orange-500'
                 }`} style={{ width: `${match.match_score}%` }} />
 
                 <div className="p-5">
@@ -193,6 +207,11 @@ const getFeePreview = (match) => {
                       {myAccepted && (
                         <span className="badge badge-green">
                           <CheckCircle size={10} /> You accepted
+                        </span>
+                      )}
+                      {otherAccepted && !myAccepted && (
+                        <span className="badge badge-blue">
+                          <Clock size={10} /> Other party accepted
                         </span>
                       )}
                     </div>
@@ -225,10 +244,12 @@ const getFeePreview = (match) => {
                       <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
                         <Package size={10} /> Shipment
                       </p>
-                      <p className="text-base font-bold text-gray-900 truncate">{match.request?.item_name}</p>
+                      <p className="text-base font-bold text-gray-900 truncate">
+                        {match.request?.item_name}
+                      </p>
                       <p className="text-xs text-gray-500 mt-0.5">{match.request?.category}</p>
                       <p className="text-xs font-semibold text-violet-600 mt-2">
-                        {match.request?.weight_kg}kg · ${match.request?.budget_per_kg}/kg budget
+                        {match.request?.weight_kg}kg
                       </p>
                     </div>
                   </div>
@@ -237,29 +258,35 @@ const getFeePreview = (match) => {
                   {match.flight?.delivery_type === 'both' && (
                     <div className="flex items-center gap-2 bg-blue-50 text-blue-700 rounded-xl px-3 py-2 mb-4 border border-blue-100">
                       <ShoppingBag size={14} />
-                      <p className="text-xs font-semibold">Shop & Ship available — traveler can purchase items at destination</p>
+                      <p className="text-xs font-semibold">
+                        Shop & Ship available — traveler can purchase items at destination
+                      </p>
                     </div>
                   )}
 
-{/* Fee preview */}
+                  {/* Fee preview — CORRECT logic */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deal Preview</p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="text-center">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Deal Preview
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div>
                         <p className="text-xs text-gray-400 mb-1">Shipper pays</p>
                         <p className="text-base font-bold text-gray-900">
                           ${fees.agreedPrice.toFixed(2)}
                         </p>
                         <p className="text-xs text-gray-400">agreed price</p>
                       </div>
-                      <div className="text-center">
+                      <div>
                         <p className="text-xs text-gray-400 mb-1">Fetchr fee</p>
-                        <p className="text-base font-bold text-red-500">
-                          -${fees.fetchrFee.toFixed(2)}
+                        <p className="text-base font-bold text-red-400">
+                          −${fees.fetchrFee.toFixed(2)}
                         </p>
-                        <p className="text-xs text-gray-400">{Math.round(fees.fetchrPct * 100)}% cut</p>
+                        <p className="text-xs text-gray-400">
+                          {Math.round(fees.fetchrPct * 100)}% of deal
+                        </p>
                       </div>
-                      <div className="text-center">
+                      <div>
                         <p className="text-xs text-gray-400 mb-1">Traveler gets</p>
                         <p className="text-base font-bold text-emerald-600">
                           ${fees.travelerReceives.toFixed(2)}
@@ -267,12 +294,12 @@ const getFeePreview = (match) => {
                         <p className="text-xs text-gray-400">net earnings</p>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-400 text-center mt-2 italic">
-                      Shipper pays the agreed price only — Fetchr's cut comes from the traveler's share
+                    <p className="text-xs text-gray-400 text-center mt-3 italic">
+                      Shipper pays the agreed price only. Fetchr's fee comes from the traveler's share.
                     </p>
                   </div>
 
-                  {/* Other party profile button */}
+                  {/* Other party profile */}
                   <button
                     onClick={() => fetchProfile(other?.id)}
                     className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100 mb-4 group">
@@ -313,8 +340,11 @@ const getFeePreview = (match) => {
                   {/* Item photo */}
                   {match.request?.item_photo_url && (
                     <div className="mb-4 rounded-xl overflow-hidden border border-gray-100">
-                      <img src={match.request.item_photo_url} alt={match.request.item_name}
-                        className="w-full h-36 object-cover" />
+                      <img
+                        src={match.request.item_photo_url}
+                        alt={match.request.item_name}
+                        className="w-full h-36 object-contain bg-gray-50"
+                      />
                     </div>
                   )}
 
@@ -369,7 +399,6 @@ const getFeePreview = (match) => {
               </div>
             ) : (
               <div className="p-5">
-                {/* Avatar + name */}
                 <div className="flex items-center gap-4 mb-5">
                   <div className="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center text-xl font-bold text-violet-600 overflow-hidden flex-shrink-0">
                     {viewingProfile?.avatar_url ? (
@@ -382,7 +411,9 @@ const getFeePreview = (match) => {
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-lg font-bold text-gray-900">{viewingProfile?.full_name || 'User'}</h2>
+                      <h2 className="text-lg font-bold text-gray-900">
+                        {viewingProfile?.full_name || 'User'}
+                      </h2>
                       {viewingProfile?.verified && (
                         <span className="badge badge-blue"><Shield size={10} /> Verified</span>
                       )}
@@ -408,14 +439,14 @@ const getFeePreview = (match) => {
                   </div>
                 </div>
 
-                {/* Bio */}
                 {viewingProfile?.bio && (
                   <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
-                    <p className="text-sm text-gray-600 italic leading-relaxed">"{viewingProfile.bio}"</p>
+                    <p className="text-sm text-gray-600 italic leading-relaxed">
+                      "{viewingProfile.bio}"
+                    </p>
                   </div>
                 )}
 
-                {/* Stats */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
                     { label: 'Deals Done', value: viewingProfile?.totalDeals || 0, color: 'bg-violet-50 text-violet-700' },
@@ -429,7 +460,6 @@ const getFeePreview = (match) => {
                   ))}
                 </div>
 
-                {/* Details */}
                 <div className="space-y-2.5 mb-5">
                   {viewingProfile?.nationality && (
                     <div className="flex items-center gap-2.5 text-sm text-gray-600">
