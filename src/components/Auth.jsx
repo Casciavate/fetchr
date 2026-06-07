@@ -16,19 +16,27 @@ const Auth = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (mode === 'signup' && !tcAgreed) {
-      setError('Please agree to the Terms & Conditions to continue.');
-      return;
-    }
-    setLoading(true);
     setError('');
     setSuccess('');
+
+    // T&C only required for signup
+    if (mode === 'signup' && !tcAgreed) {
+      setError('You must accept the Terms & Conditions to create an account.');
+      return;
+    }
+    if (mode === 'signup' && !fullName.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
+
+    setLoading(true);
     if (mode === 'login') {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setError(error.message);
     } else {
       const { error } = await supabase.auth.signUp({
-        email, password,
+        email,
+        password,
         options: { data: { full_name: fullName } }
       });
       if (error) setError(error.message);
@@ -39,7 +47,7 @@ const Auth = () => {
 
   const handleGoogle = async () => {
     if (mode === 'signup' && !tcAgreed) {
-      setError('Please agree to the Terms & Conditions to continue.');
+      setError('You must accept the Terms & Conditions to create an account.');
       return;
     }
     setLoading(true);
@@ -56,6 +64,7 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-indigo-900 flex items-center justify-center p-4">
 
+      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-500 rounded-full opacity-10 blur-3xl" />
         <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-indigo-500 rounded-full opacity-10 blur-3xl" />
@@ -78,11 +87,12 @@ const Auth = () => {
           {/* Tabs */}
           <div className="flex bg-white/10 rounded-2xl p-1 mb-6">
             {['login', 'signup'].map(m => (
-              <button key={m} onClick={() => { setMode(m); setError(''); setSuccess(''); }}
+              <button key={m}
+                onClick={() => { setMode(m); setError(''); setSuccess(''); }}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   mode === m ? 'bg-white text-purple-700 shadow-sm' : 'text-white/70 hover:text-white'
                 }`}>
-                {m === 'login' ? 'Sign In' : 'Sign Up'}
+                {m === 'login' ? 'Sign In' : 'Create Account'}
               </button>
             ))}
           </div>
@@ -105,46 +115,52 @@ const Auth = () => {
             <div className="flex-1 h-px bg-white/20" />
           </div>
 
+          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
               <input type="text" placeholder="Full Name" value={fullName}
                 onChange={e => setFullName(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30" />
+                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40" />
             )}
+
             <div className="relative">
-              <Mail size={16} className="absolute left-4 top-4 text-white/40" />
+              <Mail size={16} className="absolute left-4 top-4 text-white/40 pointer-events-none" />
               <input type="email" placeholder="Email address" value={email}
                 onChange={e => setEmail(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl pl-10 pr-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30" />
+                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl pl-10 pr-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40" />
             </div>
+
             <div className="relative">
-              <Lock size={16} className="absolute left-4 top-4 text-white/40" />
+              <Lock size={16} className="absolute left-4 top-4 text-white/40 pointer-events-none" />
               <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password}
                 onChange={e => setPassword(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl pl-10 pr-12 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30" />
+                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl pl-10 pr-12 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40" />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-4 top-4 text-white/40 hover:text-white/70">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
-            {/* T&C checkbox for signup */}
+            {/* T&C — signup only */}
             {mode === 'signup' && (
-              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3 border border-white/10">
-                <input type="checkbox" id="tc" checked={tcAgreed} onChange={e => setTcAgreed(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-violet-400 flex-shrink-0" />
+              <div className={`flex items-start gap-3 rounded-xl p-3 border transition-all ${
+                tcAgreed ? 'bg-emerald-500/10 border-emerald-400/30' : 'bg-white/5 border-white/10'
+              }`}>
+                <input type="checkbox" id="tc" checked={tcAgreed}
+                  onChange={e => setTcAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-violet-400 flex-shrink-0 cursor-pointer" />
                 <label htmlFor="tc" className="text-xs text-white/60 leading-relaxed cursor-pointer">
-                  I agree to the{' '}
+                  I have read and agree to the{' '}
                   <button type="button" onClick={() => setShowTC(true)}
-                    className="text-violet-300 underline hover:text-white transition">
+                    className="text-violet-300 underline hover:text-white transition font-semibold">
                     Terms & Conditions
                   </button>
                   {' '}and{' '}
                   <button type="button" onClick={() => setShowTC(true)}
-                    className="text-violet-300 underline hover:text-white transition">
+                    className="text-violet-300 underline hover:text-white transition font-semibold">
                     Privacy Policy
                   </button>
-                  . I confirm I will not use Fetchr to transport illegal items.
+                  . I confirm I will not use Fetchr to transport illegal items. I understand Fetchr is a matchmaking platform only and bears no liability for items transported.
                 </label>
               </div>
             )}
@@ -160,8 +176,9 @@ const Auth = () => {
               </div>
             )}
 
-            <button type="submit" disabled={loading}
-              className="w-full bg-white text-purple-700 rounded-2xl py-3.5 text-sm font-bold hover:bg-purple-50 transition flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg mt-2">
+            <button type="submit"
+              disabled={loading || (mode === 'signup' && !tcAgreed)}
+              className="w-full bg-white text-purple-700 rounded-2xl py-3.5 text-sm font-bold hover:bg-purple-50 transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg mt-1">
               {loading
                 ? <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 : <>{mode === 'login' ? 'Sign In' : 'Create Account'}<ArrowRight size={16} /></>
@@ -175,7 +192,8 @@ const Auth = () => {
               <span>Secure & Encrypted</span>
             </div>
             <div className="w-1 h-1 bg-white/20 rounded-full" />
-            <button onClick={() => setShowTC(true)} className="text-white/40 text-xs hover:text-white/60 transition underline">
+            <button onClick={() => setShowTC(true)}
+              className="text-white/40 text-xs hover:text-white/60 transition underline">
               Terms & Conditions
             </button>
           </div>
@@ -196,7 +214,7 @@ const Auth = () => {
         </div>
 
         <p className="text-white/30 text-xs text-center mt-4 px-4 leading-relaxed">
-          Fetchr is a matchmaking platform only. All transactions are between travelers and shippers. Users are solely responsible for legal compliance.
+          Fetchr is a matchmaking platform only. All transactions are between travelers and shippers. Users are solely responsible for legal compliance with all applicable laws.
         </p>
       </div>
 
@@ -218,15 +236,50 @@ const Auth = () => {
             </div>
             <div className="p-6 space-y-5 text-sm text-gray-600 leading-relaxed">
               {[
-                { title: '1. Platform Role', body: 'Fetchr is a peer-to-peer matchmaking platform that connects travelers with spare luggage capacity to individuals wishing to send items. Fetchr acts solely as a facilitator and is not a courier, logistics provider, or shipping company.' },
-                { title: '2. User Responsibilities', body: 'All users are solely responsible for the items they send or carry. By using Fetchr, you confirm that you will not use the platform to transport illegal, dangerous, prohibited, or restricted items including but not limited to: narcotics, weapons, counterfeit goods, hazardous materials, or any items prohibited by applicable law or airline regulations.' },
-                { title: '3. Prohibited Items', body: 'Strictly prohibited: illegal drugs or substances, weapons or ammunition, live animals, human remains, currency above legal limits, stolen goods, items violating intellectual property rights, and any items restricted by customs regulations of origin or destination country.' },
-                { title: '4. Liability', body: 'Fetchr bears no liability for the content, nature, legality, or condition of items transported. All liability rests solely with the shipper and traveler. Fetchr\'s liability is strictly limited to its role as a payment facilitator.' },
-                { title: '5. Customs & Legal Compliance', body: 'Users are solely responsible for compliance with all applicable customs, import/export, and tax regulations. Fetchr takes no responsibility for customs seizures, fines, or legal consequences.' },
-                { title: '6. Escrow Payments', body: 'Fetchr uses Stripe to hold payments in escrow until both parties confirm delivery. Fetchr charges a service fee on each transaction. All fees are shown transparently before payment.' },
-                { title: '7. Dispute Resolution', body: 'In the event of a dispute, Fetchr may at its discretion review evidence. Fetchr\'s decision on escrow release is final. Fetchr is not obligated to mediate disputes and may refer parties to relevant authorities.' },
-                { title: '8. Account Termination', body: 'Fetchr reserves the right to suspend or terminate any account that violates these terms, engages in fraudulent activity, or misuses the platform, without prior notice and without liability.' },
-                { title: '9. Privacy & Data', body: 'Fetchr collects and processes personal data as described in our Privacy Policy. By using Fetchr you consent to this processing. We do not sell personal data to third parties.' },
+                {
+                  title: '1. Platform Role',
+                  body: 'Fetchr is a peer-to-peer matchmaking platform that connects travelers with spare luggage capacity to individuals wishing to send items. Fetchr acts solely as a facilitator and is not a courier, logistics provider, or shipping company. Fetchr facilitates secure payment between parties but does not take possession of or responsibility for any items.'
+                },
+                {
+                  title: '2. User Responsibilities',
+                  body: 'All users are solely responsible for the items they send or carry. By using Fetchr, you confirm that you will not use the platform to transport illegal, dangerous, prohibited, or restricted items including but not limited to: narcotics, weapons, counterfeit goods, hazardous materials, live animals, human remains, or any items prohibited by applicable law or airline regulations.'
+                },
+                {
+                  title: '3. Prohibited Items',
+                  body: 'Strictly prohibited on Fetchr: illegal drugs or controlled substances, weapons or ammunition of any kind, live animals, human remains, currency above legal declaration limits, stolen goods, items violating intellectual property rights, and any items restricted by customs regulations of the origin or destination country. Violation will result in immediate account termination and referral to law enforcement.'
+                },
+                {
+                  title: '4. Liability Disclaimer',
+                  body: 'Fetchr bears absolutely no liability for the content, nature, legality, or condition of items transported through the platform. All liability for items transported rests solely with the shipper and traveler involved in the deal. Fetchr\'s liability is strictly limited to its role as a payment escrow facilitator.'
+                },
+                {
+                  title: '5. Customs & Legal Compliance',
+                  body: 'Users are solely responsible for compliance with all applicable customs, import/export, and tax regulations in both origin and destination countries. Fetchr takes no responsibility for customs seizures, fines, legal consequences, or delays arising from items transported through the platform.'
+                },
+                {
+                  title: '6. Escrow Payments',
+                  body: 'Fetchr uses Stripe to process and hold payments in escrow until both parties confirm delivery. Fetchr charges a tiered service fee on each transaction, which varies based on deal size (7%-12%). All fees are shown transparently before payment. Escrow is released only when both parties confirm delivery. Refunds on cancellation are subject to the agreed cancellation terms between parties.'
+                },
+                {
+                  title: '7. Identity & Safety',
+                  body: 'Travelers must verify their identity before accepting items from shippers. Shippers must not hand over items until escrow payment is confirmed. Fetchr may at its discretion require identity verification for high-value transactions. Users agree to cooperate with any verification requests.'
+                },
+                {
+                  title: '8. Dispute Resolution',
+                  body: 'In the event of a dispute, Fetchr may at its sole discretion review evidence provided by both parties. Fetchr\'s decision on escrow release is final. Fetchr is not obligated to mediate disputes and may refer parties to relevant authorities where illegal activity is suspected.'
+                },
+                {
+                  title: '9. Account Termination',
+                  body: 'Fetchr reserves the right to suspend or terminate any account that violates these terms, engages in fraudulent activity, or misuses the platform, without prior notice and without liability to the account holder.'
+                },
+                {
+                  title: '10. Privacy & Data',
+                  body: 'Fetchr collects and processes personal data solely for the purpose of operating the platform. We do not sell personal data to third parties. Data is stored securely using Supabase\'s enterprise-grade infrastructure. By using Fetchr you consent to this processing.'
+                },
+                {
+                  title: '11. Governing Law',
+                  body: 'These terms are governed by applicable law. Any disputes arising from the use of Fetchr shall be subject to the jurisdiction of the courts in the operator\'s country of registration.'
+                },
               ].map((section, i) => (
                 <div key={i}>
                   <h4 className="font-bold text-gray-900 mb-1.5">{section.title}</h4>
@@ -234,13 +287,19 @@ const Auth = () => {
                 </div>
               ))}
               <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-                <p className="text-red-800 font-semibold text-xs">⚠️ IMPORTANT: By using Fetchr you acknowledge that you have read, understood, and agree to these Terms & Conditions. Violation may result in immediate account termination and referral to law enforcement authorities.</p>
+                <p className="text-red-800 font-semibold text-xs">
+                  ⚠️ IMPORTANT: By creating a Fetchr account you acknowledge that you have read, understood, and agree to all of these Terms & Conditions. Violation may result in immediate account termination and referral to law enforcement authorities.
+                </p>
               </div>
             </div>
-            <div className="px-6 pb-6">
+            <div className="px-6 pb-6 space-y-2">
               <button onClick={() => { setShowTC(false); setTcAgreed(true); }}
                 className="w-full btn-primary py-3">
                 I Have Read & Agree to These Terms
+              </button>
+              <button onClick={() => setShowTC(false)}
+                className="w-full btn-secondary py-3">
+                Close
               </button>
             </div>
           </div>

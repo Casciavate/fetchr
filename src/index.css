@@ -32,18 +32,8 @@ body {
   -webkit-backdrop-filter: blur(20px);
 }
 
-.glass-dark {
-  background: rgba(15, 10, 30, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
 .gradient-purple {
   background: linear-gradient(135deg, #6c47ff 0%, #9f7aea 100%);
-}
-
-.gradient-card {
-  background: linear-gradient(135deg, #ffffff 0%, #faf9ff 100%);
 }
 
 .shadow-card {
@@ -63,6 +53,10 @@ body {
               0 1px 2px rgba(108, 71, 255, 0.2);
 }
 
+.shadow-float {
+  box-shadow: 0 20px 60px rgba(108, 71, 255, 0.15);
+}
+
 input, select, textarea {
   font-family: 'Inter', sans-serif;
 }
@@ -76,16 +70,24 @@ input, select, textarea {
   50% { transform: translateY(-8px); }
 }
 
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient 8s ease infinite;
-}
-
 @keyframes gradient {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+
+@keyframes slideUp {
+  0% { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.animate-slide-up { animation: slideUp 0.3s ease-out; }
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
 
 .card {
   @apply bg-white rounded-2xl shadow-card;
@@ -93,20 +95,30 @@ input, select, textarea {
 
 .btn-primary {
   @apply bg-violet-600 text-white font-semibold rounded-xl px-4 py-2.5 text-sm
-         hover:bg-violet-700 active:scale-95 transition-all shadow-button;
+         hover:bg-violet-700 active:scale-95 transition-all shadow-button
+         flex items-center justify-center;
 }
 
 .btn-secondary {
   @apply bg-white text-gray-700 font-semibold rounded-xl px-4 py-2.5 text-sm
-         border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all;
+         border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all
+         flex items-center justify-center;
 }
 
+/* Input field — NO horizontal padding here, set per usage with pl-X pr-X */
 .input-field {
-  @apply w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm
+  @apply w-full bg-gray-50 border border-gray-200 rounded-xl py-3 text-sm
          text-gray-800 placeholder-gray-400
          focus:outline-none focus:ring-2 focus:ring-violet-500/20
          focus:border-violet-400 focus:bg-white transition-all;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
+
+/* When input has a left icon, pl-8 or pl-9 must override */
+.input-field.pl-8 { padding-left: 2rem !important; }
+.input-field.pl-9 { padding-left: 2.25rem !important; }
+.input-field.pl-10 { padding-left: 2.5rem !important; }
 
 .badge {
   @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold;
@@ -115,6 +127,7 @@ input, select, textarea {
 .badge-purple { @apply badge bg-violet-50 text-violet-700; }
 .badge-green { @apply badge bg-emerald-50 text-emerald-700; }
 .badge-blue { @apply badge bg-blue-50 text-blue-700; }
+.badge-indigo { @apply badge bg-indigo-50 text-indigo-700; }
 .badge-yellow { @apply badge bg-amber-50 text-amber-700; }
 .badge-red { @apply badge bg-red-50 text-red-600; }
 .badge-gray { @apply badge bg-gray-100 text-gray-600; }

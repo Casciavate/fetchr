@@ -14,7 +14,7 @@ import WalletScreen from './Wallet';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet, Star,
-  ChevronRight, Shield, LogOut, CheckCircle, Search,
+  ChevronRight, LogOut, CheckCircle, Search,
   Menu, X, TrendingUp, Zap, ArrowUpRight
 } from 'lucide-react';
 
@@ -24,24 +24,42 @@ const AIRLINE_CODES = {
   'Turkish Airlines': 'TK', 'Flydubai': 'FZ', 'Air Arabia': 'G9',
   'Singapore Airlines': 'SQ', 'Cathay Pacific': 'CX', 'Qantas': 'QF',
   'American Airlines': 'AA', 'United Airlines': 'UA', 'Delta Air Lines': 'DL',
+  'Southwest Airlines': 'WN', 'Ryanair': 'FR', 'easyJet': 'U2',
+  'KLM': 'KL', 'Swiss': 'LX', 'Austrian Airlines': 'OS',
+  'Finnair': 'AY', 'SAS': 'SK', 'Iberia': 'IB', 'EgyptAir': 'MS',
+  'Ethiopian Airlines': 'ET', 'Kenya Airways': 'KQ', 'Saudia': 'SV',
+  'Gulf Air': 'GF', 'Oman Air': 'WY', 'Air India': 'AI',
+  'Japan Airlines': 'JL', 'Korean Air': 'KE', 'ANA': 'NH',
+  'Thai Airways': 'TG', 'Malaysia Airlines': 'MH', 'LATAM': 'LA',
+  'Air Canada': 'AC', 'IndiGo': '6E', 'flynas': 'XY',
+  'Jazeera Airways': 'J9', 'Pegasus Airlines': 'PC',
+  'flyadeal': 'F3', 'WizzAir': 'W6', 'Vueling': 'VY',
+  'TAP Air Portugal': 'TP', 'Aer Lingus': 'EI', 'Norwegian': 'DY',
+  'Air Asia': 'AK', 'Garuda Indonesia': 'GA', 'Philippine Airlines': 'PR',
+  'Vietnam Airlines': 'VN', 'China Eastern': 'MU', 'China Southern': 'CZ',
+  'Air China': 'CA', 'Hainan Airlines': 'HU', 'SunExpress': 'XQ',
+  'Royal Jordanian': 'RJ', 'Middle East Airlines': 'ME',
 };
 
-const AirlineLogo = ({ airline }) => {
+const AirlineLogo = ({ airline, size = 'sm' }) => {
   const code = AIRLINE_CODES[airline];
+  const dim = size === 'lg' ? 'w-12 h-12' : 'w-10 h-10';
+  const imgDim = size === 'lg' ? 'w-9 h-9' : 'w-7 h-7';
+
   if (!code) return (
-    <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center">
-      <Plane size={18} className="text-violet-400" />
+    <div className={`${dim} bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0`}>
+      <Plane size={size === 'lg' ? 20 : 16} className="text-violet-400" />
     </div>
   );
   return (
-    <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm">
+    <div className={`${dim} rounded-xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0`}>
       <img
         src={`https://www.gstatic.com/flights/airline_logos/70px/${code}.png`}
         alt={airline}
-        className="w-8 h-8 object-contain"
+        className={`${imgDim} object-contain`}
         onError={e => {
           e.target.style.display = 'none';
-          e.target.parentNode.innerHTML = `<span style="font-size:10px;font-weight:700;color:#6c47ff">${code}</span>`;
+          e.target.parentNode.innerHTML = `<span style="font-size:10px;font-weight:800;color:#6c47ff">${code}</span>`;
         }}
       />
     </div>
@@ -71,7 +89,9 @@ const Dashboard = ({ session }) => {
     return 'New Member';
   };
 
-  const userName = profile?.full_name?.split(' ')[0] || session?.user?.email?.split('@')[0] || 'there';
+  const userName = profile?.full_name?.split(' ')[0]
+    || session?.user?.email?.split('@')[0]
+    || 'there';
 
   const fetchDashboardData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -83,7 +103,8 @@ const Dashboard = ({ session }) => {
     if (profileData) {
       setProfile(profileData);
       if (profileData.avatar_url) {
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(profileData.avatar_url);
+        const { data: urlData } = supabase.storage
+          .from('avatars').getPublicUrl(profileData.avatar_url);
         setAvatarUrl(urlData.publicUrl);
       }
     }
@@ -147,14 +168,24 @@ const Dashboard = ({ session }) => {
     fetchDashboardData(true);
     const userId = session.user.id;
     const pollInterval = setInterval(() => fetchDashboardData(false), 10000);
+
     const sub = supabase.channel(`dashboard-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => fetchDashboardData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'flights', filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests', filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => fetchDashboardData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' },
+        () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flights',
+        filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests',
+        filter: `user_id=eq.${userId}` }, () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' },
+        () => fetchDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles',
+        filter: `id=eq.${userId}` }, () => fetchDashboardData(false))
       .subscribe();
-    return () => { clearInterval(pollInterval); supabase.removeChannel(sub); };
+
+    return () => {
+      clearInterval(pollInterval);
+      supabase.removeChannel(sub);
+    };
   }, []);
 
   const navGroups = [
@@ -204,16 +235,22 @@ const Dashboard = ({ session }) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getOtherParty = (match) => match.traveler_id === session.user.id ? match.shipper : match.traveler;
+  const getOtherParty = (match) =>
+    match.traveler_id === session.user.id ? match.shipper : match.traveler;
 
   const navigate = (id) => { setActiveNav(id); setSidebarOpen(false); };
 
   const statCards = [
-    { label: 'Active Deals', value: stats.activeDeals, icon: Zap, textColor: 'text-violet-600', bg: 'bg-violet-50', nav: 'active-deals' },
-    { label: 'Flights Listed', value: stats.upcomingFlights, icon: Plane, textColor: 'text-blue-600', bg: 'bg-blue-50', nav: 'flights' },
-    { label: 'My Requests', value: stats.totalRequests, icon: Package, textColor: 'text-indigo-600', bg: 'bg-indigo-50', nav: 'my-requests' },
-    { label: 'Deals Done', value: stats.completedDeals, icon: CheckCircle, textColor: 'text-emerald-600', bg: 'bg-emerald-50', nav: 'completed' },
-    { label: 'Wallet', value: `$${(stats.walletBalance || 0).toFixed(2)}`, icon: Wallet, textColor: 'text-amber-600', bg: 'bg-amber-50', nav: 'wallet' },
+    { label: 'Active Deals', value: stats.activeDeals, icon: Zap,
+      textColor: 'text-violet-600', bg: 'bg-violet-50', nav: 'active-deals' },
+    { label: 'Flights', value: stats.upcomingFlights, icon: Plane,
+      textColor: 'text-blue-600', bg: 'bg-blue-50', nav: 'flights' },
+    { label: 'Requests', value: stats.totalRequests, icon: Package,
+      textColor: 'text-indigo-600', bg: 'bg-indigo-50', nav: 'my-requests' },
+    { label: 'Completed', value: stats.completedDeals, icon: CheckCircle,
+      textColor: 'text-emerald-600', bg: 'bg-emerald-50', nav: 'completed' },
+    { label: 'Wallet', value: `$${(stats.walletBalance || 0).toFixed(2)}`,
+      icon: Wallet, textColor: 'text-amber-600', bg: 'bg-amber-50', nav: 'wallet' },
   ];
 
   const renderMain = () => {
@@ -237,90 +274,99 @@ const Dashboard = ({ session }) => {
 
   const renderDashboard = () => (
     <div className="animate-fade-in">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+      {/* Greeting */}
+      <div className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
           Good {getHour() < 12 ? 'morning' : getHour() < 18 ? 'afternoon' : 'evening'}, {userName} 👋
         </h1>
-        <p className="text-gray-500 mt-1">Here's what's happening with your deliveries today.</p>
+        <p className="text-gray-500 mt-1 text-sm">
+          Here's what's happening with your deliveries today.
+        </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      {/* Stats grid — 2 cols mobile, 5 cols desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         {statCards.map((stat, i) => (
           <button key={i} onClick={() => navigate(stat.nav)}
-            className="group bg-white rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-all duration-300 text-left border border-gray-100/80">
-            <div className="flex items-center justify-between mb-4">
-              <div className={`w-10 h-10 ${stat.bg} rounded-xl flex items-center justify-center`}>
-                <stat.icon size={18} className={stat.textColor} />
+            className="group bg-white rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-all duration-300 text-left border border-gray-100/80">
+            <div className="flex items-center justify-between mb-3">
+              <div className={`w-9 h-9 ${stat.bg} rounded-xl flex items-center justify-center`}>
+                <stat.icon size={16} className={stat.textColor} />
               </div>
-              <ArrowUpRight size={16} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
+              <ArrowUpRight size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
-            <p className="text-2xl font-bold text-gray-900 tracking-tight">{stat.value}</p>
-            <p className="text-sm text-gray-500 mt-0.5 font-medium">{stat.label}</p>
+            <p className="text-xl font-bold text-gray-900 tracking-tight">{stat.value}</p>
+            <p className="text-xs text-gray-500 mt-0.5 font-medium">{stat.label}</p>
           </button>
         ))}
       </div>
 
       {/* Recommended Matches */}
-      <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6 mb-6">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-5 mb-5">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Recommended Matches</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Curated for you based on your activity</p>
+            <h2 className="text-base font-bold text-gray-900">Recommended Matches</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Curated based on your activity</p>
           </div>
           <button onClick={() => navigate('matches')}
-            className="flex items-center gap-1.5 text-sm text-violet-600 font-semibold hover:text-violet-700 transition">
-            View all <ChevronRight size={16} />
+            className="flex items-center gap-1 text-xs text-violet-600 font-semibold hover:text-violet-700 transition">
+            View all <ChevronRight size={14} />
           </button>
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1,2,3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="h-32 bg-gray-100 rounded-xl animate-pulse" />
+            ))}
           </div>
         ) : recentMatches.length === 0 ? (
-          <div className="text-center py-10 bg-gray-50 rounded-xl">
-            <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <Search size={20} className="text-violet-500" />
+          <div className="text-center py-8 bg-gray-50 rounded-xl">
+            <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+              <Search size={18} className="text-violet-500" />
             </div>
-            <p className="text-gray-600 font-medium text-sm mb-1">No matches yet</p>
-            <p className="text-gray-400 text-xs mb-4">Add a flight or request to start matching</p>
-            <button onClick={() => navigate('matches')} className="btn-primary">Find Matches</button>
+            <p className="text-gray-500 text-sm font-medium mb-1">No matches yet</p>
+            <p className="text-gray-400 text-xs mb-3">
+              Add a flight or request to start matching
+            </p>
+            <button onClick={() => navigate('matches')} className="btn-primary text-xs px-4 py-2">
+              Find Matches
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {recentMatches.map(match => {
               const other = getOtherParty(match);
               return (
                 <div key={match.id} onClick={() => navigate('matches')}
-                  className="group border border-gray-100 rounded-xl p-4 hover:border-violet-200 hover:bg-violet-50/30 transition-all cursor-pointer">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className={`badge ${match.match_score >= 90 ? 'badge-green' : match.match_score >= 75 ? 'badge-blue' : 'badge-yellow'}`}>
-                      ⚡ {match.match_score}% match
+                  className="border border-gray-100 rounded-xl p-3.5 hover:border-violet-200 hover:bg-violet-50/30 transition-all cursor-pointer group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`badge text-xs ${
+                      match.match_score >= 90 ? 'badge-green' :
+                      match.match_score >= 75 ? 'badge-blue' : 'badge-yellow'
+                    }`}>
+                      ⚡ {match.match_score}%
                     </span>
+                    <AirlineLogo airline={match.flight?.airline} />
                   </div>
                   <p className="font-bold text-gray-900 text-sm mb-0.5">
-                    {match.flight?.from_city} → {match.flight?.to_city}
+                    {match.flight?.from_code} → {match.flight?.to_code}
                   </p>
-                  <p className="text-xs text-gray-400 mb-3">
-                    {match.flight?.flight_date ? new Date(match.flight.flight_date).toLocaleDateString('en-GB') : ''}
+                  <p className="text-xs text-gray-400 mb-2">
+                    {match.flight?.flight_date
+                      ? new Date(match.flight.flight_date).toLocaleDateString('en-GB')
+                      : ''}
                   </p>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600">
+                    <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600 flex-shrink-0">
                       {getInitials(other?.full_name)}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-800 truncate">{other?.full_name || 'User'}</p>
-                      {other?.rating > 0 && (
-                        <div className="flex items-center gap-0.5">
-                          <Star size={10} className="text-amber-400 fill-amber-400" />
-                          <span className="text-xs text-gray-500">{other.rating.toFixed(1)}</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs font-bold text-violet-600">${match.flight?.price_per_kg}/kg</p>
-                    </div>
+                    <p className="text-xs font-semibold text-gray-700 truncate flex-1">
+                      {other?.full_name || 'User'}
+                    </p>
+                    <p className="text-xs font-bold text-violet-600 flex-shrink-0">
+                      ${match.flight?.price_per_kg}/kg
+                    </p>
                   </div>
                 </div>
               );
@@ -330,35 +376,46 @@ const Dashboard = ({ session }) => {
       </div>
 
       {/* Bottom two columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* Upcoming Flights */}
-        <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold text-gray-900">Upcoming Flights</h2>
+        <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-gray-900">Upcoming Flights</h2>
             <button onClick={() => navigate('flights')}
-              className="text-sm text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
-              View all <ChevronRight size={14} />
+              className="text-xs text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
+              View all <ChevronRight size={13} />
             </button>
           </div>
           {upcomingFlights.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-xl">
-              <Plane size={24} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-gray-500 text-sm font-medium mb-3">No upcoming flights</p>
-              <button onClick={() => navigate('add-flight')} className="btn-primary text-xs">+ Add Flight</button>
+            <div className="text-center py-6 bg-gray-50 rounded-xl">
+              <Plane size={20} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500 text-xs font-medium mb-2">No upcoming flights</p>
+              <button onClick={() => navigate('add-flight')}
+                className="btn-primary text-xs px-3 py-2">
+                + Add Flight
+              </button>
             </div>
           ) : (
             <div className="space-y-2">
               {upcomingFlights.map((flight, i) => (
                 <button key={i} onClick={() => navigate('flights')}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left group">
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left">
                   <AirlineLogo airline={flight.airline} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900">{flight.from_code} → {flight.to_code}</p>
-                    <p className="text-xs text-gray-400">{new Date(flight.flight_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {flight.from_code} → {flight.to_code}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(flight.flight_date).toLocaleDateString('en-GB', {
+                        day: '2-digit', month: 'short', year: 'numeric'
+                      })}
+                    </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold text-violet-600">${flight.price_per_kg}/kg</p>
+                    <p className="text-sm font-bold text-violet-600">
+                      ${flight.price_per_kg}/kg
+                    </p>
                     <p className="text-xs text-gray-400">{flight.available_kg}kg</p>
                   </div>
                 </button>
@@ -368,39 +425,55 @@ const Dashboard = ({ session }) => {
         </div>
 
         {/* Active Deals */}
-        <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold text-gray-900">Active Deals</h2>
+        <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-gray-900">Active Deals</h2>
             <button onClick={() => navigate('active-deals')}
-              className="text-sm text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
-              View all <ChevronRight size={14} />
+              className="text-xs text-violet-600 font-semibold hover:text-violet-700 flex items-center gap-1">
+              View all <ChevronRight size={13} />
             </button>
           </div>
           {activeDeals.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-xl">
-              <Zap size={24} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-gray-500 text-sm font-medium mb-3">No active deals</p>
-              <button onClick={() => navigate('matches')} className="btn-primary text-xs">Browse Matches</button>
+            <div className="text-center py-6 bg-gray-50 rounded-xl">
+              <Zap size={20} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500 text-xs font-medium mb-2">No active deals</p>
+              <button onClick={() => navigate('matches')}
+                className="btn-primary text-xs px-3 py-2">
+                Browse Matches
+              </button>
             </div>
           ) : (
             <div className="space-y-2">
               {activeDeals.map((deal, i) => {
-                const dealValue = (deal.flight?.price_per_kg || 0) * (deal.request?.weight_kg || 0);
-                const stageLabel = deal.status === 'in_escrow' ? '🔒 Escrow' :
-                  deal.status === 'proof_uploaded' ? '📸 Proof' :
-                  deal.status === 'terms_agreed' ? '✅ Terms' : '🤝 Matched';
+                const dealValue = (deal.flight?.price_per_kg || 0) *
+                  (deal.request?.weight_kg || 0);
+                const stageIcon =
+                  deal.status === 'in_escrow' ? '🔒' :
+                  deal.status === 'proof_uploaded' ? '📸' :
+                  deal.status === 'terms_agreed' ? '✅' : '🤝';
+                const stageLabel =
+                  deal.status === 'in_escrow' ? 'Escrow' :
+                  deal.status === 'proof_uploaded' ? 'Proof' :
+                  deal.status === 'terms_agreed' ? 'Terms' : 'Matched';
+
                 return (
                   <button key={i} onClick={() => navigate('messages')}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left group">
-                    <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0 text-lg">
-                      {deal.status === 'in_escrow' ? '🔒' : deal.status === 'proof_uploaded' ? '📸' : '🤝'}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left">
+                    <div className="w-9 h-9 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0 text-lg">
+                      {stageIcon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-900 truncate">{deal.request?.item_name}</p>
-                      <p className="text-xs text-gray-400">{deal.flight?.from_code} → {deal.flight?.to_code}</p>
+                      <p className="text-sm font-bold text-gray-900 truncate">
+                        {deal.request?.item_name}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {deal.flight?.from_code} → {deal.flight?.to_code}
+                      </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-gray-800">${dealValue.toFixed(0)}</p>
+                      <p className="text-sm font-bold text-gray-800">
+                        ${dealValue.toFixed(0)}
+                      </p>
                       <p className="text-xs text-violet-500 font-semibold">{stageLabel}</p>
                     </div>
                   </button>
@@ -416,6 +489,7 @@ const Dashboard = ({ session }) => {
   return (
     <div className="flex h-screen bg-[#f8f7ff] overflow-hidden">
 
+      {/* Sidebar overlay mobile */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setSidebarOpen(false)} />
@@ -424,39 +498,48 @@ const Dashboard = ({ session }) => {
       {/* Sidebar */}
       <aside className={`
         fixed md:relative inset-y-0 left-0 z-50
-        w-64 bg-white border-r border-gray-100
+        w-60 bg-white border-r border-gray-100
         flex flex-col overflow-y-auto
         transform transition-transform duration-300 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        <div className="flex items-center justify-between px-5 py-5 border-b border-gray-100">
+        {/* Logo */}
+        <div className="flex items-center justify-between px-4 py-5 border-b border-gray-100">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-purple-700 rounded-xl flex items-center justify-center shadow-button">
               <Plane size={15} className="text-white" />
             </div>
             <span className="font-bold text-gray-900 text-xl tracking-tight">Fetchr</span>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-gray-600 p-1">
+          <button onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-gray-400 hover:text-gray-600 p-1">
             <X size={18} />
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-6">
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-5">
           <button onClick={() => navigate('dashboard')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeNav === 'dashboard' ? 'bg-violet-600 text-white shadow-button' : 'text-gray-600 hover:bg-gray-100'
+              activeNav === 'dashboard'
+                ? 'bg-violet-600 text-white shadow-button'
+                : 'text-gray-600 hover:bg-gray-100'
             }`}>
             <Home size={16} /> Dashboard
           </button>
 
           {navGroups.map(group => (
             <div key={group.label}>
-              <p className="text-xs font-semibold text-gray-400 px-3 mb-2 uppercase tracking-widest">{group.label}</p>
+              <p className="text-xs font-semibold text-gray-400 px-3 mb-2 uppercase tracking-widest">
+                {group.label}
+              </p>
               <div className="space-y-0.5">
                 {group.items.map(item => (
                   <button key={item.id} onClick={() => navigate(item.id)}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                      activeNav === item.id ? 'bg-violet-50 text-violet-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'
+                      activeNav === item.id
+                        ? 'bg-violet-50 text-violet-700 font-semibold'
+                        : 'text-gray-600 hover:bg-gray-100'
                     }`}>
                     <span className="flex items-center gap-3">
                       <item.icon size={15} /> {item.label}
@@ -473,14 +556,8 @@ const Dashboard = ({ session }) => {
           ))}
         </nav>
 
-        <div className="px-3 pb-4 space-y-1 border-t border-gray-100 pt-4">
-          <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-xl p-4 mb-3">
-            <p className="text-xs font-bold text-white mb-0.5">Refer & Earn</p>
-            <p className="text-xs text-violet-200 mb-3">Earn 10% on every referral deal</p>
-            <button className="w-full bg-white text-violet-700 text-xs font-bold py-1.5 rounded-lg hover:bg-violet-50 transition">
-              Share Fetchr 🎁
-            </button>
-          </div>
+        {/* Sign out */}
+        <div className="px-3 pb-4 border-t border-gray-100 pt-4">
           <button onClick={async () => { await supabase.auth.signOut(); }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-medium">
             <LogOut size={15} /> Sign Out
@@ -492,14 +569,14 @@ const Dashboard = ({ session }) => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Topbar */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-6 py-3.5 flex items-center justify-between sticky top-0 z-10 flex-shrink-0">
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-10 flex-shrink-0">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)}
               className="md:hidden w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-500">
               <Menu size={20} />
             </button>
             <div className="hidden md:block">
-              <p className="text-sm font-semibold text-gray-900 capitalize">
+              <p className="text-sm font-semibold text-gray-900">
                 {activeNav === 'dashboard' ? 'Dashboard' :
                  activeNav === 'add-flight' ? 'Add Flight' :
                  activeNav === 'flights' ? 'My Flights' :
@@ -513,7 +590,11 @@ const Dashboard = ({ session }) => {
                  activeNav === 'earnings' ? 'Earnings' :
                  activeNav === 'wallet' ? 'Wallet' : 'Fetchr'}
               </p>
-              <p className="text-xs text-gray-400">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+              <p className="text-xs text-gray-400">
+                {new Date().toLocaleDateString('en-GB', {
+                  weekday: 'long', day: 'numeric', month: 'long'
+                })}
+              </p>
             </div>
           </div>
 
@@ -527,7 +608,7 @@ const Dashboard = ({ session }) => {
             </button>
 
             <button onClick={() => navigate('profile')}
-              className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl hover:bg-gray-100 transition">
+              className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl hover:bg-gray-100 transition">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile"
                   className="w-8 h-8 rounded-lg object-cover border-2 border-violet-100" />
@@ -546,18 +627,18 @@ const Dashboard = ({ session }) => {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-24 md:pb-6">
+          <div className="max-w-6xl mx-auto p-3 md:p-6 pb-28 md:pb-6">
             {renderMain()}
           </div>
         </main>
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 z-30 px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 z-30 px-1 py-2">
         <div className="flex items-center justify-around">
           {bottomNavItems.map(item => (
             <button key={item.id} onClick={() => navigate(item.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all ${
+              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all ${
                 activeNav === item.id ? 'text-violet-600' : 'text-gray-400'
               }`}>
               <div className="relative">
@@ -566,11 +647,13 @@ const Dashboard = ({ session }) => {
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-violet-600 rounded-full" />
                 )}
               </div>
-              <span className={`text-xs ${activeNav === item.id ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
+              <span className={`text-xs ${activeNav === item.id ? 'font-bold' : 'font-medium'}`}>
+                {item.label}
+              </span>
             </button>
           ))}
           <button onClick={async () => { await supabase.auth.signOut(); }}
-            className="flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition text-gray-400">
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition text-gray-400">
             <LogOut size={22} strokeWidth={1.8} />
             <span className="text-xs font-medium">Logout</span>
           </button>
