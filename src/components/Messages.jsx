@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import {
   Send, Package, Plane, DollarSign, CheckCircle, Shield,
   XCircle, AlertTriangle, Clock, ChevronDown, MessageCircle,
-  Camera, Upload, Image, Lock, Unlock
+  Camera, Lock
 } from 'lucide-react';
 import EscrowPayment from './EscrowPayment';
 
@@ -31,7 +31,6 @@ const Messages = ({ session }) => {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [showSidebar, setShowSidebar] = useState(true);
   const [uploadingProof, setUploadingProof] = useState(false);
-  const [agreedTerms, setAgreedTerms] = useState({});
   const messagesEndRef = useRef(null);
   const proofInputRef = useRef(null);
 
@@ -76,7 +75,10 @@ const Messages = ({ session }) => {
     if (data) setMessages(data);
     setTimeout(scrollToBottom, 100);
     try {
-      await supabase.rpc('mark_messages_read', { p_match_id: matchId, p_user_id: session.user.id });
+      await supabase.rpc('mark_messages_read', {
+        p_match_id: matchId,
+        p_user_id: session.user.id
+      });
     } catch (e) {}
     setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
   };
@@ -103,7 +105,7 @@ const Messages = ({ session }) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
-  // Agree to terms (both must agree before escrow unlocks)
+  // Both parties agree to terms before escrow unlocks
   const agreeToTerms = async () => {
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'terms_agreed_traveler' : 'terms_agreed_shipper';
@@ -126,18 +128,23 @@ const Messages = ({ session }) => {
       is_read: false,
     }]).select();
     if (msg) setMessages(prev => [...prev, msg[0]]);
-    setActiveMatch(prev => ({ ...prev, [myField]: true, ...(otherAgreed ? { status: 'terms_agreed', deal_stage: 'terms_agreed' } : {}) }));
+    setActiveMatch(prev => ({
+      ...prev,
+      [myField]: true,
+      ...(otherAgreed ? { status: 'terms_agreed', deal_stage: 'terms_agreed' } : {})
+    }));
     setTimeout(scrollToBottom, 100);
   };
 
-  // Upload proof photo (traveler uploads after item handed over)
+  // Traveler uploads proof photo after receiving item
   const uploadProof = async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     setUploadingProof(true);
     try {
       const ext = file.name.split('.').pop();
       const path = `proofs/${activeMatch.id}-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+      const { error } = await supabase.storage
+        .from('avatars').upload(path, file, { upsert: true });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
       const proofUrl = urlData.publicUrl;
@@ -156,8 +163,15 @@ const Messages = ({ session }) => {
         is_read: false,
       }]).select();
       if (msg) setMessages(prev => [...prev, msg[0]]);
-      setActiveMatch(prev => ({ ...prev, proof_photo_url: proofUrl, status: 'proof_uploaded', deal_stage: 'proof_uploaded' }));
-    } catch (e) { console.error(e); }
+      setActiveMatch(prev => ({
+        ...prev,
+        proof_photo_url: proofUrl,
+        status: 'proof_uploaded',
+        deal_stage: 'proof_uploaded'
+      }));
+    } catch (e) {
+      console.error('Proof upload error:', e);
+    }
     setUploadingProof(false);
     setTimeout(scrollToBottom, 100);
   };
@@ -166,27 +180,39 @@ const Messages = ({ session }) => {
     if (!activeMatch) return;
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'traveler_completed' : 'shipper_completed';
-    const otherCompleted = iAmTraveler ? activeMatch.shipper_completed : activeMatch.traveler_completed;
+    const otherDone = iAmTraveler
+      ? activeMatch.shipper_completed
+      : activeMatch.traveler_completed;
 
-    if (!window.confirm(otherCompleted
-      ? 'Confirm delivery and release escrow funds to the traveler?'
-      : 'Confirm delivery on your side?'
+    if (!window.confirm(
+      otherDone
+        ? 'Confirm delivery and release escrow funds to the traveler?'
+        : 'Confirm delivery on your side?'
     )) return;
 
     setSubmittingComplete(true);
 
-    if (otherCompleted) {
-      // Both confirmed — capture payment and release funds
+    if (otherDone) {
+      // Both confirmed — capture payment and release
       if (activeMatch.payment_intent_id) {
         const { data: { session: auth } } = await supabase.auth.getSession();
-        await fetch('https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
-          body: JSON.stringify({
-            action: 'capture_payment',
-            data: { paymentIntentId: activeMatch.payment_intent_id, matchId: activeMatch.id }
-          })
-        });
+        await fetch(
+          'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${auth.access_token}`,
+            },
+            body: JSON.stringify({
+              action: 'capture_payment',
+              data: {
+                paymentIntentId: activeMatch.payment_intent_id,
+                matchId: activeMatch.id,
+              }
+            })
+          }
+        );
       }
 
       await supabase.from('matches').update({
@@ -196,7 +222,8 @@ const Messages = ({ session }) => {
         deal_stage: 'completed',
       }).eq('id', activeMatch.id);
 
-      const dealValue = (activeMatch.flight?.price_per_kg || 0) * (activeMatch.request?.weight_kg || 0);
+      const dealValue = (activeMatch.flight?.price_per_kg || 0) *
+        (activeMatch.request?.weight_kg || 0);
       let fetchrPct = 0.10;
       if (dealValue >= 500) fetchrPct = 0.07;
       else if (dealValue >= 200) fetchrPct = 0.085;
@@ -210,11 +237,13 @@ const Messages = ({ session }) => {
         is_read: false,
       }]).select();
       if (msg) setMessages(prev => [...prev, msg[0]]);
+
       setTimeout(() => {
         setAcceptedMatches(prev => prev.filter(m => m.id !== activeMatch.id));
         setActiveMatch(null);
         setMessages([]);
       }, 3000);
+
     } else {
       await supabase.from('matches').update({ [myField]: true }).eq('id', activeMatch.id);
       const role = iAmTraveler ? 'TRAVELER' : 'SHIPPER';
@@ -227,6 +256,7 @@ const Messages = ({ session }) => {
       if (msg) setMessages(prev => [...prev, msg[0]]);
       setActiveMatch(prev => ({ ...prev, [myField]: true }));
     }
+
     setSubmittingComplete(false);
   };
 
@@ -237,7 +267,7 @@ const Messages = ({ session }) => {
       match_id: activeMatch.id,
       requested_by: session.user.id,
       reason: cancelReason,
-      status: 'pending'
+      status: 'pending',
     }]);
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id,
@@ -256,22 +286,31 @@ const Messages = ({ session }) => {
   const agreeCancellation = async () => {
     if (!cancelRequest) return;
     setSubmittingCancel(true);
-    const hasEscrow = activeMatch.status === 'in_escrow' || activeMatch.status === 'proof_uploaded';
+    const hasEscrow = ['in_escrow', 'proof_uploaded'].includes(activeMatch.status);
 
-    // Refund escrow if applicable
     if (hasEscrow && activeMatch.payment_intent_id) {
       const { data: { session: auth } } = await supabase.auth.getSession();
-      await fetch('https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
-        body: JSON.stringify({
-          action: 'cancel_payment',
-          data: { paymentIntentId: activeMatch.payment_intent_id, matchId: activeMatch.id }
-        })
-      });
+      await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.access_token}`,
+          },
+          body: JSON.stringify({
+            action: 'cancel_payment',
+            data: {
+              paymentIntentId: activeMatch.payment_intent_id,
+              matchId: activeMatch.id,
+            }
+          })
+        }
+      );
     }
 
-    await supabase.from('cancellation_requests').update({ status: 'agreed' }).eq('id', cancelRequest.id);
+    await supabase.from('cancellation_requests')
+      .update({ status: 'agreed' }).eq('id', cancelRequest.id);
     await supabase.from('matches').update({
       status: 'rejected',
       deal_stage: 'cancelled',
@@ -281,7 +320,7 @@ const Messages = ({ session }) => {
       match_id: activeMatch.id,
       sender_id: session.user.id,
       content: hasEscrow
-        ? '✅ CANCELLATION AGREED: Deal cancelled. Escrow refunded automatically to your card within 5-10 business days.'
+        ? '✅ CANCELLATION AGREED: Deal cancelled. Escrow refunded automatically within 5-10 business days.'
         : '✅ CANCELLATION AGREED: Deal cancelled by mutual agreement.',
       is_read: false,
     }]).select();
@@ -298,7 +337,8 @@ const Messages = ({ session }) => {
 
   const rejectCancellation = async () => {
     if (!cancelRequest) return;
-    await supabase.from('cancellation_requests').update({ status: 'rejected' }).eq('id', cancelRequest.id);
+    await supabase.from('cancellation_requests')
+      .update({ status: 'rejected' }).eq('id', cancelRequest.id);
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id,
       sender_id: session.user.id,
@@ -309,7 +349,30 @@ const Messages = ({ session }) => {
     setCancelRequest(null);
   };
 
-  useEffect(() => { fetchMatches(); }, []);
+  // Initial load + real-time subscription for new accepted matches
+  useEffect(() => {
+    fetchMatches();
+
+    const userId = session.user.id;
+    const sub = supabase.channel('messages-matches-listener')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+      }, (payload) => {
+        const updated = payload.new;
+        if (
+          (updated.traveler_id === userId || updated.shipper_id === userId) &&
+          ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(updated.status)
+        ) {
+          fetchMatches();
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(sub);
+  }, []);
+
   useEffect(() => {
     if (activeMatch) {
       fetchMessages(activeMatch.id);
@@ -317,60 +380,77 @@ const Messages = ({ session }) => {
     }
   }, [activeMatch?.id]);
 
+  // Real-time messages + match updates
   useEffect(() => {
     if (!activeMatch) return;
     const sub = supabase.channel(`messages:${activeMatch.id}`)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'messages',
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
         filter: `match_id=eq.${activeMatch.id}`
       }, (payload) => {
-        setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+        setMessages(prev =>
+          prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]
+        );
         setTimeout(scrollToBottom, 100);
       })
       .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'matches',
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
         filter: `id=eq.${activeMatch.id}`
       }, (payload) => {
         setActiveMatch(prev => ({ ...prev, ...payload.new }));
-        setAcceptedMatches(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m));
+        setAcceptedMatches(prev =>
+          prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
+        );
       })
       .subscribe();
     return () => supabase.removeChannel(sub);
   }, [activeMatch?.id]);
 
+  // Helpers
   const isTraveler = (match) => match?.traveler_id === session.user.id;
   const isShipper = (match) => match?.shipper_id === session.user.id;
   const getOtherParty = (match) => isTraveler(match) ? match.shipper : match.traveler;
-  const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2); };
+  const getInitials = (name) => {
+    if (!name) return '?';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
   const totalUnread = Object.values(unreadCounts).reduce((s, c) => s + c, 0);
 
   const getCurrentStage = (match) => {
     if (!match) return 'matched';
-    return match.deal_stage || match.status || 'matched';
+    const s = match.deal_stage || match.status || 'matched';
+    if (s === 'accepted') return 'matched';
+    return s;
   };
 
-  const getStageIndex = (stage) => {
-    const s = stage === 'accepted' ? 'matched'
-      : stage === 'terms_agreed' ? 'terms_agreed'
-      : stage === 'in_escrow' ? 'in_escrow'
-      : stage === 'proof_uploaded' ? 'proof_uploaded'
-      : stage === 'completed' ? 'completed'
-      : 'matched';
-    return STAGES.findIndex(st => st.id === s);
-  };
+  const getStageIndex = (stage) => STAGES.findIndex(st => st.id === stage);
 
   const myTermsAgreed = activeMatch
-    ? (isTraveler(activeMatch) ? activeMatch.terms_agreed_traveler : activeMatch.terms_agreed_shipper)
+    ? (isTraveler(activeMatch)
+        ? activeMatch.terms_agreed_traveler
+        : activeMatch.terms_agreed_shipper)
     : false;
+
   const otherTermsAgreed = activeMatch
-    ? (isTraveler(activeMatch) ? activeMatch.terms_agreed_shipper : activeMatch.terms_agreed_traveler)
+    ? (isTraveler(activeMatch)
+        ? activeMatch.terms_agreed_shipper
+        : activeMatch.terms_agreed_traveler)
     : false;
 
   const myCompleted = activeMatch
-    ? (isTraveler(activeMatch) ? activeMatch.traveler_completed : activeMatch.shipper_completed)
+    ? (isTraveler(activeMatch)
+        ? activeMatch.traveler_completed
+        : activeMatch.shipper_completed)
     : false;
+
   const otherCompleted = activeMatch
-    ? (isTraveler(activeMatch) ? activeMatch.shipper_completed : activeMatch.traveler_completed)
+    ? (isTraveler(activeMatch)
+        ? activeMatch.shipper_completed
+        : activeMatch.traveler_completed)
     : false;
 
   if (loading) return (
@@ -392,12 +472,14 @@ const Messages = ({ session }) => {
   return (
     <div className="flex h-[calc(100vh-120px)] bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden animate-fade-in">
 
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-gray-100 flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
         <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="font-bold text-gray-900 text-sm">Messages</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}
+            </p>
           </div>
           {totalUnread > 0 && (
             <span className="bg-violet-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
@@ -405,6 +487,7 @@ const Messages = ({ session }) => {
             </span>
           )}
         </div>
+
         <div className="overflow-y-auto flex-1">
           {acceptedMatches.map(match => {
             const other = getOtherParty(match);
@@ -415,11 +498,19 @@ const Messages = ({ session }) => {
 
             return (
               <button key={match.id}
-                onClick={() => { setActiveMatch(match); setShowPayment(false); setShowCancelRequest(false); }}
-                className={`w-full text-left p-3.5 border-b border-gray-50 transition-all ${isActive ? 'bg-violet-50' : 'hover:bg-gray-50'}`}>
+                onClick={() => {
+                  setActiveMatch(match);
+                  setShowPayment(false);
+                  setShowCancelRequest(false);
+                }}
+                className={`w-full text-left p-3.5 border-b border-gray-50 transition-all ${
+                  isActive ? 'bg-violet-50' : 'hover:bg-gray-50'
+                }`}>
                 <div className="flex items-center gap-2.5">
                   <div className="relative flex-shrink-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold ${isActive ? 'bg-violet-600 text-white' : 'bg-violet-100 text-violet-600'}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold ${
+                      isActive ? 'bg-violet-600 text-white' : 'bg-violet-100 text-violet-600'
+                    }`}>
                       {getInitials(other?.full_name)}
                     </div>
                     {unread > 0 && (
@@ -430,13 +521,15 @@ const Messages = ({ session }) => {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <p className={`text-xs truncate ${unread > 0 ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'}`}>
+                      <p className={`text-xs truncate ${
+                        unread > 0 ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'
+                      }`}>
                         {other?.full_name || 'User'}
                       </p>
                       <span className="text-sm flex-shrink-0">{stageInfo.icon}</span>
                     </div>
                     <p className="text-xs text-gray-400 truncate mt-0.5">
-                      {match.flight?.from_code} → {match.flight?.to_code}
+                      {match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}
                     </p>
                   </div>
                 </div>
@@ -446,11 +539,11 @@ const Messages = ({ session }) => {
         </div>
       </div>
 
-      {/* Chat area */}
+      {/* ── Chat area ── */}
       {activeMatch ? (
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Deal stage progress bar */}
+          {/* Stage progress bar */}
           <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex-shrink-0">
             <div className="flex items-center justify-between gap-1 max-w-md mx-auto">
               {STAGES.map((stage, i) => {
@@ -467,12 +560,16 @@ const Messages = ({ session }) => {
                       }`}>
                         {isDone ? '✓' : stage.icon}
                       </div>
-                      <p className={`text-xs hidden sm:block ${isCurrent ? 'text-violet-600 font-bold' : 'text-gray-400'}`} style={{ fontSize: '9px' }}>
+                      <p className={`hidden sm:block text-center ${
+                        isCurrent ? 'text-violet-600 font-bold' : 'text-gray-400'
+                      }`} style={{ fontSize: '9px' }}>
                         {stage.label}
                       </p>
                     </div>
                     {i < STAGES.length - 1 && (
-                      <div className={`flex-1 h-0.5 rounded-full transition-all ${isDone ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                      <div className={`flex-1 h-0.5 rounded-full transition-all ${
+                        isDone ? 'bg-emerald-400' : 'bg-gray-200'
+                      }`} />
                     )}
                   </React.Fragment>
                 );
@@ -500,24 +597,28 @@ const Messages = ({ session }) => {
               </div>
             </div>
 
+            {/* Action buttons */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Terms agree button */}
-              {(activeMatch.status === 'accepted') && !myTermsAgreed && (
+
+              {/* Agree Terms — shown when status is accepted and not yet agreed */}
+              {activeMatch.status === 'accepted' && !myTermsAgreed && (
                 <button onClick={agreeToTerms}
                   className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition shadow-button">
                   <CheckCircle size={12} /> Agree Terms
                 </button>
               )}
 
-              {/* Escrow payment button (shipper, after terms agreed) */}
+              {/* Pay Escrow — shipper only, after terms agreed */}
               {isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
                 <button onClick={() => { setShowPayment(!showPayment); setShowCancelRequest(false); }}
-                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${showPayment ? 'bg-violet-100 text-violet-700' : 'btn-primary'}`}>
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                    showPayment ? 'bg-violet-100 text-violet-700' : 'btn-primary'
+                  }`}>
                   <Shield size={12} /> Pay Escrow
                 </button>
               )}
 
-              {/* Upload proof (traveler, after escrow) */}
+              {/* Upload Proof — traveler only, after escrow paid */}
               {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
                 <>
                   <button onClick={() => proofInputRef.current?.click()}
@@ -534,20 +635,23 @@ const Messages = ({ session }) => {
                 </>
               )}
 
-              {/* Complete deal button */}
-              {(activeMatch.status === 'proof_uploaded' || activeMatch.status === 'in_escrow') && (
+              {/* Confirm Delivery — shown after proof uploaded */}
+              {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && (
                 <button onClick={handleCompleteDeal}
                   disabled={submittingComplete || myCompleted}
                   className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                    myCompleted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' :
-                    otherCompleted ? 'bg-emerald-500 text-white animate-pulse' :
-                    'bg-emerald-500 text-white hover:bg-emerald-600'
+                    myCompleted
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : otherCompleted
+                        ? 'bg-emerald-500 text-white animate-pulse'
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600'
                   }`}>
                   <CheckCircle size={12} />
-                  {myCompleted ? 'Waiting...' : otherCompleted ? 'Confirm & Release' : 'Confirm'}
+                  {myCompleted ? 'Waiting...' : otherCompleted ? 'Confirm & Release' : 'Confirm Delivery'}
                 </button>
               )}
 
+              {/* Cancel */}
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
                 className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500 transition">
                 <XCircle size={12} /> Cancel
@@ -571,23 +675,55 @@ const Messages = ({ session }) => {
             </span>
           </div>
 
-          {/* Terms status bar */}
+          {/* Context-sensitive safety notice */}
           {activeMatch.status === 'accepted' && (
-            <div className="bg-amber-50/50 px-4 py-2 flex items-center gap-4 text-xs border-b border-amber-100/50 flex-shrink-0">
-              <p className="text-amber-700 font-semibold">Terms agreement:</p>
-              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_traveler ? 'text-emerald-600' : 'text-gray-300'}`}>
-                {activeMatch.terms_agreed_traveler ? '✓' : '○'} Traveler
+            <div className={`px-4 py-2.5 flex items-start gap-2 border-b flex-shrink-0 ${
+              isTraveler(activeMatch)
+                ? 'bg-amber-50/60 border-amber-100'
+                : 'bg-blue-50/60 border-blue-100'
+            }`}>
+              <span className="text-sm flex-shrink-0 mt-0.5">
+                {isTraveler(activeMatch) ? '⚠️' : 'ℹ️'}
               </span>
-              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_shipper ? 'text-emerald-600' : 'text-gray-300'}`}>
-                {activeMatch.terms_agreed_shipper ? '✓' : '○'} Shipper
-              </span>
-              <p className="text-amber-600 ml-auto">
-                {!myTermsAgreed ? 'Click "Agree Terms" to proceed' : 'Waiting for other party...'}
+              <p className={`text-xs leading-relaxed ${
+                isTraveler(activeMatch) ? 'text-amber-700' : 'text-blue-700'
+              }`}>
+                {activeMatch.request?.requires_purchase
+                  ? isTraveler(activeMatch)
+                    ? 'Only purchase the item once escrow is confirmed paid. This guarantees you will receive payment for the purchase and your service fee.'
+                    : 'Once you agree terms and pay escrow, the traveler will purchase your item at the destination.'
+                  : isTraveler(activeMatch)
+                    ? 'Only accept the item from the shipper once escrow is confirmed paid. This guarantees you will receive payment for carrying it.'
+                    : 'Hand the item to the traveler before their flight. Your payment is secured in escrow and released to the traveler once you both confirm delivery.'
+                }
               </p>
             </div>
           )}
 
-          {/* Escrow panel */}
+          {/* Terms status bar */}
+          {activeMatch.status === 'accepted' && (
+            <div className="bg-amber-50/50 px-4 py-2 flex items-center gap-4 text-xs border-b border-amber-100/50 flex-shrink-0">
+              <p className="text-amber-700 font-semibold">Terms agreement:</p>
+              <span className={`flex items-center gap-1 font-semibold ${
+                activeMatch.terms_agreed_traveler ? 'text-emerald-600' : 'text-gray-300'
+              }`}>
+                {activeMatch.terms_agreed_traveler ? '✓' : '○'} Traveler
+              </span>
+              <span className={`flex items-center gap-1 font-semibold ${
+                activeMatch.terms_agreed_shipper ? 'text-emerald-600' : 'text-gray-300'
+              }`}>
+                {activeMatch.terms_agreed_shipper ? '✓' : '○'} Shipper
+              </span>
+              <p className="text-amber-600 ml-auto text-right">
+                {!myTermsAgreed
+                  ? 'Click "Agree Terms" above to proceed'
+                  : 'Waiting for other party...'
+                }
+              </p>
+            </div>
+          )}
+
+          {/* Escrow payment panel */}
           {showPayment && isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
             <div className="border-b border-gray-100 bg-gray-50/50 overflow-y-auto max-h-96 flex-shrink-0">
               <EscrowPayment
@@ -602,13 +738,13 @@ const Messages = ({ session }) => {
             </div>
           )}
 
-          {/* Cancel form */}
+          {/* Cancel request form */}
           {showCancelRequest && !cancelRequest && (
             <div className="border-b border-red-100 bg-red-50/50 p-4 flex-shrink-0">
               <p className="text-sm font-bold text-red-700 mb-2 flex items-center gap-1.5">
                 <AlertTriangle size={14} /> Request Cancellation
               </p>
-              {activeMatch.status === 'in_escrow' && (
+              {['in_escrow', 'proof_uploaded'].includes(activeMatch.status) && (
                 <p className="text-xs text-red-500 mb-2">
                   ⚠️ Escrow will be refunded automatically if both parties agree to cancel.
                 </p>
@@ -622,7 +758,9 @@ const Messages = ({ session }) => {
               />
               <div className="flex gap-2">
                 <button onClick={() => setShowCancelRequest(false)}
-                  className="flex-1 btn-secondary py-2 text-xs">Close</button>
+                  className="flex-1 btn-secondary py-2 text-xs">
+                  Close
+                </button>
                 <button onClick={requestCancellation}
                   disabled={!cancelReason.trim() || submittingCancel}
                   className="flex-1 bg-red-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-red-600 transition disabled:opacity-50">
@@ -632,16 +770,20 @@ const Messages = ({ session }) => {
             </div>
           )}
 
-          {/* Incoming cancel request */}
+          {/* Incoming cancellation request */}
           {cancelRequest && cancelRequest.requested_by !== session.user.id && (
             <div className="border-b border-amber-100 bg-amber-50/50 p-4 flex-shrink-0">
               <p className="text-sm font-bold text-amber-700 mb-1 flex items-center gap-1.5">
                 <AlertTriangle size={14} /> Cancellation Requested
               </p>
-              <p className="text-xs text-amber-600 mb-2">Reason: {cancelRequest.reason}</p>
+              <p className="text-xs text-amber-600 mb-2">
+                Reason: {cancelRequest.reason}
+              </p>
               <div className="flex gap-2">
                 <button onClick={rejectCancellation}
-                  className="flex-1 btn-secondary py-2 text-xs">Decline</button>
+                  className="flex-1 btn-secondary py-2 text-xs">
+                  Decline
+                </button>
                 <button onClick={agreeCancellation}
                   disabled={submittingCancel}
                   className="flex-1 bg-amber-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-amber-600 transition disabled:opacity-50">
@@ -651,11 +793,12 @@ const Messages = ({ session }) => {
             </div>
           )}
 
-          {/* Messages */}
+          {/* Messages list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {messages.map((msg, i) => {
+            {messages.map((msg) => {
               const isMe = msg.sender_id === session.user.id;
-              const isSystem = msg.content?.startsWith('🎉') ||
+              const isSystem =
+                msg.content?.startsWith('🎉') ||
                 msg.content?.startsWith('✅') ||
                 msg.content?.startsWith('⏳') ||
                 msg.content?.startsWith('⚠️') ||
@@ -663,22 +806,24 @@ const Messages = ({ session }) => {
                 msg.content?.startsWith('🔒') ||
                 msg.content?.startsWith('📸');
 
-              // Render proof image
+              // Proof image message
               if (msg.content?.startsWith('📸 PROOF UPLOADED:')) {
                 const url = msg.content.replace('📸 PROOF UPLOADED: ', '');
                 return (
                   <div key={msg.id} className="flex justify-center">
                     <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 max-w-xs text-center">
-                      <p className="text-xs font-bold text-blue-700 mb-2">📸 Delivery Proof Uploaded</p>
+                      <p className="text-xs font-bold text-blue-700 mb-2">📸 Delivery Proof</p>
                       <a href={url} target="_blank" rel="noreferrer">
-                        <img src={url} alt="Proof" className="rounded-xl w-full h-36 object-cover hover:opacity-90 transition" />
+                        <img src={url} alt="Proof"
+                          className="rounded-xl w-full h-36 object-cover hover:opacity-90 transition" />
                       </a>
-                      <p className="text-xs text-blue-500 mt-1">Click to view full size</p>
+                      <p className="text-xs text-blue-500 mt-1">Tap to view full size</p>
                     </div>
                   </div>
                 );
               }
 
+              // System message
               if (isSystem) {
                 return (
                   <div key={msg.id} className="flex justify-center">
@@ -689,6 +834,7 @@ const Messages = ({ session }) => {
                 );
               }
 
+              // Regular message
               return (
                 <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
@@ -696,7 +842,7 @@ const Messages = ({ session }) => {
                       {getInitials(msg.sender?.full_name)}
                     </div>
                   )}
-                  <div className={`max-w-xs lg:max-w-sm ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className={`max-w-xs lg:max-w-sm flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                     <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
                       isMe
                         ? 'bg-violet-600 text-white rounded-br-md'
@@ -705,7 +851,9 @@ const Messages = ({ session }) => {
                       {msg.content}
                     </div>
                     <p className={`text-xs text-gray-400 mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
-                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(msg.created_at).toLocaleTimeString([], {
+                        hour: '2-digit', minute: '2-digit'
+                      })}
                     </p>
                   </div>
                 </div>
@@ -724,13 +872,13 @@ const Messages = ({ session }) => {
                 placeholder="Type a message... (Enter to send)"
                 rows={1}
                 className="flex-1 input-field resize-none py-2.5 text-sm min-h-[42px] max-h-24"
-                style={{ height: 'auto' }}
                 onInput={e => {
                   e.target.style.height = 'auto';
                   e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px';
                 }}
               />
-              <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
+              <button onClick={sendMessage}
+                disabled={!newMessage.trim() || sending}
                 className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center hover:bg-violet-700 transition shadow-button disabled:opacity-50 flex-shrink-0">
                 {sending
                   ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -739,6 +887,7 @@ const Messages = ({ session }) => {
               </button>
             </div>
           </div>
+
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-8">

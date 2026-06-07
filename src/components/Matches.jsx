@@ -13,7 +13,7 @@ const Matches = ({ session }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const fetchMatches = async () => {
+const fetchMatches = async () => {
     setLoading(true);
     await supabase.rpc('find_matches');
     const { data, error } = await supabase
@@ -26,7 +26,7 @@ const Matches = ({ session }) => {
         shipper:profiles!matches_shipper_id_fkey(*)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'awaiting_other'])
       .order('match_score', { ascending: false });
     if (!error) setMatches(data || []);
     setLoading(false);
@@ -51,7 +51,7 @@ const Matches = ({ session }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleAccept = async (matchId) => {
+const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
     const match = matches.find(m => m.id === matchId);
     const isTrav = match.traveler_id === session.user.id;
@@ -59,16 +59,28 @@ const Matches = ({ session }) => {
     const otherAccepted = isTrav ? match.shipper_accepted : match.traveler_accepted;
 
     if (otherAccepted) {
-      await supabase.from('matches').update({ [myField]: true, status: 'accepted' }).eq('id', matchId);
+      // Both accepted — move to accepted
+      await supabase.from('matches').update({
+        [myField]: true,
+        status: 'accepted',
+        deal_stage: 'matched',
+      }).eq('id', matchId);
+
       await supabase.from('messages').insert([{
         match_id: matchId,
         sender_id: session.user.id,
-        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery. Let's make this happen!`,
+        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery.`,
         is_read: false
       }]);
     } else {
-      await supabase.from('matches').update({ [myField]: true, status: 'awaiting_other' }).eq('id', matchId);
+      // First to accept — stay visible, show awaiting
+      await supabase.from('matches').update({
+        [myField]: true,
+        status: 'awaiting_other',
+      }).eq('id', matchId);
     }
+
+    // Refresh matches — do NOT remove from list
     await fetchMatches();
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -94,19 +106,16 @@ const Matches = ({ session }) => {
     return data?.publicUrl;
   };
 
-  const getFeePreview = (match) => {
-    const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
-    let fetchrPct = 10;
-    if (subtotal >= 500) fetchrPct = 7;
-    else if (subtotal >= 200) fetchrPct = 8.5;
-    else if (subtotal < 20) fetchrPct = 12;
-    const fetchrFee = subtotal * fetchrPct / 100;
-    const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
-    const totalFee = fetchrFee + stripeFee;
-    const totalCharged = subtotal + totalFee;
-    const travelerReceives = subtotal - fetchrFee;
-    return { subtotal, totalFee, totalCharged, travelerReceives };
-  };
+const getFeePreview = (match) => {
+  const agreedPrice = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
+  let fetchrPct = 0.10;
+  if (agreedPrice >= 500) fetchrPct = 0.07;
+  else if (agreedPrice >= 200) fetchrPct = 0.085;
+  else if (agreedPrice < 20) fetchrPct = 0.12;
+  const fetchrFee = agreedPrice * fetchrPct;
+  const travelerReceives = agreedPrice - fetchrFee;
+  return { agreedPrice, fetchrFee, fetchrPct, travelerReceives };
+};
 
   const getScoreBadge = (score) => {
     if (score >= 90) return 'badge-green';
@@ -232,32 +241,35 @@ const Matches = ({ session }) => {
                     </div>
                   )}
 
-                  {/* Fee preview — single combined fee */}
+{/* Fee preview */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deal Preview</p>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="text-center">
-                        <p className="text-xs text-gray-400 mb-1">Deal value</p>
+                        <p className="text-xs text-gray-400 mb-1">Shipper pays</p>
                         <p className="text-base font-bold text-gray-900">
-                          ${fees.subtotal.toFixed(2)}
+                          ${fees.agreedPrice.toFixed(2)}
                         </p>
+                        <p className="text-xs text-gray-400">agreed price</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs text-gray-400 mb-1">Shipper pays</p>
-                        <p className="text-base font-bold text-violet-600">
-                          ${fees.totalCharged.toFixed(2)}
+                        <p className="text-xs text-gray-400 mb-1">Fetchr fee</p>
+                        <p className="text-base font-bold text-red-500">
+                          -${fees.fetchrFee.toFixed(2)}
                         </p>
-                        <p className="text-xs text-gray-400">
-                          incl. ${fees.totalFee.toFixed(2)} fees
-                        </p>
+                        <p className="text-xs text-gray-400">{Math.round(fees.fetchrPct * 100)}% cut</p>
                       </div>
                       <div className="text-center">
                         <p className="text-xs text-gray-400 mb-1">Traveler gets</p>
                         <p className="text-base font-bold text-emerald-600">
                           ${fees.travelerReceives.toFixed(2)}
                         </p>
+                        <p className="text-xs text-gray-400">net earnings</p>
                       </div>
                     </div>
+                    <p className="text-xs text-gray-400 text-center mt-2 italic">
+                      Shipper pays the agreed price only — Fetchr's cut comes from the traveler's share
+                    </p>
                   </div>
 
                   {/* Other party profile button */}
