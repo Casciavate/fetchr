@@ -1,0 +1,662 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      airports: {
+        Row: {
+          city: string | null
+          country: string | null
+          iata_code: string
+          latitude: number | null
+          longitude: number | null
+          name: string | null
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          iata_code: string
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          iata_code?: string
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+        }
+        Relationships: []
+      }
+      cancellation_requests: {
+        Row: {
+          created_at: string | null
+          id: string
+          match_id: string | null
+          reason: string | null
+          requested_by: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          match_id?: string | null
+          reason?: string | null
+          requested_by?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          match_id?: string | null
+          reason?: string | null
+          requested_by?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cancellation_requests_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cancellation_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flights: {
+        Row: {
+          airline: string | null
+          available_kg: number
+          booked_kg: number | null
+          categories: string[] | null
+          created_at: string | null
+          delivery_type: string | null
+          flight_date: string
+          flight_number: string | null
+          from_city: string
+          from_code: string
+          handover_location: string | null
+          handover_location_arrival: string | null
+          handover_location_departure: string | null
+          id: string
+          luggage_options: Json | null
+          luggage_type: string | null
+          notes: string | null
+          price_per_kg: number
+          shop_and_ship_fee: number | null
+          status: string | null
+          to_city: string
+          to_code: string
+          user_id: string | null
+        }
+        Insert: {
+          airline?: string | null
+          available_kg: number
+          booked_kg?: number | null
+          categories?: string[] | null
+          created_at?: string | null
+          delivery_type?: string | null
+          flight_date: string
+          flight_number?: string | null
+          from_city: string
+          from_code: string
+          handover_location?: string | null
+          handover_location_arrival?: string | null
+          handover_location_departure?: string | null
+          id?: string
+          luggage_options?: Json | null
+          luggage_type?: string | null
+          notes?: string | null
+          price_per_kg: number
+          shop_and_ship_fee?: number | null
+          status?: string | null
+          to_city: string
+          to_code: string
+          user_id?: string | null
+        }
+        Update: {
+          airline?: string | null
+          available_kg?: number
+          booked_kg?: number | null
+          categories?: string[] | null
+          created_at?: string | null
+          delivery_type?: string | null
+          flight_date?: string
+          flight_number?: string | null
+          from_city?: string
+          from_code?: string
+          handover_location?: string | null
+          handover_location_arrival?: string | null
+          handover_location_departure?: string | null
+          id?: string
+          luggage_options?: Json | null
+          luggage_type?: string | null
+          notes?: string | null
+          price_per_kg?: number
+          shop_and_ship_fee?: number | null
+          status?: string | null
+          to_city?: string
+          to_code?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          agreed_notes: string | null
+          agreed_price_per_kg: number | null
+          agreed_weight_kg: number | null
+          cancel_agreed: boolean | null
+          cancel_requested_by: string | null
+          created_at: string | null
+          deal_stage: string | null
+          flight_id: string | null
+          id: string
+          match_score: number | null
+          proof_notes: string | null
+          proof_photo_url: string | null
+          proof_uploaded_at: string | null
+          refund_status: string | null
+          request_id: string | null
+          shipper_accepted: boolean | null
+          shipper_completed: boolean | null
+          shipper_id: string | null
+          status: string | null
+          terms_agreed_shipper: boolean | null
+          terms_agreed_traveler: boolean | null
+          traveler_accepted: boolean | null
+          traveler_completed: boolean | null
+          traveler_id: string | null
+        }
+        Insert: {
+          agreed_notes?: string | null
+          agreed_price_per_kg?: number | null
+          agreed_weight_kg?: number | null
+          cancel_agreed?: boolean | null
+          cancel_requested_by?: string | null
+          created_at?: string | null
+          deal_stage?: string | null
+          flight_id?: string | null
+          id?: string
+          match_score?: number | null
+          proof_notes?: string | null
+          proof_photo_url?: string | null
+          proof_uploaded_at?: string | null
+          refund_status?: string | null
+          request_id?: string | null
+          shipper_accepted?: boolean | null
+          shipper_completed?: boolean | null
+          shipper_id?: string | null
+          status?: string | null
+          terms_agreed_shipper?: boolean | null
+          terms_agreed_traveler?: boolean | null
+          traveler_accepted?: boolean | null
+          traveler_completed?: boolean | null
+          traveler_id?: string | null
+        }
+        Update: {
+          agreed_notes?: string | null
+          agreed_price_per_kg?: number | null
+          agreed_weight_kg?: number | null
+          cancel_agreed?: boolean | null
+          cancel_requested_by?: string | null
+          created_at?: string | null
+          deal_stage?: string | null
+          flight_id?: string | null
+          id?: string
+          match_score?: number | null
+          proof_notes?: string | null
+          proof_photo_url?: string | null
+          proof_uploaded_at?: string | null
+          refund_status?: string | null
+          request_id?: string | null
+          shipper_accepted?: boolean | null
+          shipper_completed?: boolean | null
+          shipper_id?: string | null
+          status?: string | null
+          terms_agreed_shipper?: boolean | null
+          terms_agreed_traveler?: boolean | null
+          traveler_accepted?: boolean | null
+          traveler_completed?: boolean | null
+          traveler_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_cancel_requested_by_fkey"
+            columns: ["cancel_requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_flight_id_fkey"
+            columns: ["flight_id"]
+            isOneToOne: false
+            referencedRelation: "flights"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "shipment_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_traveler_id_fkey"
+            columns: ["traveler_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          match_id: string | null
+          sender_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          match_id?: string | null
+          sender_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          match_id?: string | null
+          sender_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          completed_deals: number | null
+          created_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          languages: string[] | null
+          nationality: string | null
+          payout_card_brand: string | null
+          payout_card_last4: string | null
+          payout_card_token: string | null
+          phone: string | null
+          rating: number | null
+          response_rate: number | null
+          role: string | null
+          total_reviews: number | null
+          verified: boolean | null
+          wallet_balance: number | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          completed_deals?: number | null
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id: string
+          languages?: string[] | null
+          nationality?: string | null
+          payout_card_brand?: string | null
+          payout_card_last4?: string | null
+          payout_card_token?: string | null
+          phone?: string | null
+          rating?: number | null
+          response_rate?: number | null
+          role?: string | null
+          total_reviews?: number | null
+          verified?: boolean | null
+          wallet_balance?: number | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          completed_deals?: number | null
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          languages?: string[] | null
+          nationality?: string | null
+          payout_card_brand?: string | null
+          payout_card_last4?: string | null
+          payout_card_token?: string | null
+          phone?: string | null
+          rating?: number | null
+          response_rate?: number | null
+          role?: string | null
+          total_reviews?: number | null
+          verified?: boolean | null
+          wallet_balance?: number | null
+        }
+        Relationships: []
+      }
+      shipment_requests: {
+        Row: {
+          budget_currency: string | null
+          budget_per_kg: number | null
+          category: string
+          created_at: string | null
+          description: string | null
+          from_city: string
+          from_code: string
+          handover_type: string | null
+          id: string
+          item_description: string | null
+          item_dimensions: string | null
+          item_name: string
+          item_photo_url: string | null
+          max_budget: number | null
+          needed_by: string | null
+          notes: string | null
+          purchase_currency: string | null
+          purchase_details: string | null
+          purchase_price: number | null
+          purchase_store: string | null
+          purchase_store_address: string | null
+          purchase_store_lat: number | null
+          purchase_store_lng: number | null
+          purchase_url: string | null
+          requires_purchase: boolean | null
+          status: string | null
+          to_city: string
+          to_code: string
+          trusted_person_location: string | null
+          trusted_person_name: string | null
+          trusted_person_notes: string | null
+          trusted_person_phone: string | null
+          user_id: string | null
+          weight_kg: number
+        }
+        Insert: {
+          budget_currency?: string | null
+          budget_per_kg?: number | null
+          category: string
+          created_at?: string | null
+          description?: string | null
+          from_city: string
+          from_code: string
+          handover_type?: string | null
+          id?: string
+          item_description?: string | null
+          item_dimensions?: string | null
+          item_name: string
+          item_photo_url?: string | null
+          max_budget?: number | null
+          needed_by?: string | null
+          notes?: string | null
+          purchase_currency?: string | null
+          purchase_details?: string | null
+          purchase_price?: number | null
+          purchase_store?: string | null
+          purchase_store_address?: string | null
+          purchase_store_lat?: number | null
+          purchase_store_lng?: number | null
+          purchase_url?: string | null
+          requires_purchase?: boolean | null
+          status?: string | null
+          to_city: string
+          to_code: string
+          trusted_person_location?: string | null
+          trusted_person_name?: string | null
+          trusted_person_notes?: string | null
+          trusted_person_phone?: string | null
+          user_id?: string | null
+          weight_kg: number
+        }
+        Update: {
+          budget_currency?: string | null
+          budget_per_kg?: number | null
+          category?: string
+          created_at?: string | null
+          description?: string | null
+          from_city?: string
+          from_code?: string
+          handover_type?: string | null
+          id?: string
+          item_description?: string | null
+          item_dimensions?: string | null
+          item_name?: string
+          item_photo_url?: string | null
+          max_budget?: number | null
+          needed_by?: string | null
+          notes?: string | null
+          purchase_currency?: string | null
+          purchase_details?: string | null
+          purchase_price?: number | null
+          purchase_store?: string | null
+          purchase_store_address?: string | null
+          purchase_store_lat?: number | null
+          purchase_store_lng?: number | null
+          purchase_url?: string | null
+          requires_purchase?: boolean | null
+          status?: string | null
+          to_city?: string
+          to_code?: string
+          trusted_person_location?: string | null
+          trusted_person_name?: string | null
+          trusted_person_notes?: string | null
+          trusted_person_phone?: string | null
+          user_id?: string | null
+          weight_kg?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      calculate_distance_km: {
+        Args: { lat1: number; lat2: number; lon1: number; lon2: number }
+        Returns: number
+      }
+      expire_old_flights: { Args: never; Returns: undefined }
+      find_matches: { Args: never; Returns: undefined }
+      mark_messages_read: {
+        Args: { p_match_id: string; p_user_id: string }
+        Returns: undefined
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const

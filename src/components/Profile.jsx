@@ -3,8 +3,8 @@ import { supabase } from '../supabaseClient';
 import {
   User, Mail, Phone, Globe, Star, Shield, Edit2,
   Check, X, Award, Package, Plane, DollarSign, Camera,
-  CreditCard, CheckCircle, Trash2, TrendingUp,
-  AlertTriangle, ChevronDown, ChevronUp
+  CreditCard, CheckCircle, Trash2, AlertTriangle,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -50,7 +50,6 @@ const Profile = ({ session, userRole }) => {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [deleteEmailSent, setDeleteEmailSent] = useState(false);
   const [form, setForm] = useState({
     full_name: '', bio: '', phone: '', nationality: '', languages: []
   });
@@ -116,7 +115,6 @@ const Profile = ({ session, userRole }) => {
 
   const fetchReviews = async () => {
     const userId = session.user.id;
-    // Simple approach: get completed deals and show star ratings
     const { data } = await supabase
       .from('matches')
       .select(`
@@ -139,13 +137,21 @@ const Profile = ({ session, userRole }) => {
 
     const userId = session.user.id;
     const sub = supabase.channel(`profile-rt-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles',
-        filter: `id=eq.${userId}` }, fetchProfile)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, fetchStats)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'flights',
-        filter: `user_id=eq.${userId}` }, fetchStats)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests',
-        filter: `user_id=eq.${userId}` }, fetchStats)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'profiles',
+        filter: `id=eq.${userId}`
+      }, fetchProfile)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'matches'
+      }, fetchStats)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'flights',
+        filter: `user_id=eq.${userId}`
+      }, fetchStats)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'shipment_requests',
+        filter: `user_id=eq.${userId}`
+      }, fetchStats)
       .subscribe();
 
     return () => supabase.removeChannel(sub);
@@ -153,8 +159,12 @@ const Profile = ({ session, userRole }) => {
 
   const handlePhotoChange = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) { setError('Please select an image.'); return; }
-    if (file.size > 5 * 1024 * 1024) { setError('Image must be under 5MB.'); return; }
+    if (!file || !file.type.startsWith('image/')) {
+      setError('Please select an image.'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5MB.'); return;
+    }
     setUploadingPhoto(true); setError('');
     try {
       const fileExt = file.name.split('.').pop();
@@ -162,11 +172,16 @@ const Profile = ({ session, userRole }) => {
       const { error: uploadError } = await supabase.storage
         .from('avatars').upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
-      await supabase.from('profiles').update({ avatar_url: filePath }).eq('id', session.user.id);
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      await supabase.from('profiles')
+        .update({ avatar_url: filePath }).eq('id', session.user.id);
+      const { data: urlData } = supabase.storage
+        .from('avatars').getPublicUrl(filePath);
       setAvatarUrl(urlData.publicUrl + '?t=' + Date.now());
-      setSuccess('Photo updated!'); setTimeout(() => setSuccess(''), 3000);
-    } catch (err) { setError(err.message); }
+      setSuccess('Photo updated!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.message);
+    }
     setUploadingPhoto(false);
   };
 
@@ -183,12 +198,18 @@ const Profile = ({ session, userRole }) => {
     if (!form.full_name.trim()) { setError('Name is required.'); return; }
     setSaving(true); setError('');
     const { error } = await supabase.from('profiles').update({
-      full_name: form.full_name, bio: form.bio,
-      phone: form.phone, nationality: form.nationality,
+      full_name: form.full_name,
+      bio: form.bio,
+      phone: form.phone,
+      nationality: form.nationality,
       languages: form.languages,
     }).eq('id', session.user.id);
-    if (error) { setError(error.message); } else {
-      setSuccess('Profile updated!'); setEditing(false); fetchProfile();
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess('Profile updated!');
+      setEditing(false);
+      fetchProfile();
       setTimeout(() => setSuccess(''), 3000);
     }
     setSaving(false);
@@ -202,59 +223,99 @@ const Profile = ({ session, userRole }) => {
     try {
       const last4 = payoutCard.number.replace(/\s/g, '').slice(-4);
       const first = payoutCard.number.replace(/\s/g, '')[0];
-      const brand = first === '4' ? 'Visa' : first === '5' ? 'Mastercard' :
-                    first === '3' ? 'Amex' : 'Card';
+      const brand = first === '4' ? 'Visa'
+        : first === '5' ? 'Mastercard'
+        : first === '3' ? 'Amex'
+        : 'Card';
       await supabase.from('profiles').update({
-        payout_card_last4: last4, payout_card_brand: brand,
+        payout_card_last4: last4,
+        payout_card_brand: brand,
       }).eq('id', session.user.id);
       setProfile(prev => ({ ...prev, payout_card_last4: last4, payout_card_brand: brand }));
       setPayoutCard({ number: '', expiry: '', name: '' });
       setShowPayoutSetup(false);
-      setSuccess('Card saved!'); setTimeout(() => setSuccess(''), 3000);
-    } catch (err) { setError(err.message); }
+      setSuccess('Card saved!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.message);
+    }
     setSavingPayout(false);
   };
 
   const removeCard = async () => {
     if (!window.confirm('Remove stored card?')) return;
     await supabase.from('profiles').update({
-      payout_card_last4: null, payout_card_brand: null
+      payout_card_last4: null,
+      payout_card_brand: null,
     }).eq('id', session.user.id);
     setProfile(prev => ({ ...prev, payout_card_last4: null, payout_card_brand: null }));
-    setSuccess('Card removed.'); setTimeout(() => setSuccess(''), 3000);
+    setSuccess('Card removed.');
+    setTimeout(() => setSuccess(''), 3000);
   };
 
+  // ── Direct deletion — no magic link needed ──
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== 'DELETE') {
       setError('Please type DELETE to confirm.'); return;
     }
-    // Client-side checks
     if (stats.dealsOngoing > 0) {
       setError(`Complete or cancel your ${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''} first.`);
       return;
     }
     if ((profile?.wallet_balance || 0) > 0) {
-      setError(`Withdraw your $${profile.wallet_balance.toFixed(2)} wallet balance first.`);
+      setError(`Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`);
       return;
     }
+
     setDeletingAccount(true); setError('');
-    const { error } = await supabase.auth.signInWithOtp({
-      email: session.user.email,
-      options: {
-        emailRedirectTo: `${window.location.origin}?delete=true`,
-        shouldCreateUser: false,
+
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession) {
+        setError('Session expired. Please sign in again.');
+        setDeletingAccount(false);
+        return;
       }
-    });
-    if (error) { setError(error.message); } else { setDeleteEmailSent(true); }
-    setDeletingAccount(false);
+
+      const res = await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/delete-account',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || data.error || 'Failed to delete account.');
+        setDeletingAccount(false);
+        return;
+      }
+
+      // Success — sign out and go to login
+      await supabase.auth.signOut();
+      window.location.href = '/';
+
+    } catch (e) {
+      setError('Network error. Please check your connection and try again.');
+      setDeletingAccount(false);
+    }
   };
 
-  const formatCard = (val) => val.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
-  const formatExpiry = (val) => val.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
+  const formatCard = (val) =>
+    val.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
+  const formatExpiry = (val) =>
+    val.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  const canDelete = stats.dealsOngoing === 0 && (profile?.wallet_balance || 0) <= 0;
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -262,11 +323,10 @@ const Profile = ({ session, userRole }) => {
     </div>
   );
 
-  const canDelete = stats.dealsOngoing === 0 && (profile?.wallet_balance || 0) <= 0;
-
   return (
     <div className="max-w-3xl mx-auto animate-fade-in space-y-4">
 
+      {/* Global success / error toast */}
       {(success || error) && (
         <div className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${
           success
@@ -278,10 +338,11 @@ const Profile = ({ session, userRole }) => {
         </div>
       )}
 
-      {/* ── Profile header ── */}
+      {/* ── Profile Header ── */}
       <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-5">
+            {/* Avatar */}
             <div className="relative">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile"
@@ -291,7 +352,9 @@ const Profile = ({ session, userRole }) => {
                   {getInitials(profile?.full_name)}
                 </div>
               )}
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingPhoto}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingPhoto}
                 className="absolute -bottom-2 -right-2 w-8 h-8 bg-violet-600 rounded-xl flex items-center justify-center border-2 border-white hover:bg-violet-700 transition shadow-button disabled:opacity-50">
                 {uploadingPhoto
                   ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -302,24 +365,29 @@ const Profile = ({ session, userRole }) => {
                 onChange={handlePhotoChange} className="hidden" />
             </div>
 
+            {/* Name + rating */}
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-bold text-gray-900">
                   {profile?.full_name || 'Your Name'}
                 </h2>
                 {profile?.verified && (
-                  <span className="badge badge-blue"><Shield size={10} /> Verified</span>
+                  <span className="badge badge-blue">
+                    <Shield size={10} /> Verified
+                  </span>
                 )}
               </div>
               <p className="text-sm text-gray-400 mt-0.5">{session.user.email}</p>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {profile?.rating > 0 ? (
-                  <button onClick={() => setShowReviews(!showReviews)}
+                  <button
+                    onClick={() => setShowReviews(!showReviews)}
                     className="flex items-center gap-1 hover:opacity-80 transition">
                     {[1,2,3,4,5].map(s => (
                       <Star key={s} size={13}
                         className={s <= Math.round(profile.rating)
-                          ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
+                          ? 'text-amber-400 fill-amber-400'
+                          : 'text-gray-200'} />
                     ))}
                     <span className="text-sm font-bold text-gray-700 ml-0.5">
                       {profile.rating.toFixed(1)}
@@ -336,7 +404,9 @@ const Profile = ({ session, userRole }) => {
             </div>
           </div>
 
-          <button onClick={() => { setEditing(!editing); setError(''); }}
+          {/* Edit toggle */}
+          <button
+            onClick={() => { setEditing(!editing); setError(''); setSuccess(''); }}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
               editing
                 ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -425,10 +495,11 @@ const Profile = ({ session, userRole }) => {
         </div>
       </div>
 
-      {/* ── Reviews ── */}
+      {/* ── Completed Deals / Reviews ── */}
       {reviews.length > 0 && (
         <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden">
-          <button onClick={() => setShowReviews(!showReviews)}
+          <button
+            onClick={() => setShowReviews(!showReviews)}
             className="w-full flex items-center justify-between p-5 hover:bg-gray-50 transition">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center">
@@ -436,7 +507,9 @@ const Profile = ({ session, userRole }) => {
               </div>
               <div className="text-left">
                 <p className="font-bold text-gray-900 text-sm">Completed Deals</p>
-                <p className="text-xs text-gray-400">{reviews.length} deal{reviews.length !== 1 ? 's' : ''} completed</p>
+                <p className="text-xs text-gray-400">
+                  {reviews.length} deal{reviews.length !== 1 ? 's' : ''} completed
+                </p>
               </div>
             </div>
             {showReviews
@@ -451,11 +524,12 @@ const Profile = ({ session, userRole }) => {
                 const isTraveler = deal.traveler?.id === session.user.id;
                 const other = isTraveler ? deal.shipper : deal.traveler;
                 return (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div key={i}
+                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
                     <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600 flex-shrink-0">
                       {getInitials(other?.full_name)}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800">
                         {other?.full_name || 'User'}
                       </p>
@@ -466,7 +540,7 @@ const Profile = ({ session, userRole }) => {
                         })}
                       </p>
                     </div>
-                    <span className="badge badge-green text-xs">
+                    <span className="badge badge-green text-xs flex-shrink-0">
                       <CheckCircle size={10} /> Done
                     </span>
                   </div>
@@ -477,7 +551,7 @@ const Profile = ({ session, userRole }) => {
         </div>
       )}
 
-      {/* ── Edit form ── */}
+      {/* ── Edit Form ── */}
       {editing && (
         <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6 space-y-4">
           <h3 className="font-bold text-gray-900">Edit Information</h3>
@@ -488,34 +562,46 @@ const Profile = ({ session, userRole }) => {
             </label>
             <div className="relative">
               <User size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-              <input type="text" placeholder="Your full name" value={form.full_name}
+              <input type="text" placeholder="Your full name"
+                value={form.full_name}
                 onChange={e => setForm({ ...form, full_name: e.target.value })}
                 className="input-field pl-9" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Bio</label>
-            <textarea placeholder="Tell shippers and travelers about yourself..."
-              value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })}
-              rows={3} className="input-field resize-none" />
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+              Bio
+            </label>
+            <textarea
+              placeholder="Tell shippers and travelers about yourself..."
+              value={form.bio}
+              onChange={e => setForm({ ...form, bio: e.target.value })}
+              rows={3}
+              className="input-field resize-none" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Phone</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                Phone
+              </label>
               <div className="relative">
                 <Phone size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-                <input type="tel" placeholder="+971 50 000 0000" value={form.phone}
+                <input type="tel" placeholder="+971 50 000 0000"
+                  value={form.phone}
                   onChange={e => setForm({ ...form, phone: e.target.value })}
                   className="input-field pl-9" />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Nationality</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                Nationality
+              </label>
               <div className="relative">
                 <Globe size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-                <select value={form.nationality}
+                <select
+                  value={form.nationality}
                   onChange={e => setForm({ ...form, nationality: e.target.value })}
                   className="input-field pl-9 appearance-none">
                   <option value="">Select...</option>
@@ -526,7 +612,9 @@ const Profile = ({ session, userRole }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Languages</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+              Languages
+            </label>
             <div className="flex flex-wrap gap-2">
               {LANGUAGES.map(lang => (
                 <button key={lang} type="button" onClick={() => toggleLanguage(lang)}
@@ -542,7 +630,9 @@ const Profile = ({ session, userRole }) => {
           </div>
 
           {error && (
-            <p className="text-red-500 text-xs bg-red-50 p-3 rounded-xl border border-red-100">{error}</p>
+            <p className="text-red-500 text-xs bg-red-50 p-3 rounded-xl border border-red-100">
+              {error}
+            </p>
           )}
 
           <button onClick={saveProfile} disabled={saving}
@@ -552,7 +642,7 @@ const Profile = ({ session, userRole }) => {
         </div>
       )}
 
-      {/* ── Personal Info display ── */}
+      {/* ── Personal Info Display ── */}
       {!editing && (
         <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-6">
           <h3 className="font-bold text-gray-900 mb-4">Personal Information</h3>
@@ -592,7 +682,8 @@ const Profile = ({ session, userRole }) => {
           <h3 className="font-bold text-gray-900">Stored Credit Card</h3>
         </div>
         <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-          Used for all payments — escrow, top ups, and withdrawals. Only the last 4 digits are saved on our servers.
+          Used for all payments — escrow, top ups, and withdrawals.
+          Only the last 4 digits are saved on our servers.
         </p>
 
         {profile?.payout_card_last4 ? (
@@ -616,7 +707,8 @@ const Profile = ({ session, userRole }) => {
                 <Trash2 size={15} className="text-red-400" />
               </button>
             </div>
-            <button onClick={() => setShowPayoutSetup(!showPayoutSetup)}
+            <button
+              onClick={() => setShowPayoutSetup(!showPayoutSetup)}
               className="text-xs text-violet-600 font-semibold hover:text-violet-700">
               {showPayoutSetup ? 'Cancel' : 'Change card'}
             </button>
@@ -636,7 +728,8 @@ const Profile = ({ session, userRole }) => {
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
                 Cardholder Name
               </label>
-              <input type="text" placeholder="John Smith" value={payoutCard.name}
+              <input type="text" placeholder="John Smith"
+                value={payoutCard.name}
                 onChange={e => setPayoutCard({ ...payoutCard, name: e.target.value })}
                 className="input-field" />
             </div>
@@ -644,7 +737,8 @@ const Profile = ({ session, userRole }) => {
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
                 Card Number
               </label>
-              <input type="text" placeholder="4242 4242 4242 4242" value={payoutCard.number}
+              <input type="text" placeholder="4242 4242 4242 4242"
+                value={payoutCard.number}
                 onChange={e => setPayoutCard({ ...payoutCard, number: formatCard(e.target.value) })}
                 className="input-field" />
             </div>
@@ -652,7 +746,8 @@ const Profile = ({ session, userRole }) => {
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
                 Expiry (MM/YY)
               </label>
-              <input type="text" placeholder="MM/YY" value={payoutCard.expiry}
+              <input type="text" placeholder="MM/YY"
+                value={payoutCard.expiry}
                 onChange={e => setPayoutCard({ ...payoutCard, expiry: formatExpiry(e.target.value) })}
                 className="input-field" />
             </div>
@@ -667,7 +762,7 @@ const Profile = ({ session, userRole }) => {
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
               <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
               <p className="text-xs text-amber-600 mt-0.5">
-                Card: <strong>4242 4242 4242 4242</strong> · Any future date
+                Card: <strong>4242 4242 4242 4242</strong> · Any future expiry date
               </p>
             </div>
           </div>
@@ -681,22 +776,25 @@ const Profile = ({ session, userRole }) => {
           <h3 className="font-bold text-red-700">Delete Account</h3>
         </div>
         <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-          Permanently delete your account and all data. This cannot be undone.
+          Permanently delete your account and all associated data.
+          This action is immediate and cannot be undone.
         </p>
 
         {/* Pre-conditions checklist */}
-        <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-4 space-y-2">
-          <p className="text-xs font-bold text-gray-700 mb-2">
+        <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-4 space-y-2.5">
+          <p className="text-xs font-bold text-gray-700 mb-1">
             The following must be cleared before deletion:
           </p>
           {[
             {
               label: 'No active deals in progress',
               check: stats.dealsOngoing === 0,
-              detail: stats.dealsOngoing > 0 ? `${stats.dealsOngoing} active` : null,
+              detail: stats.dealsOngoing > 0
+                ? `${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''}`
+                : null,
             },
             {
-              label: 'Wallet balance is $0',
+              label: 'Wallet balance is $0.00',
               check: (profile?.wallet_balance || 0) <= 0,
               detail: (profile?.wallet_balance || 0) > 0
                 ? `$${(profile?.wallet_balance || 0).toFixed(2)} remaining`
@@ -708,10 +806,10 @@ const Profile = ({ session, userRole }) => {
               detail: null,
             },
           ].map((item, i) => (
-            <div key={i} className={`flex items-center justify-between text-xs font-medium ${
-              item.check ? 'text-emerald-600' : 'text-red-500'
-            }`}>
-              <span className="flex items-center gap-2">
+            <div key={i} className="flex items-center justify-between">
+              <span className={`flex items-center gap-2 text-xs font-medium ${
+                item.check ? 'text-emerald-600' : 'text-red-500'
+              }`}>
                 {item.check
                   ? <CheckCircle size={14} />
                   : <AlertTriangle size={14} />
@@ -719,59 +817,68 @@ const Profile = ({ session, userRole }) => {
                 {item.label}
               </span>
               {item.detail && (
-                <span className="text-red-400 font-normal">{item.detail}</span>
+                <span className="text-xs text-red-400 font-medium">{item.detail}</span>
               )}
             </div>
           ))}
         </div>
 
+        {/* Blocked state */}
         {!canDelete ? (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="text-xs font-bold text-amber-800 mb-1">
               Account cannot be deleted yet
             </p>
             <p className="text-xs text-amber-700 leading-relaxed">
-              {stats.dealsOngoing > 0 && `Complete or cancel your ${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''} first. `}
-              {(profile?.wallet_balance || 0) > 0 && `Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`}
+              {stats.dealsOngoing > 0 && (
+                `Complete or cancel your ${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''} first. `
+              )}
+              {(profile?.wallet_balance || 0) > 0 && (
+                `Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`
+              )}
             </p>
           </div>
+
         ) : !showDeleteAccount ? (
-          <button onClick={() => setShowDeleteAccount(true)}
+          <button
+            onClick={() => { setShowDeleteAccount(true); setError(''); }}
             className="flex items-center gap-2 border border-red-200 text-red-500 rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-red-50 transition">
             <Trash2 size={15} /> Delete My Account
           </button>
-        ) : deleteEmailSent ? (
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-            <p className="text-sm font-bold text-emerald-700 mb-1">Verification email sent!</p>
-            <p className="text-xs text-emerald-600 leading-relaxed">
-              Check <strong>{session.user.email}</strong> and click the link to permanently
-              delete your account. The link expires in 1 hour.
-            </p>
-          </div>
+
         ) : (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold text-red-700">⚠️ This will permanently delete:</p>
-            <ul className="text-xs text-red-600 space-y-1 list-disc list-inside ml-1">
+            <p className="text-xs font-bold text-red-700">
+              ⚠️ This will immediately and permanently delete:
+            </p>
+            <ul className="text-xs text-red-600 space-y-1 list-disc list-inside ml-1 leading-relaxed">
               <li>Your profile and all personal information</li>
               <li>All flight listings and shipment requests</li>
               <li>All deal history and messages</li>
-              <li>Your profile photo and files</li>
+              <li>Your profile photo and stored files</li>
               <li>Your Fetchr account access permanently</li>
             </ul>
+
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                 Type <strong className="text-red-600">DELETE</strong> to confirm
               </label>
-              <input type="text" placeholder="Type DELETE here"
+              <input
+                type="text"
+                placeholder="Type DELETE here"
                 value={deleteConfirmText}
                 onChange={e => setDeleteConfirmText(e.target.value)}
-                className="input-field" />
+                className="input-field"
+                autoComplete="off"
+              />
             </div>
+
             {error && (
-              <p className="text-red-500 text-xs bg-red-100 p-2.5 rounded-lg border border-red-200">
-                {error}
-              </p>
+              <div className="bg-red-100 border border-red-200 rounded-lg p-2.5">
+                <p className="text-red-600 text-xs">{error}</p>
+              </div>
             )}
+
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -786,12 +893,23 @@ const Profile = ({ session, userRole }) => {
                 onClick={handleDeleteAccount}
                 disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
                 className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-red-600 disabled:opacity-50 transition flex items-center justify-center gap-2">
-                {deletingAccount
-                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending...</>
-                  : <><Trash2 size={14} /> Send Verification Email</>
-                }
+                {deletingAccount ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Deleting account...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    Permanently Delete Account
+                  </>
+                )}
               </button>
             </div>
+
+            <p className="text-xs text-gray-400 text-center">
+              This action is immediate and cannot be undone.
+            </p>
           </div>
         )}
       </div>
