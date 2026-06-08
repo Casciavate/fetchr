@@ -53,7 +53,7 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
   const [cardReady, setCardReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState('form'); // 'form' | 'processing' | 'success'
+  const [step, setStep] = useState('form');
 
   const hasSavedCard = !!(profile?.stripe_payment_method_id);
   const savedCardLabel = hasSavedCard
@@ -62,21 +62,28 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         : 'Card'} ****${profile.payout_card_last4}`
     : null;
 
+  // showNewCardForm is true when no saved card, or user explicitly chose new card
   const showNewCardForm = !hasSavedCard || useNewCard;
 
   const handlePay = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError('Enter a valid amount greater than zero.'); return; }
-    if (!stripe) { setError('Stripe not loaded. Please wait a moment.'); return; }
-    if (showNewCardForm && !cardReady) { setError('Card form still loading. Please wait.'); return; }
+    if (!stripe || !elements) { setError('Stripe not loaded. Please wait.'); return; }
+
+    // For new card flow, card must be ready
+    if (showNewCardForm && !cardReady) {
+      setError('Card form still loading. Please wait a moment.'); return;
+    }
+
     setError(''); setLoading(true); setStep('processing');
 
     try {
       if (showNewCardForm) {
-        // ── NEW CARD ──
-        // Step 1: Tokenize card via Stripe.js — card number never hits our server
+        // ── NEW CARD FLOW ──
+        // CardElement is always mounted (just hidden when not shown)
+        // so getElement() always returns a valid reference
         const cardElement = elements.getElement(CardElement);
-        if (!cardElement) throw new Error('Card form not ready. Please try again.');
+        if (!cardElement) throw new Error('Card form not available. Please refresh and try again.');
 
         const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
           type: 'card',
@@ -84,13 +91,11 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         });
         if (pmError) throw new Error(pmError.message);
 
-        // Step 2: Edge function creates and confirms PaymentIntent
         const result = await callStripe('top_up_wallet', {
           amount: amt,
           paymentMethodId: paymentMethod.id,
         });
 
-        // Step 3: Handle 3DS if bank requires it — Stripe opens auth popup
         if (result.requiresAction) {
           const { error: actionError, paymentIntent } = await stripe.handleNextAction({
             clientSecret: result.clientSecret,
@@ -102,35 +107,31 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
               amount: amt,
             });
           } else {
-            throw new Error('Authentication was not completed. Please try again.');
+            throw new Error('Authentication incomplete. Please try again.');
           }
         }
 
       } else {
-        // ── SAVED CARD ──
-        // Step 1: Edge function creates PaymentIntent with saved payment method
-        // Does NOT confirm server-side — frontend confirms so 3DS can be handled
+        // ── SAVED CARD FLOW ──
         const result = await callStripe('create_topup_intent', {
           amount: amt,
           paymentMethodId: profile.stripe_payment_method_id,
         });
 
-        // Step 2: Confirm payment — Stripe handles 3DS automatically if required
-        // This is the single correct Stripe call for saved cards
+        // stripe.confirmCardPayment handles 3DS popup automatically
         const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(
           result.clientSecret,
           { payment_method: profile.stripe_payment_method_id }
         );
         if (confirmError) throw new Error(confirmError.message);
 
-        // Step 3: Credit wallet in DB
         if (paymentIntent.status === 'succeeded') {
           await callStripe('confirm_top_up', {
             paymentIntentId: paymentIntent.id,
             amount: amt,
           });
         } else {
-          throw new Error(`Payment status: ${paymentIntent.status}. Please try again.`);
+          throw new Error(`Payment not completed (${paymentIntent.status}). Please try again.`);
         }
       }
 
@@ -150,7 +151,7 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
       </div>
       <p className="font-bold text-gray-900 mb-1">Processing Payment</p>
-      <p className="text-sm text-gray-500">Charging your card securely via Stripe...</p>
+      <p className="text-sm text-gray-500">Charging your card via Stripe...</p>
       <p className="text-xs text-gray-400 mt-2">
         If your bank requires it, a verification screen will appear automatically.
       </p>
@@ -210,7 +211,7 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         </div>
       </div>
 
-      {/* Payment method selector */}
+      {/* Payment method selector — only shown when a saved card exists */}
       {hasSavedCard && (
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -220,7 +221,7 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
             {
               val: false,
               label: savedCardLabel,
-              sub: 'Saved card — Stripe handles authentication',
+              sub: 'Stripe handles 3DS authentication automatically',
               icon: '💳',
             },
             {
@@ -231,7 +232,11 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
             },
           ].map(opt => (
             <button key={String(opt.val)} type="button"
-              onClick={() => { setUseNewCard(opt.val); setCardReady(false); setError(''); }}
+              onClick={() => {
+                setUseNewCard(opt.val);
+                setError('');
+                // Don't reset cardReady — CardElement stays mounted
+              }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
                 useNewCard === opt.val
                   ? 'border-violet-400 bg-violet-50'
@@ -250,41 +255,46 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         </div>
       )}
 
-      {/* New card — Stripe CardElement, no autofill */}
-      {showNewCardForm && (
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-            Card Details
-          </label>
-          <div
-            className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white"
-            data-lpignore="true"
-            data-form-type="other"
-          >
-            <CardElement
-              options={CARD_ELEMENT_OPTIONS}
-              onReady={() => setCardReady(true)}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-            <Lock size={10} /> Card details encrypted by Stripe — never stored on Fetchr servers
-          </p>
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
-            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC<br />
-              3DS auth: <strong>4000 0025 0000 3155</strong> · Any future date · Any 3-digit CVC
-            </p>
-          </div>
+      {/* CardElement — ALWAYS mounted in DOM to prevent unmount/remount issues */}
+      {/* Shown when: no saved card, OR user chose "use a different card" */}
+      {/* Hidden (but mounted) otherwise — this prevents the "element not ready" error */}
+      <div style={{ display: showNewCardForm ? 'block' : 'none' }}>
+        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+          Card Details
+        </label>
+        <div
+          className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white"
+          data-lpignore="true"
+          data-form-type="other"
+        >
+          <CardElement
+            options={{
+              style: CARD_ELEMENT_OPTIONS.style,
+              hidePostalCode: true,
+              // Disable Link wallet feature entirely in the element
+              wallets: { link: 'never' },
+            }}
+            onReady={() => setCardReady(true)}
+          />
         </div>
-      )}
+        <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+          <Lock size={10} /> Card details encrypted by Stripe — never stored on Fetchr servers
+        </p>
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
+          <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC<br />
+            3DS auth: <strong>4000 0025 0000 3155</strong> · Any future date · Any 3-digit CVC
+          </p>
+        </div>
+      </div>
 
-      {/* Saved card info — no extra fields */}
+      {/* Info shown when saved card is selected */}
       {hasSavedCard && !useNewCard && (
         <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex items-start gap-2">
           <Shield size={14} className="text-violet-500 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-violet-700">
-            Stripe will handle authentication when you click Pay. If your bank requires 3DS verification, a secure popup will appear automatically.
+            Click Pay to charge your saved card. If your bank requires 3DS verification, a secure popup will appear automatically.
           </p>
         </div>
       )}
@@ -301,12 +311,18 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         <button
           onClick={handlePay}
           disabled={
-            loading || !stripe || !amount || parseFloat(amount) <= 0 ||
+            loading ||
+            !stripe ||
+            !amount ||
+            parseFloat(amount) <= 0 ||
             (showNewCardForm && !cardReady)
           }
           className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
           <Shield size={15} />
-          {loading ? 'Processing...' : `Pay $${parseFloat(amount) > 0 ? parseFloat(amount).toFixed(2) : '0.00'}`}
+          {loading
+            ? 'Processing...'
+            : `Pay $${parseFloat(amount) > 0 ? parseFloat(amount).toFixed(2) : '0.00'}`
+          }
         </button>
       </div>
 
