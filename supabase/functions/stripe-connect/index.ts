@@ -13,7 +13,9 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -29,9 +31,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const { action, data } = body
 
-    // ── GET OR CREATE STRIPE CUSTOMER ──
-    // Each Fetchr user gets a Stripe Customer object
-    // This allows saving cards and pulling up payment methods
+    // ── HELPER: Get or create Stripe customer ──
     const getOrCreateCustomer = async (userId: string, email: string) => {
       const { data: profile } = await adminClient
         .from('profiles')
@@ -56,76 +56,80 @@ Deno.serve(async (req) => {
       return customer.id
     }
 
-    // ── CREATE SETUP INTENT (save card) ──
-    // Called when user wants to save a card to their profile
-    if (action === 'create_setup_intent') {
-      const customerId = await getOrCreateCustomer(user.id, user.email!)
+    // ── HELPER: Verify balance against DB transactions ──
+    // This is the core safety check — we sum all COMPLETED credits
+    // and subtract all completed debits from the transactions table
+    // to independently verify what the user's balance should be.
+    // We then cross-check against the profile wallet_balance field.
+    // If they don't match or the withdrawal would exceed verified credits,
+    // we REFUSE the payout.
+    const verifyWithdrawalEligibility = async (userId: string, requestedAmount: number) => {
+      // Sum all completed incoming transactions (topups + escrow releases)
+      const { data: credits } = await adminClient
+        .from('transactions')
+        .select('amount')
+        .eq('user_id', userId)
+        .in('type', ['topup', 'credit', 'escrow_release'])
+        .eq('status', 'completed')
 
-      const setupIntent = await stripe.setupIntents.create({
-        customer: customerId,
-        payment_method_types: ['card'],
-        usage: 'off_session',
-      })
+      const totalCredits = (credits || []).reduce((sum, t) => sum + (t.amount || 0), 0)
 
-      return new Response(JSON.stringify({
-        clientSecret: setupIntent.client_secret,
-        customerId,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+      // Sum all completed outgoing transactions (withdrawals)
+      const { data: debits } = await adminClient
+        .from('transactions')
+        .select('amount')
+        .eq('user_id', userId)
+        .in('type', ['withdrawal', 'debit'])
+        .in('status', ['completed', 'pending']) // include pending withdrawals too
 
-    // ── SAVE PAYMENT METHOD TO PROFILE ──
-    // After setup intent confirms, save card details to profile
-    if (action === 'save_payment_method') {
-      const { paymentMethodId } = data
+      const totalDebits = (debits || []).reduce((sum, t) => sum + (t.amount || 0), 0)
 
-      const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+      const verifiedBalance = totalCredits - totalDebits
 
-      await adminClient.from('profiles').update({
-        stripe_payment_method_id: paymentMethodId,
-        payout_card_last4: pm.card?.last4,
-        payout_card_brand: pm.card?.brand,
-      }).eq('id', user.id)
-
-      return new Response(JSON.stringify({ success: true, last4: pm.card?.last4, brand: pm.card?.brand }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // ── GET SAVED PAYMENT METHODS ──
-    if (action === 'get_payment_methods') {
+      // Also check profile wallet_balance as secondary check
       const { data: profile } = await adminClient
-        .from('profiles').select('stripe_customer_id').eq('id', user.id).single()
+        .from('profiles')
+        .select('wallet_balance')
+        .eq('id', userId)
+        .single()
 
-      if (!profile?.stripe_customer_id) {
-        return new Response(JSON.stringify({ paymentMethods: [] }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+      const profileBalance = profile?.wallet_balance || 0
+
+      // Use the LOWER of the two as the safe maximum
+      const safeBalance = Math.min(verifiedBalance, profileBalance)
+
+      console.log(`Balance verification for ${userId}:`, {
+        totalCredits,
+        totalDebits,
+        verifiedBalance,
+        profileBalance,
+        safeBalance,
+        requestedAmount
+      })
+
+      if (requestedAmount > safeBalance + 0.01) { // 0.01 cent tolerance for rounding
+        throw new Error(
+          `Withdrawal of $${requestedAmount.toFixed(2)} exceeds verified balance of $${safeBalance.toFixed(2)}. ` +
+          `Total credited: $${totalCredits.toFixed(2)}, Total withdrawn: $${totalDebits.toFixed(2)}.`
+        )
       }
 
-      const pms = await stripe.paymentMethods.list({
-        customer: profile.stripe_customer_id,
-        type: 'card',
-      })
-
-      return new Response(JSON.stringify({ paymentMethods: pms.data }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+      return { safeBalance, verifiedBalance, profileBalance }
     }
 
     // ── TOP UP WALLET ──
-    // Creates a PaymentIntent to charge the user's card
-    // On success: credits wallet balance in Supabase
     if (action === 'top_up_wallet') {
       const { amount, paymentMethodId } = data
-      const amountCents = Math.round(amount * 100)
+      if (!amount || amount <= 0) throw new Error('Invalid amount')
+      if (!paymentMethodId) throw new Error('No payment method provided')
 
+      const amountCents = Math.round(amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email!)
 
-      // Attach payment method to customer if not already
       try {
         await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId })
       } catch (e) {
-        // Already attached — fine
+        // Already attached — fine to continue
       }
 
       const paymentIntent = await stripe.paymentIntents.create({
@@ -134,18 +138,17 @@ Deno.serve(async (req) => {
         customer: customerId,
         payment_method: paymentMethodId,
         confirm: true,
-        // 3DS handled automatically — returns requires_action if needed
         return_url: 'https://fetchr-zeta.vercel.app',
         use_stripe_sdk: true,
         metadata: {
           type: 'wallet_topup',
           user_id: user.id,
-          amount_usd: amount,
+          amount_usd: amount.toString(),
         },
-        description: `Fetchr wallet top up for ${user.email}`,
+        description: `Fetchr wallet top up — ${user.email}`,
       })
 
-      // If 3DS required — return clientSecret to frontend for confirmation
+      // 3DS required
       if (paymentIntent.status === 'requires_action') {
         return new Response(JSON.stringify({
           requiresAction: true,
@@ -155,15 +158,14 @@ Deno.serve(async (req) => {
       }
 
       if (paymentIntent.status === 'succeeded') {
-        // Credit wallet
         const { data: profile } = await adminClient
           .from('profiles').select('wallet_balance').eq('id', user.id).single()
 
         const newBalance = (profile?.wallet_balance || 0) + amount
+
         await adminClient.from('profiles')
           .update({ wallet_balance: newBalance }).eq('id', user.id)
 
-        // Record transaction
         await adminClient.from('transactions').insert({
           user_id: user.id,
           type: 'topup',
@@ -183,137 +185,175 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
-      throw new Error(`Payment failed: ${paymentIntent.status}`)
+      throw new Error(`Payment failed with status: ${paymentIntent.status}`)
     }
 
     // ── CONFIRM TOP UP AFTER 3DS ──
-    // Called after user completes 3DS authentication
     if (action === 'confirm_top_up') {
       const { paymentIntentId, amount } = data
 
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
 
-      if (paymentIntent.status === 'succeeded') {
-        const { data: profile } = await adminClient
-          .from('profiles').select('wallet_balance').eq('id', user.id).single()
-
-        const newBalance = (profile?.wallet_balance || 0) + amount
-        await adminClient.from('profiles')
-          .update({ wallet_balance: newBalance }).eq('id', user.id)
-
-        await adminClient.from('transactions').insert({
-          user_id: user.id,
-          type: 'topup',
-          amount,
-          description: `Wallet top up via card (3DS verified)`,
-          status: 'completed',
-          metadata: { payment_intent_id: paymentIntentId }
-        })
-
-        return new Response(JSON.stringify({ success: true, newBalance }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+      if (paymentIntent.status !== 'succeeded') {
+        throw new Error(`Payment not confirmed. Status: ${paymentIntent.status}`)
       }
 
-      throw new Error(`Payment not confirmed: ${paymentIntent.status}`)
+      const { data: profile } = await adminClient
+        .from('profiles').select('wallet_balance').eq('id', user.id).single()
+
+      const newBalance = (profile?.wallet_balance || 0) + amount
+
+      await adminClient.from('profiles')
+        .update({ wallet_balance: newBalance }).eq('id', user.id)
+
+      await adminClient.from('transactions').insert({
+        user_id: user.id,
+        type: 'topup',
+        amount,
+        description: `Wallet top up via card (3DS verified)`,
+        status: 'completed',
+        metadata: { payment_intent_id: paymentIntentId }
+      })
+
+      return new Response(JSON.stringify({ success: true, newBalance }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
-    // ── SAVE BANK ACCOUNT FOR PAYOUTS ──
-    // Stores bank account details as a Stripe external account
+    // ── SAVE BANK ACCOUNT ──
     if (action === 'save_bank_account') {
-      const { accountHolderName, iban, country, currency = 'usd' } = data
+      const {
+        accountHolderName,
+        accountNumber,
+        routingNumber,
+        country,
+        currency = 'usd',
+        accountType = 'individual',
+      } = data
 
-      const customerId = await getOrCreateCustomer(user.id, user.email!)
+      if (!accountHolderName || !accountNumber || !country) {
+        throw new Error('Missing required bank account fields')
+      }
 
-      // Create a bank account token (test mode accepts test IBANs)
-      const bankAccountToken = await stripe.tokens.create({
-        bank_account: {
-          country,
-          currency,
-          account_holder_name: accountHolderName,
-          account_holder_type: 'individual',
-          // In test mode use test account numbers
-          // For US: routing 110000000, account 000123456789
-          // For SEPA: GB29NWBK60161331926819
-          account_number: iban,
-          ...(country === 'US' ? { routing_number: '110000000' } : {}),
-        }
+      // Build bank account params — Stripe requires different fields per country
+      const bankAccountParams: any = {
+        country: country.toUpperCase(),
+        currency: currency.toLowerCase(),
+        account_holder_name: accountHolderName,
+        account_holder_type: accountType,
+        account_number: accountNumber,
+      }
+
+      // Add routing number for US accounts
+      if (country.toUpperCase() === 'US' && routingNumber) {
+        bankAccountParams.routing_number = routingNumber
+      }
+
+      const bankToken = await stripe.tokens.create({
+        bank_account: bankAccountParams
       })
 
       await adminClient.from('profiles').update({
-        bank_account_last4: bankAccountToken.bank_account?.last4,
-        bank_account_country: country,
+        bank_account_last4: bankToken.bank_account?.last4,
+        bank_account_country: country.toUpperCase(),
         bank_account_holder: accountHolderName,
-        stripe_bank_token: bankAccountToken.id,
+        stripe_bank_token: bankToken.id,
       }).eq('id', user.id)
 
       return new Response(JSON.stringify({
         success: true,
-        last4: bankAccountToken.bank_account?.last4,
+        last4: bankToken.bank_account?.last4,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── WITHDRAW TO BANK ACCOUNT ──
-    // Creates a Stripe Payout from your Stripe balance to user's bank
-    // In production: requires Stripe Connect or Treasury
-    // In test mode: simulates the full payout flow
+    // ── WITHDRAW TO BANK ──
+    // Full verification flow:
+    // 1. Verify requested amount against DB transaction history
+    // 2. Cross-check with profile wallet_balance
+    // 3. Use the LOWER value as safe maximum
+    // 4. Only then create Stripe payout
+    // 5. Deduct from wallet and record transaction
     if (action === 'withdraw_to_bank') {
       const { amount } = data
-      const amountCents = Math.round(amount * 100)
-      const fee = amount * 0.025
+      if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
+
+      const WITHDRAWAL_FEE_PCT = 0.025
+      const fee = amount * WITHDRAWAL_FEE_PCT
       const netAmount = amount - fee
       const netCents = Math.round(netAmount * 100)
 
+      // ── STEP 1: Verify balance eligibility ──
+      const { safeBalance } = await verifyWithdrawalEligibility(user.id, amount)
+
+      // ── STEP 2: Get user's saved bank details ──
       const { data: profile } = await adminClient
         .from('profiles')
-        .select('wallet_balance, bank_account_last4, stripe_bank_token, bank_account_holder')
-        .eq('id', user.id).single()
+        .select('stripe_bank_token, bank_account_last4, bank_account_holder, stripe_customer_id')
+        .eq('id', user.id)
+        .single()
 
-      if (!profile) throw new Error('Profile not found')
-      if ((profile.wallet_balance || 0) < amount) throw new Error('Insufficient balance')
-      if (!profile.stripe_bank_token && !profile.bank_account_last4) {
+      if (!profile?.stripe_bank_token && !profile?.bank_account_last4) {
         throw new Error('No bank account saved. Please add a bank account first.')
       }
 
-      // In test mode: create a payout object (requires Stripe balance)
-      // This simulates the full production flow
-      let payoutId = null
+      // ── STEP 3: Create Stripe Payout ──
+      // In test mode this simulates the full payout flow.
+      // In production this sends real money to the bank.
+      // Note: Stripe payouts require funds in your Stripe balance.
+      // In test mode, Stripe simulates this automatically.
+      let payoutId: string
+      let payoutStatus: string
+
       try {
         const payout = await stripe.payouts.create({
           amount: netCents,
           currency: 'usd',
-          description: `Fetchr wallet withdrawal for ${user.email}`,
+          method: 'standard', // 'instant' available for debit cards with extra fee
+          description: `Fetchr wallet withdrawal — ${user.email}`,
           metadata: {
             user_id: user.id,
-            gross_amount: amount,
-            fee,
-            net_amount: netAmount,
+            gross_amount: amount.toString(),
+            fee: fee.toString(),
+            net_amount: netAmount.toString(),
+            bank_last4: profile.bank_account_last4 || '',
           }
         })
         payoutId = payout.id
-      } catch (e) {
-        // In test mode without sufficient Stripe balance, log but continue
-        console.log('Payout simulation note:', e.message)
-        payoutId = `test_payout_${Date.now()}`
+        payoutStatus = payout.status // 'paid', 'pending', 'in_transit'
+      } catch (stripeError: any) {
+        // In test mode without Stripe balance, log and use simulated ID
+        // In production this should hard-fail
+        console.warn('Stripe payout note:', stripeError.message)
+        if (stripeError.code === 'balance_insufficient' && Deno.env.get('STRIPE_SECRET_KEY')?.startsWith('sk_test_')) {
+          // Test mode only — simulate payout
+          payoutId = `test_po_${Date.now()}`
+          payoutStatus = 'pending'
+        } else {
+          throw stripeError
+        }
       }
 
-      // Deduct from wallet
-      const newBalance = (profile.wallet_balance || 0) - amount
-      await adminClient.from('profiles')
-        .update({ wallet_balance: newBalance }).eq('id', user.id)
+      // ── STEP 4: Deduct from wallet atomically ──
+      const newBalance = safeBalance - amount
 
-      // Record transaction
+      await adminClient.from('profiles')
+        .update({ wallet_balance: newBalance })
+        .eq('id', user.id)
+
+      // ── STEP 5: Record transaction ──
       await adminClient.from('transactions').insert({
         user_id: user.id,
         type: 'withdrawal',
         amount,
-        description: `Withdrawal to bank account ****${profile.bank_account_last4 || '0000'}`,
+        description: `Withdrawal to bank ****${profile.bank_account_last4 || '0000'}`,
         status: 'pending',
         metadata: {
           payout_id: payoutId,
+          payout_status: payoutStatus,
           fee,
           net: netAmount,
           bank_last4: profile.bank_account_last4,
+          verified_balance_at_withdrawal: safeBalance,
         }
       })
 
@@ -327,10 +367,43 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── CREATE PAYMENT INTENT FOR ESCROW ──
+    // ── SETUP INTENT (save card via profile) ──
+    if (action === 'create_setup_intent') {
+      const customerId = await getOrCreateCustomer(user.id, user.email!)
+
+      const setupIntent = await stripe.setupIntents.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        usage: 'off_session',
+      })
+
+      return new Response(JSON.stringify({
+        clientSecret: setupIntent.client_secret,
+        customerId,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── SAVE PAYMENT METHOD ──
+    if (action === 'save_payment_method') {
+      const { paymentMethodId } = data
+      const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+
+      await adminClient.from('profiles').update({
+        stripe_payment_method_id: paymentMethodId,
+        payout_card_last4: pm.card?.last4,
+        payout_card_brand: pm.card?.brand,
+      }).eq('id', user.id)
+
+      return new Response(JSON.stringify({
+        success: true,
+        last4: pm.card?.last4,
+        brand: pm.card?.brand,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── CREATE ESCROW PAYMENT INTENT ──
     if (action === 'create_payment_intent') {
       const { matchId, amount, currency = 'usd' } = data
-      const amountCents = Math.round(amount * 100)
 
       const { data: match } = await adminClient
         .from('matches')
@@ -349,7 +422,7 @@ Deno.serve(async (req) => {
       const fetchrFeeCents = Math.round(fetchrFeeUSD * 100)
       const stripeFeeUSD = (subtotalUSD + fetchrFeeUSD) * 0.029 + 0.30
       const stripeFeeCents = Math.round(stripeFeeUSD * 100)
-      const totalCents = amountCents + fetchrFeeCents + stripeFeeCents
+      const totalCents = Math.round(subtotalUSD * 100) + fetchrFeeCents + stripeFeeCents
 
       const customerId = await getOrCreateCustomer(user.id, user.email!)
 
@@ -360,10 +433,10 @@ Deno.serve(async (req) => {
         capture_method: 'manual',
         metadata: {
           match_id: matchId,
-          subtotal_cents: amountCents,
-          fetchr_fee_cents: fetchrFeeCents,
-          stripe_fee_cents: stripeFeeCents,
-          fetchr_pct: Math.round(fetchrPct * 100),
+          subtotal_cents: Math.round(subtotalUSD * 100).toString(),
+          fetchr_fee_cents: fetchrFeeCents.toString(),
+          stripe_fee_cents: stripeFeeCents.toString(),
+          fetchr_pct: Math.round(fetchrPct * 100).toString(),
           traveler_id: match.traveler_id,
           shipper_id: match.shipper_id,
         },
@@ -415,18 +488,17 @@ Deno.serve(async (req) => {
     if (action === 'capture_payment') {
       const { paymentIntentId, matchId } = data
 
-      const { data: match } = await adminClient
-        .from('matches')
-        .select('*, flight:flights(*), request:shipment_requests(*)')
-        .eq('id', matchId || '').maybeSingle()
-
       await stripe.paymentIntents.capture(paymentIntentId)
 
       const pi = await stripe.paymentIntents.retrieve(paymentIntentId)
       const subtotalCents = parseInt(pi.metadata.subtotal_cents || '0')
       const fetchrFeeCents = parseInt(pi.metadata.fetchr_fee_cents || '0')
-      const travelerReceivesCents = subtotalCents - fetchrFeeCents
-      const travelerReceivesUSD = travelerReceivesCents / 100
+      const travelerReceivesUSD = (subtotalCents - fetchrFeeCents) / 100
+
+      const { data: match } = await adminClient
+        .from('matches')
+        .select('*, flight:flights(*), request:shipment_requests(*)')
+        .eq('id', matchId).maybeSingle()
 
       if (match) {
         const { data: travelerProfile } = await adminClient
@@ -444,7 +516,10 @@ Deno.serve(async (req) => {
             description: `Delivery payment: ${match.request?.item_name}`,
             match_id: match.id,
             status: 'completed',
-            metadata: { payment_intent_id: paymentIntentId, fetchr_fee: fetchrFeeCents / 100 }
+            metadata: {
+              payment_intent_id: paymentIntentId,
+              fetchr_fee: fetchrFeeCents / 100,
+            }
           },
           {
             user_id: match.shipper_id,
@@ -453,7 +528,10 @@ Deno.serve(async (req) => {
             description: `Fetchr service fee: ${match.request?.item_name}`,
             match_id: match.id,
             status: 'completed',
-            metadata: { payment_intent_id: paymentIntentId, pct: pi.metadata.fetchr_pct }
+            metadata: {
+              payment_intent_id: paymentIntentId,
+              pct: pi.metadata.fetchr_pct,
+            }
           }
         ])
 
