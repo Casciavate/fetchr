@@ -54,7 +54,7 @@ const Auth = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://fetchr-zeta.vercel.app'
+        redirectTo: 'https://fetchr-zeta.vercel.app',
         queryParams: { access_type: 'offline', prompt: 'consent' }
       }
     });
