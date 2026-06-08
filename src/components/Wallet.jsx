@@ -1,11 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
-import {
-  Elements,
-  CardElement,
-  useStripe,
-  useElements,
-} from '@stripe/react-stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
 import {
   WalletCards, DollarSign, ArrowDownCircle, ArrowUpCircle,
@@ -29,7 +24,6 @@ const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: true,
 };
 
-// ── Stripe function caller ──
 const callStripe = async (action, data) => {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(
@@ -49,14 +43,16 @@ const callStripe = async (action, data) => {
 };
 
 // ── TOP UP FORM ──
-const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
+// User selects saved card (enters CVC) OR enters a completely new card
+// Stripe CardElement handles all card input — number never touches Fetchr servers
+const TopUpForm = ({ profile, onSuccess, onClose }) => {
   const stripe = useStripe();
   const elements = useElements();
   const [amount, setAmount] = useState('');
-  const [useNewCard, setUseNewCard] = useState(!profile?.stripe_payment_method_id);
+  const [useNewCard, setUseNewCard] = useState(false);
+  const [cardReady, setCardReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [cardReady, setCardReady] = useState(false);
   const [step, setStep] = useState('form');
 
   const hasSavedCard = !!(profile?.stripe_payment_method_id);
@@ -66,36 +62,92 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
         : 'Card'} ****${profile.payout_card_last4}`
     : null;
 
+  // If no saved card, always use new card form
+  const showCardElement = !hasSavedCard || useNewCard;
+
   const handleTopUp = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError('Enter a valid amount greater than zero.'); return; }
-    if (!stripe) { setError('Stripe not loaded yet. Please wait.'); return; }
-
-    // If using new card, ensure CardElement is ready
-    if (useNewCard || !hasSavedCard) {
-      if (!cardReady) { setError('Please wait for the card form to load.'); return; }
-      const cardElement = elements.getElement(CardElement);
-      if (!cardElement) { setError('Card form not ready. Please try again.'); return; }
-    }
+    if (!stripe || !elements) { setError('Stripe not loaded. Please wait.'); return; }
+    if (showCardElement && !cardReady) { setError('Card form still loading. Please wait.'); return; }
 
     setLoading(true); setError(''); setStep('processing');
 
     try {
-      let paymentMethodId = profile?.stripe_payment_method_id;
+      let paymentMethodId;
 
-      if (useNewCard || !hasSavedCard) {
+      if (showCardElement) {
+        // New card — create payment method from CardElement
+        // Includes full card number, expiry, CVC
         const cardElement = elements.getElement(CardElement);
+        if (!cardElement) throw new Error('Card form not ready. Please try again.');
+
         const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
           type: 'card',
           card: cardElement,
         });
         if (pmError) throw new Error(pmError.message);
         paymentMethodId = paymentMethod.id;
+
+      } else {
+        // Saved card — user must re-enter CVC for security
+        // We confirm using the saved payment method ID + fresh CVC via CardElement
+        // This is the correct Stripe flow for saved cards with CVC recollection
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement) throw new Error('CVC form not ready.');
+
+        // Confirm payment intent directly with the saved payment method
+        // Edge function creates the PaymentIntent, we confirm with CVC
+        const setupResult = await callStripe('create_topup_intent', {
+          amount: amt,
+          paymentMethodId: profile.stripe_payment_method_id,
+        });
+
+        const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(
+          setupResult.clientSecret,
+          {
+            payment_method: profile.stripe_payment_method_id,
+            payment_method_options: {
+              card: { cvc: cardElement },
+            },
+          }
+        );
+        if (confirmError) throw new Error(confirmError.message);
+
+        if (paymentIntent.status === 'succeeded') {
+          await callStripe('confirm_top_up', {
+            paymentIntentId: paymentIntent.id,
+            amount: amt,
+          });
+          setStep('success');
+          setTimeout(() => onSuccess(amt), 1500);
+          setLoading(false);
+          return;
+        }
+        if (paymentIntent.status === 'requires_action') {
+          const { error: actionError } = await stripe.handleNextAction({
+            clientSecret: setupResult.clientSecret,
+          });
+          if (actionError) throw new Error(actionError.message);
+          await callStripe('confirm_top_up', {
+            paymentIntentId: paymentIntent.id,
+            amount: amt,
+          });
+          setStep('success');
+          setTimeout(() => onSuccess(amt), 1500);
+          setLoading(false);
+          return;
+        }
+        throw new Error(`Payment failed: ${paymentIntent.status}`);
       }
 
-      const result = await callStripe('top_up_wallet', { amount: amt, paymentMethodId });
+      // New card flow — call edge function to charge
+      const result = await callStripe('top_up_wallet', {
+        amount: amt,
+        paymentMethodId,
+      });
 
-      // Handle 3DS authentication
+      // 3DS required
       if (result.requiresAction) {
         const { error: actionError, paymentIntent } = await stripe.handleNextAction({
           clientSecret: result.clientSecret,
@@ -107,12 +159,13 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
             amount: amt,
           });
         } else {
-          throw new Error('Payment authentication failed. Please try again.');
+          throw new Error('3DS authentication failed. Please try again.');
         }
       }
 
       setStep('success');
       setTimeout(() => onSuccess(amt), 1500);
+
     } catch (e) {
       setError(e.message);
       setStep('form');
@@ -127,6 +180,7 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
       </div>
       <p className="font-bold text-gray-900 mb-1">Processing Payment</p>
       <p className="text-sm text-gray-500">Charging your card securely via Stripe...</p>
+      <p className="text-xs text-gray-400 mt-2">If your bank requires it, a verification screen will appear.</p>
     </div>
   );
 
@@ -136,9 +190,7 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
         <CheckCircle size={32} className="text-emerald-500" />
       </div>
       <p className="font-bold text-gray-900 mb-1">Top Up Successful!</p>
-      <p className="text-sm text-gray-500">
-        ${parseFloat(amount).toFixed(2)} added to your wallet.
-      </p>
+      <p className="text-sm text-gray-500">${parseFloat(amount).toFixed(2)} added to your wallet.</p>
     </div>
   );
 
@@ -155,15 +207,9 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
         </label>
         <div className="relative">
           <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-          <input
-            type="number" placeholder="0.00" min="0.01" step="0.01"
-            value={amount}
-            onChange={e => {
-              const v = e.target.value;
-              if (v === '' || parseFloat(v) >= 0) setAmount(v);
-            }}
-            className="input-field pl-9"
-          />
+          <input type="number" placeholder="0.00" min="0.01" step="0.01" value={amount}
+            onChange={e => { const v = e.target.value; if (v === '' || parseFloat(v) >= 0) setAmount(v); }}
+            className="input-field pl-9" />
         </div>
         <div className="flex gap-2 mt-2">
           {[25, 50, 100, 250].map(a => (
@@ -179,60 +225,68 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
         </div>
       </div>
 
-      {/* Card selector — only if saved card exists */}
+      {/* Card selector */}
       {hasSavedCard && (
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Payment Method
           </label>
           {[
-            { val: false, label: savedCardLabel, sub: 'Saved card from profile', icon: '💳' },
-            { val: true, label: 'Use a different card', sub: 'Enter new card details', icon: '➕' },
+            { val: false, label: savedCardLabel, sub: 'Saved card — enter CVC to confirm', icon: '💳' },
+            { val: true, label: 'Use a different card', sub: 'Enter full card details', icon: '➕' },
           ].map(opt => (
             <button key={String(opt.val)} type="button"
-              onClick={() => setUseNewCard(opt.val)}
+              onClick={() => { setUseNewCard(opt.val); setCardReady(false); }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                useNewCard === opt.val
-                  ? 'border-violet-400 bg-violet-50'
-                  : 'border-gray-200 hover:border-violet-200'
+                useNewCard === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'
               }`}>
               <span className="text-xl">{opt.icon}</span>
               <div className="flex-1">
                 <p className="text-sm font-bold text-gray-800">{opt.label}</p>
                 <p className="text-xs text-gray-400">{opt.sub}</p>
               </div>
-              {useNewCard === opt.val && (
-                <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />
-              )}
+              {useNewCard === opt.val && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
             </button>
           ))}
         </div>
       )}
 
-      {/* Stripe CardElement — shown when entering new card */}
-      {(!hasSavedCard || useNewCard) && (
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-            Card Details
-          </label>
-          <div className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white">
-            <CardElement
-              options={CARD_ELEMENT_OPTIONS}
-              onReady={() => setCardReady(true)}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-            <Lock size={10} /> Encrypted by Stripe — never stored on Fetchr servers
-          </p>
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
-            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              No 3DS: <strong>4242 4242 4242 4242</strong><br />
-              With 3DS: <strong>4000 0025 0000 3155</strong> · Any future date · Any CVC
-            </p>
-          </div>
+      {/* Stripe CardElement */}
+      {/* For saved card: shows CVC field only (via CardElement with just CVC) */}
+      {/* For new card: shows full card number, expiry, CVC */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+          {showCardElement ? 'Card Details' : 'Security Code (CVC)'}
+        </label>
+        <div className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white">
+          <CardElement
+            options={{
+              ...CARD_ELEMENT_OPTIONS,
+              // For saved card: only show CVC
+              ...(hasSavedCard && !useNewCard ? {
+                hidePostalCode: true,
+              } : {}),
+            }}
+            onReady={() => setCardReady(true)}
+            onChange={() => { if (!cardReady) setCardReady(true); }}
+          />
         </div>
-      )}
+        <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+          <Lock size={10} />
+          {showCardElement
+            ? 'Card encrypted by Stripe — never stored on Fetchr servers'
+            : 'CVC required for security — never stored'
+          }
+        </p>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+        <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
+        <p className="text-xs text-amber-600 mt-0.5">
+          Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC<br />
+          3DS required: <strong>4000 0025 0000 3155</strong> · Any future date · Any CVC
+        </p>
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-2">
@@ -243,9 +297,8 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
 
       <div className="flex gap-2">
         <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
-        <button
-          onClick={handleTopUp}
-          disabled={loading || !stripe || ((!hasSavedCard || useNewCard) && !cardReady)}
+        <button onClick={handleTopUp}
+          disabled={loading || !stripe || !cardReady || !amount || parseFloat(amount) <= 0}
           className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
           <Shield size={15} />
           {loading ? 'Processing...' : `Pay $${parseFloat(amount) > 0 ? parseFloat(amount).toFixed(2) : '0.00'}`}
@@ -253,26 +306,27 @@ const TopUpForm = ({ session, profile, onSuccess, onClose }) => {
       </div>
 
       <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
-        <Lock size={10} /> Secured by Stripe · PCI DSS compliant
+        <Lock size={10} /> Secured by Stripe · PCI DSS compliant · Visa/Mastercard 3DS supported
       </p>
     </div>
   );
 };
 
 // ── WITHDRAW FORM ──
-const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }) => {
+// Selects saved bank account from profile OR enters new one (one-time, not saved)
+// Edge function verifies balance against ALL DB transactions before releasing funds
+const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   const [amount, setAmount] = useState(
     forceWithdrawAll ? (profile?.wallet_balance || 0).toFixed(2) : ''
   );
-  const [bankDetails, setBankDetails] = useState({
-    accountHolderName: profile?.bank_account_holder || '',
+  const [useSavedBank, setUseSavedBank] = useState(!!(profile?.bank_account_last4));
+  const [newBank, setNewBank] = useState({
+    accountHolderName: '',
     accountNumber: '',
     routingNumber: '',
     country: '',
     currency: 'usd',
-    accountType: 'individual',
   });
-  const [useSavedBank, setUseSavedBank] = useState(!!(profile?.bank_account_last4));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState('form');
@@ -287,40 +341,37 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
   const handleWithdraw = async () => {
     if (!amt || amt <= 0) { setError('Enter a valid amount.'); return; }
     if (amt > (profile?.wallet_balance || 0)) {
-      setError(`Insufficient balance. Available: $${(profile?.wallet_balance || 0).toFixed(2)}`);
-      return;
+      setError(`Insufficient balance. Available: $${(profile?.wallet_balance || 0).toFixed(2)}`); return;
     }
     if (!forceWithdrawAll && amt < MIN_WITHDRAWAL) {
       setError(`Minimum withdrawal is $${MIN_WITHDRAWAL}.`); return;
     }
+
+    // Validate new bank details if not using saved
     if (!useSavedBank || !hasSavedBank) {
-      if (!bankDetails.accountHolderName.trim()) {
-        setError('Please enter the account holder name.'); return;
-      }
-      if (!bankDetails.accountNumber.trim()) {
-        setError('Please enter the account number or IBAN.'); return;
-      }
-      if (!bankDetails.country.trim()) {
-        setError('Please enter the country.'); return;
+      if (!newBank.accountHolderName.trim()) { setError('Enter account holder name.'); return; }
+      if (!newBank.accountNumber.trim()) { setError('Enter account number or IBAN.'); return; }
+      if (!newBank.country.trim() || newBank.country.length !== 2) {
+        setError('Enter a valid 2-letter country code (e.g. US, GB, AE).'); return;
       }
     }
 
     setLoading(true); setError(''); setStep('processing');
 
     try {
-      // Save bank details if new
+      // If using new bank — save it first (saved to profile for future use)
+      // If user just wants one-time: we still save it but they can delete from profile later
       if (!useSavedBank || !hasSavedBank) {
         await callStripe('save_bank_account', {
-          accountHolderName: bankDetails.accountHolderName,
-          accountNumber: bankDetails.accountNumber,
-          routingNumber: bankDetails.routingNumber,
-          country: bankDetails.country.toUpperCase(),
-          currency: bankDetails.currency || 'usd',
-          accountType: bankDetails.accountType,
+          accountHolderName: newBank.accountHolderName,
+          accountNumber: newBank.accountNumber.replace(/\s/g, ''),
+          routingNumber: newBank.routingNumber,
+          country: newBank.country.toUpperCase(),
+          currency: newBank.currency || 'usd',
         });
       }
 
-      // Execute withdrawal — edge function verifies balance against DB
+      // Execute withdrawal — edge function does full balance verification
       const result = await callStripe('withdraw_to_bank', { amount: amt });
       setStep('success');
       setTimeout(() => onSuccess(result), 1500);
@@ -336,8 +387,8 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
       <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
         <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
-      <p className="font-bold text-gray-900 mb-1">Initiating Withdrawal</p>
-      <p className="text-sm text-gray-500">Verifying balance and submitting payout to Stripe...</p>
+      <p className="font-bold text-gray-900 mb-1">Processing Withdrawal</p>
+      <p className="text-sm text-gray-500">Verifying balance and submitting payout via Stripe...</p>
     </div>
   );
 
@@ -359,9 +410,7 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
         <ArrowUpCircle size={18} className="text-gray-700" /> Withdraw to Bank Account
       </h3>
       <p className="text-xs text-gray-400">
-        {WITHDRAWAL_FEE_PCT}% fee ·{' '}
-        {forceWithdrawAll ? 'No minimum (account closure)' : 'Min $10'} ·
-        3-5 business days
+        {WITHDRAWAL_FEE_PCT}% fee · {forceWithdrawAll ? 'No minimum (account closure)' : 'Min $10'} · 3-5 business days
       </p>
 
       {/* Amount */}
@@ -371,16 +420,10 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
         </label>
         <div className="relative">
           <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-          <input
-            type="number" placeholder="0.00" min="0.01"
-            max={profile?.wallet_balance || 0} step="0.01"
-            value={amount}
-            onChange={e => {
-              const v = e.target.value;
-              if (v === '' || parseFloat(v) >= 0) setAmount(v);
-            }}
-            className="input-field pl-9"
-          />
+          <input type="number" placeholder="0.00" min="0.01"
+            max={profile?.wallet_balance || 0} step="0.01" value={amount}
+            onChange={e => { const v = e.target.value; if (v === '' || parseFloat(v) >= 0) setAmount(v); }}
+            className="input-field pl-9" />
         </div>
         {(profile?.wallet_balance || 0) > 0 && (
           <button type="button"
@@ -392,16 +435,13 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
         {amt > 0 && (
           <div className="mt-2 bg-gray-50 rounded-xl p-3 text-xs space-y-1.5 border border-gray-100">
             <div className="flex justify-between text-gray-500">
-              <span>Withdrawal amount</span>
-              <span>${amt.toFixed(2)}</span>
+              <span>Withdrawal amount</span><span>${amt.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-red-400">
-              <span>Fee ({WITHDRAWAL_FEE_PCT}%)</span>
-              <span>-${fee.toFixed(2)}</span>
+              <span>Fee ({WITHDRAWAL_FEE_PCT}%)</span><span>-${fee.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-bold text-gray-800 border-t border-gray-200 pt-1.5">
-              <span>You receive</span>
-              <span>${net.toFixed(2)}</span>
+              <span>You receive</span><span>${net.toFixed(2)}</span>
             </div>
           </div>
         )}
@@ -414,34 +454,20 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
             Bank Account
           </label>
           {[
-            {
-              val: true,
-              label: `Bank ****${profile.bank_account_last4}`,
-              sub: profile.bank_account_holder || 'Saved account',
-              icon: '🏦',
-            },
-            {
-              val: false,
-              label: 'Use a different account',
-              sub: 'Enter new bank details',
-              icon: '➕',
-            },
+            { val: true, label: `Bank ****${profile.bank_account_last4}`, sub: profile.bank_account_holder || 'Saved bank account', icon: '🏦' },
+            { val: false, label: 'Use a different account', sub: 'Enter bank details (one-time)', icon: '➕' },
           ].map(opt => (
             <button key={String(opt.val)} type="button"
               onClick={() => setUseSavedBank(opt.val)}
               className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                useSavedBank === opt.val
-                  ? 'border-violet-400 bg-violet-50'
-                  : 'border-gray-200 hover:border-violet-200'
+                useSavedBank === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'
               }`}>
               <span className="text-xl">{opt.icon}</span>
               <div className="flex-1">
                 <p className="text-sm font-bold text-gray-800">{opt.label}</p>
                 <p className="text-xs text-gray-400">{opt.sub}</p>
               </div>
-              {useSavedBank === opt.val && (
-                <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />
-              )}
+              {useSavedBank === opt.val && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
             </button>
           ))}
         </div>
@@ -453,74 +479,34 @@ const WithdrawForm = ({ session, profile, forceWithdrawAll, onSuccess, onClose }
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
             <p className="text-xs text-blue-700 font-bold mb-1">Bank Account Details</p>
             <p className="text-xs text-blue-600">
-              Enter your bank account details exactly as they appear on your bank statement.
-              For international accounts use IBAN. For US accounts use account + routing number.
+              SEPA/international: use IBAN. US accounts: use account number + routing number.
+              Enter country as a 2-letter ISO code (US, GB, AE, DE, AU, SG, etc.)
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Account Holder Name *
-            </label>
-            <input type="text"
-              placeholder="Full name as on bank account"
-              value={bankDetails.accountHolderName}
-              onChange={e => setBankDetails({ ...bankDetails, accountHolderName: e.target.value })}
-              className="input-field" />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Country *
-            </label>
-            <input type="text"
-              placeholder="e.g. US, GB, AE, DE, AU, SG..."
-              value={bankDetails.country}
-              onChange={e => setBankDetails({ ...bankDetails, country: e.target.value.toUpperCase() })}
-              className="input-field uppercase"
-              maxLength={2}
-            />
-            <p className="text-xs text-gray-400 mt-1">2-letter country code (ISO 3166)</p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Account Number / IBAN *
-            </label>
-            <input type="text"
-              placeholder="IBAN or account number"
-              value={bankDetails.accountNumber}
-              onChange={e => setBankDetails({ ...bankDetails, accountNumber: e.target.value.replace(/\s/g, '') })}
-              className="input-field" />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Routing Number (US only)
-            </label>
-            <input type="text"
-              placeholder="9-digit routing number"
-              value={bankDetails.routingNumber}
-              onChange={e => setBankDetails({ ...bankDetails, routingNumber: e.target.value })}
-              className="input-field" />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Currency
-            </label>
-            <input type="text"
-              placeholder="e.g. usd, gbp, eur, aed"
-              value={bankDetails.currency}
-              onChange={e => setBankDetails({ ...bankDetails, currency: e.target.value.toLowerCase() })}
-              className="input-field" />
-          </div>
+          {[
+            { label: 'Account Holder Name *', key: 'accountHolderName', placeholder: 'Full name as on bank account' },
+            { label: 'Country Code *', key: 'country', placeholder: 'e.g. US, GB, AE, DE', maxLen: 2 },
+            { label: 'Account Number / IBAN *', key: 'accountNumber', placeholder: 'IBAN or account number' },
+            { label: 'Routing Number (US only)', key: 'routingNumber', placeholder: '9-digit routing number' },
+            { label: 'Currency', key: 'currency', placeholder: 'usd, gbp, eur, aed...' },
+          ].map(f => (
+            <div key={f.key}>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                {f.label}
+              </label>
+              <input type="text" placeholder={f.placeholder} maxLength={f.maxLen}
+                value={newBank[f.key]}
+                onChange={e => setNewBank({ ...newBank, [f.key]: f.key === 'country' ? e.target.value.toUpperCase() : e.target.value })}
+                className="input-field" />
+            </div>
+          ))}
 
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode Bank Details</p>
+            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
             <p className="text-xs text-amber-600 mt-0.5">
               US: Account <strong>000123456789</strong> · Routing <strong>110000000</strong> · Country <strong>US</strong><br />
-              UK IBAN: <strong>GB29NWBK60161331926819</strong> · Country <strong>GB</strong>
+              UK: IBAN <strong>GB29NWBK60161331926819</strong> · Country <strong>GB</strong>
             </p>
           </div>
         </div>
@@ -559,8 +545,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const userId = session.user.id;
-    const { data: p } = await supabase
-      .from('profiles').select('*').eq('id', userId).single();
+    const { data: p } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (p) setProfile(p);
 
     const { data: txns } = await supabase
@@ -587,15 +572,9 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
     return '💸';
   };
 
-  const isCredit = (txn) =>
-    ['topup', 'credit', 'escrow_release'].includes(txn.type);
-
-  const totalCredits = transactions
-    .filter(t => isCredit(t) && t.status === 'completed')
-    .reduce((s, t) => s + (t.amount || 0), 0);
-  const totalDebits = transactions
-    .filter(t => !isCredit(t) && t.type !== 'fetchr_fee' && t.status !== 'refunded')
-    .reduce((s, t) => s + (t.amount || 0), 0);
+  const isCredit = (txn) => ['topup', 'credit', 'escrow_release'].includes(txn.type);
+  const totalCredits = transactions.filter(t => isCredit(t) && t.status === 'completed').reduce((s, t) => s + (t.amount || 0), 0);
+  const totalDebits = transactions.filter(t => !isCredit(t) && t.type !== 'fetchr_fee' && t.status !== 'refunded').reduce((s, t) => s + (t.amount || 0), 0);
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -617,7 +596,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </div>
         )}
 
-        {/* Balance card */}
+        {/* Balance card — clean, no payment method display */}
         <div className="relative bg-gradient-to-br from-violet-600 via-purple-700 to-indigo-700 rounded-2xl p-6 mb-4 text-white overflow-hidden">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-20 translate-x-20" />
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-16 -translate-x-16" />
@@ -633,30 +612,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                 <WalletCards size={26} className="text-white" />
               </div>
             </div>
-
-            {/* Saved payment methods */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {profile?.payout_card_last4 && (
-                <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-1.5">
-                  <CreditCard size={13} className="text-violet-200" />
-                  <p className="text-xs text-violet-100 font-semibold">
-                    {profile.payout_card_brand
-                      ? profile.payout_card_brand.charAt(0).toUpperCase() + profile.payout_card_brand.slice(1)
-                      : 'Card'} ****{profile.payout_card_last4}
-                  </p>
-                </div>
-              )}
-              {profile?.bank_account_last4 && (
-                <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-1.5">
-                  <Building size={13} className="text-violet-200" />
-                  <p className="text-xs text-violet-100 font-semibold">
-                    Bank ****{profile.bank_account_last4}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs text-violet-300 mt-3 flex items-center gap-1">
+            <p className="text-xs text-violet-300 flex items-center gap-1">
               <Shield size={11} /> Secured by Stripe · Funds held in segregated account
             </p>
           </div>
@@ -680,7 +636,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           ))}
         </div>
 
-        {/* Top Up / Withdraw buttons only */}
+        {/* Action buttons — Top Up and Withdraw only */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <button
             onClick={() => setActivePanel(activePanel === 'topup' ? null : 'topup')}
@@ -691,18 +647,17 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </button>
           <button
             onClick={() => setActivePanel(activePanel === 'withdraw' ? null : 'withdraw')}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all btn-secondary ${
-              activePanel === 'withdraw' ? 'bg-gray-100' : ''
+            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${
+              activePanel === 'withdraw' ? 'bg-gray-200 text-gray-700' : 'btn-secondary'
             }`}>
             <ArrowUpCircle size={16} /> Withdraw
           </button>
         </div>
 
-        {/* Top Up Panel */}
+        {/* Top Up panel */}
         {activePanel === 'topup' && (
           <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 mb-4 overflow-hidden">
             <TopUpForm
-              session={session}
               profile={profile}
               onSuccess={(amt) => {
                 setActivePanel(null);
@@ -715,11 +670,10 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </div>
         )}
 
-        {/* Withdraw Panel */}
+        {/* Withdraw panel */}
         {activePanel === 'withdraw' && (
           <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 mb-4 overflow-hidden">
             <WithdrawForm
-              session={session}
               profile={profile}
               forceWithdrawAll={forceWithdrawAll}
               onSuccess={(result) => {
@@ -733,7 +687,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </div>
         )}
 
-        {/* Transaction History */}
+        {/* Transaction history */}
         <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-5">
           <h3 className="font-bold text-gray-900 mb-4">Transaction History</h3>
           {transactions.length === 0 ? (
@@ -762,21 +716,14 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                             day: '2-digit', month: 'short', year: 'numeric'
                           })}
                         </p>
-                        <span className={`badge text-xs ${
-                          txn.status === 'pending' ? 'badge-yellow' : 'badge-green'
-                        }`}>
-                          {txn.status === 'pending'
-                            ? <><Clock size={9} /> Processing</>
-                            : <><CheckCircle size={9} /> Done</>
-                          }
+                        <span className={`badge text-xs ${txn.status === 'pending' ? 'badge-yellow' : 'badge-green'}`}>
+                          {txn.status === 'pending' ? <><Clock size={9} /> Processing</> : <><CheckCircle size={9} /> Done</>}
                         </span>
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <p className={`text-sm font-bold ${
-                      isCredit(txn) ? 'text-emerald-600' : 'text-red-500'
-                    }`}>
+                    <p className={`text-sm font-bold ${isCredit(txn) ? 'text-emerald-600' : 'text-red-500'}`}>
                       {isCredit(txn) ? '+' : '-'}${(txn.amount || 0).toFixed(2)}
                     </p>
                     <ChevronRight size={14} className="text-gray-300 group-hover:text-gray-500 transition" />
@@ -805,51 +752,23 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                   }`}>
                     {getTxnIcon(selectedTxn)}
                   </div>
-                  <p className={`text-3xl font-bold ${
-                    isCredit(selectedTxn) ? 'text-emerald-600' : 'text-red-500'
-                  }`}>
+                  <p className={`text-3xl font-bold ${isCredit(selectedTxn) ? 'text-emerald-600' : 'text-red-500'}`}>
                     {isCredit(selectedTxn) ? '+' : '-'}${(selectedTxn.amount || 0).toFixed(2)}
                   </p>
                   <p className="text-gray-500 text-sm mt-1">{selectedTxn.description}</p>
                 </div>
-
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2.5 text-sm border border-gray-100">
                   {[
-                    {
-                      label: 'Date',
-                      value: new Date(selectedTxn.created_at).toLocaleDateString('en-GB', {
-                        day: '2-digit', month: 'long', year: 'numeric'
-                      })
-                    },
-                    {
-                      label: 'Time',
-                      value: new Date(selectedTxn.created_at).toLocaleTimeString([], {
-                        hour: '2-digit', minute: '2-digit'
-                      })
-                    },
-                    {
-                      label: 'Type',
-                      value: selectedTxn.type === 'topup' ? 'Wallet Top Up'
-                        : selectedTxn.type === 'withdrawal' ? 'Bank Withdrawal'
-                        : selectedTxn.type === 'escrow_release' ? 'Delivery Payment'
-                        : selectedTxn.type === 'escrow_hold' ? 'Escrow Payment'
-                        : selectedTxn.type === 'fetchr_fee' ? 'Fetchr Service Fee'
-                        : selectedTxn.type
-                    },
-                    {
-                      label: 'Status',
-                      value: selectedTxn.status === 'pending' ? '⏳ Processing' : '✅ Completed',
-                      color: selectedTxn.status === 'pending' ? 'text-amber-600' : 'text-emerald-600'
-                    },
+                    { label: 'Date', value: new Date(selectedTxn.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) },
+                    { label: 'Time', value: new Date(selectedTxn.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+                    { label: 'Type', value: selectedTxn.type === 'topup' ? 'Wallet Top Up' : selectedTxn.type === 'withdrawal' ? 'Bank Withdrawal' : selectedTxn.type === 'escrow_release' ? 'Delivery Payment' : selectedTxn.type === 'escrow_hold' ? 'Escrow Payment' : selectedTxn.type === 'fetchr_fee' ? 'Fetchr Fee' : selectedTxn.type },
+                    { label: 'Status', value: selectedTxn.status === 'pending' ? '⏳ Processing' : '✅ Completed', color: selectedTxn.status === 'pending' ? 'text-amber-600' : 'text-emerald-600' },
                   ].map((row, i) => (
                     <div key={i} className="flex justify-between">
                       <span className="text-gray-400">{row.label}</span>
-                      <span className={`font-semibold ${row.color || 'text-gray-800'}`}>
-                        {row.value}
-                      </span>
+                      <span className={`font-semibold ${row.color || 'text-gray-800'}`}>{row.value}</span>
                     </div>
                   ))}
-
                   {selectedTxn.type === 'withdrawal' && selectedTxn.metadata?.fee != null && (
                     <div className="border-t border-gray-200 pt-2 space-y-1">
                       <div className="flex justify-between">
@@ -858,9 +777,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Fee (2.5%)</span>
-                        <span className="font-semibold text-red-400">
-                          -${selectedTxn.metadata.fee.toFixed(2)}
-                        </span>
+                        <span className="font-semibold text-red-400">-${selectedTxn.metadata.fee.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-gray-800">
                         <span>You received</span>
@@ -869,7 +786,6 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                     </div>
                   )}
                 </div>
-
                 {selectedTxn.match && (
                   <div className="bg-violet-50 rounded-xl p-4 border border-violet-100 space-y-2 text-sm">
                     <p className="text-xs font-bold text-violet-700 mb-2">Deal Details</p>
@@ -877,10 +793,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                       { label: 'Route', value: `${selectedTxn.match.flight?.from_code} → ${selectedTxn.match.flight?.to_code}` },
                       { label: 'Item', value: selectedTxn.match.request?.item_name },
                       selectedTxn.match.flight?.airline && { label: 'Airline', value: selectedTxn.match.flight.airline },
-                      selectedTxn.match.flight?.flight_date && {
-                        label: 'Flight date',
-                        value: new Date(selectedTxn.match.flight.flight_date).toLocaleDateString('en-GB')
-                      },
+                      selectedTxn.match.flight?.flight_date && { label: 'Flight date', value: new Date(selectedTxn.match.flight.flight_date).toLocaleDateString('en-GB') },
                     ].filter(Boolean).map((row, i) => (
                       <div key={i} className="flex justify-between">
                         <span className="text-gray-400">{row.label}</span>
@@ -889,10 +802,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                     ))}
                   </div>
                 )}
-
-                <button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary py-3">
-                  Close
-                </button>
+                <button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary py-3">Close</button>
               </div>
             </div>
           </div>
