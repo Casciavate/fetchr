@@ -1,38 +1,160 @@
-.App {
-  text-align: center;
-}
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabaseClient';
+import Auth from './components/Auth';
+import Dashboard from './components/Dashboard';
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const inactivityTimer = useRef(null);
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
+  const resetInactivityTimer = () => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    inactivityTimer.current = setTimeout(async () => {
+      await supabase.auth.signOut();
+    }, INACTIVITY_TIMEOUT);
+  };
 
-.App-link {
-  color: #61dafb;
-}
+  const handleDeleteAccount = async (currentSession) => {
+    setDeletingAccount(true);
+    try {
+      const res = await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/delete-account',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentSession.access_token}`,
+          },
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error || 'Failed to delete account.');
+      } else {
+        setDeleteSuccess(true);
+        await supabase.auth.signOut();
+        window.history.replaceState({}, document.title, '/');
+      }
+    } catch (e) {
+      setDeleteError(e.message);
+    }
+    setDeletingAccount(false);
+  };
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isDeleteFlow = params.get('delete') === 'true';
+
+    // Handle OAuth callback — Supabase automatically processes
+    // the hash/code from the URL on getSession()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session && isDeleteFlow) {
+        handleDeleteAccount(session);
+      }
+      setLoading(false);
+    });
+
+    // This listener fires when OAuth completes — critical for Google login
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth event:', event, session?.user?.email);
+
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          setSession(session);
+          if (session) resetInactivityTimer();
+
+          // Check if this is a delete flow
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('delete') === 'true' && session) {
+            handleDeleteAccount(session);
+          }
+        }
+
+        if (event === 'SIGNED_OUT') {
+          setSession(null);
+        }
+
+        // Handle initial session from OAuth redirect
+        if (event === 'INITIAL_SESSION') {
+          setSession(session);
+          setLoading(false);
+        }
+      }
+    );
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(e => document.addEventListener(e, resetInactivityTimer, true));
+
+    return () => {
+      subscription.unsubscribe();
+      events.forEach(e => document.removeEventListener(e, resetInactivityTimer, true));
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    };
+  }, []);
+
+  if (loading) return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-indigo-900 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-12 h-12 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-white/60 text-sm">Loading Fetchr...</p>
+      </div>
+    </div>
+  );
+
+  if (deletingAccount) return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-indigo-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Deleting Account...</h2>
+        <p className="text-gray-500 text-sm">Permanently removing all your data. Please wait.</p>
+      </div>
+    </div>
+  );
+
+  if (deleteSuccess) return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-indigo-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl">✅</span>
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Account Deleted</h2>
+        <p className="text-gray-500 text-sm mb-6">
+          Your account and all data have been permanently deleted.
+        </p>
+        <button
+          onClick={() => { setDeleteSuccess(false); window.location.href = '/'; }}
+          className="btn-primary w-full py-3">
+          Back to Home
+        </button>
+      </div>
+    </div>
+  );
+
+  if (deleteError) return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-indigo-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl">❌</span>
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Could Not Delete Account</h2>
+        <p className="text-red-500 text-sm mb-6">{deleteError}</p>
+        <button
+          onClick={() => { setDeleteError(''); window.location.href = '/'; }}
+          className="btn-primary w-full py-3">
+          Back to Home
+        </button>
+      </div>
+    </div>
+  );
+
+  return session ? <Dashboard session={session} /> : <Auth />;
 }
