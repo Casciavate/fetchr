@@ -14,27 +14,6 @@ const CATEGORIES = [
   'Home & Living', 'Documents', 'Other'
 ];
 
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'AED', symbol: 'AED', name: 'UAE Dirham' },
-  { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal' },
-  { code: 'QAR', symbol: 'QAR', name: 'Qatari Riyal' },
-  { code: 'KWI', symbol: 'KWD', name: 'Kuwaiti Dinar' },
-  { code: 'BHD', symbol: 'BHD', name: 'Bahraini Dinar' },
-  { code: 'OMR', symbol: 'OMR', name: 'Omani Rial' },
-  { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
-  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
-  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
-  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
-  { code: 'PKR', symbol: '₨', name: 'Pakistani Rupee' },
-  { code: 'TRY', symbol: '₺', name: 'Turkish Lira' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
-];
-
 const AIRPORTS = [
   { code: 'DXB', city: 'Dubai', name: 'Dubai International', country: 'UAE' },
   { code: 'DWC', city: 'Dubai', name: 'Al Maktoum International', country: 'UAE' },
@@ -199,15 +178,12 @@ const AIRPORTS = [
   { code: 'RAK', city: 'Marrakech', name: 'Menara Airport', country: 'Morocco' },
   { code: 'TUN', city: 'Tunis', name: 'Carthage International', country: 'Tunisia' },
   { code: 'ALG', city: 'Algiers', name: 'Houari Boumediene', country: 'Algeria' },
-  { code: 'NBO', city: 'Nairobi', name: 'Jomo Kenyatta International', country: 'Kenya' },
   { code: 'MRU', city: 'Mauritius', name: 'Sir Seewoosagur Ramgoolam', country: 'Mauritius' },
-  { code: 'ISB', city: 'Islamabad', name: 'New Islamabad International', country: 'Pakistan' },
   { code: 'ALA', city: 'Almaty', name: 'Almaty International', country: 'Kazakhstan' },
   { code: 'TAS', city: 'Tashkent', name: 'Islam Karimov International', country: 'Uzbekistan' },
   { code: 'OTHER', city: 'Other', name: 'Not listed — enter manually', country: '' },
 ];
 
-// Google Places store search component
 const StoreSearch = ({ value, onChange }) => {
   const [query, setQuery] = useState(value?.name || '');
   const [results, setResults] = useState([]);
@@ -228,7 +204,6 @@ const StoreSearch = ({ value, onChange }) => {
     if (q.length < 3) { setResults([]); setOpen(false); return; }
     setSearching(true);
     try {
-      // Use Nominatim (free, no API key needed) for store/place search
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1`,
         { headers: { 'Accept-Language': 'en' } }
@@ -241,9 +216,7 @@ const StoreSearch = ({ value, onChange }) => {
         lng: parseFloat(p.lon),
       })));
       setOpen(true);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     setSearching(false);
   };
 
@@ -272,13 +245,9 @@ const StoreSearch = ({ value, onChange }) => {
             <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
-        <input
-          type="text"
-          value={query}
-          onChange={e => handleChange(e.target.value)}
+        <input type="text" value={query} onChange={e => handleChange(e.target.value)}
           placeholder="Search for store name and location..."
-          className="input-field pl-9 pr-10"
-        />
+          className="input-field pl-9 pr-10" />
       </div>
       {open && results.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
@@ -342,15 +311,11 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
 
   const handleSelect = (airport) => {
     if (airport.code === 'OTHER') {
-      setShowManual(true);
-      setOpen(false);
-      setQuery('Other (enter manually)');
-      return;
+      setShowManual(true); setOpen(false);
+      setQuery('Other (enter manually)'); return;
     }
     setQuery(`${airport.city} (${airport.code})`);
-    setOpen(false);
-    setResults([]);
-    setShowManual(false);
+    setOpen(false); setResults([]); setShowManual(false);
     onChange(airport);
   };
 
@@ -366,14 +331,9 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
       <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</label>
       <div className="relative">
         <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-        <input
-          type="text"
-          value={query}
-          onChange={e => handleSearch(e.target.value)}
+        <input type="text" value={query} onChange={e => handleSearch(e.target.value)}
           onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
-          placeholder={placeholder}
-          className="input-field pl-9"
-        />
+          placeholder={placeholder} className="input-field pl-9" />
       </div>
       {open && results.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
@@ -400,51 +360,12 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
             onChange={e => setManualCode(e.target.value.toUpperCase())} maxLength={3}
             className="input-field py-2 text-sm uppercase" />
           <input type="text" placeholder="City name" value={manualCity}
-            onChange={e => setManualCity(e.target.value)}
-            className="input-field py-2 text-sm" />
+            onChange={e => setManualCity(e.target.value)} className="input-field py-2 text-sm" />
           <button onClick={handleManualSave} className="w-full btn-primary py-2 text-xs">
             Confirm Airport
           </button>
         </div>
       )}
-    </div>
-  );
-};
-
-// Currency + Amount input component
-const CurrencyAmountInput = ({ label, required, currencyValue, amountValue, onCurrencyChange, onAmountChange, placeholder }) => {
-  const selected = CURRENCIES.find(c => c.code === currencyValue) || CURRENCIES[0];
-  return (
-    <div>
-      {label && (
-        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-          {label}{required && ' *'}
-        </label>
-      )}
-      <div className="flex rounded-xl border border-gray-200 overflow-hidden focus-within:ring-2 focus-within:ring-violet-500/20 focus-within:border-violet-400 transition-all bg-gray-50 focus-within:bg-white">
-        <select
-          value={currencyValue}
-          onChange={e => onCurrencyChange(e.target.value)}
-          className="bg-transparent border-0 border-r border-gray-200 text-xs font-bold text-gray-700 px-3 py-3 focus:outline-none cursor-pointer flex-shrink-0 w-20">
-          {CURRENCIES.map(c => (
-            <option key={c.code} value={c.code}>{c.code}</option>
-          ))}
-        </select>
-        <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none">
-            {selected.symbol !== selected.code ? selected.symbol : ''}
-          </span>
-          <input
-            type="number"
-            placeholder={placeholder || '0.00'}
-            value={amountValue}
-            onChange={e => onAmountChange(e.target.value)}
-            min="0"
-            step="0.01"
-            className={`w-full bg-transparent border-0 focus:outline-none text-sm text-gray-800 py-3 pr-4 ${selected.symbol !== selected.code ? 'pl-6' : 'pl-3'}`}
-          />
-        </div>
-      </div>
     </div>
   );
 };
@@ -460,21 +381,16 @@ const NewRequest = ({ session }) => {
     weight_kg: '',
     dimensions: '',
     max_budget: '',
-    budget_currency: 'USD',
     needed_by: '',
     notes: '',
-    // Delivery type: 'handover' or 'purchase'
     delivery_mode: null,
-    // Handover sub-type: 'self' or 'trusted_person'
     handover_type: 'self',
     trusted_person_name: '',
     trusted_person_phone: '',
     trusted_person_location: '',
     trusted_person_notes: '',
-    // Purchase
-    purchase_store: null, // { name, address, lat, lng }
+    purchase_store: null,
     purchase_price: '',
-    purchase_currency: 'USD',
     purchase_url: '',
     purchase_details: '',
   });
@@ -487,8 +403,6 @@ const NewRequest = ({ session }) => {
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
   const fileInputRef = useRef(null);
   const today = new Date().toISOString().split('T')[0];
-
-  const budgetCurrency = CURRENCIES.find(c => c.code === form.budget_currency) || CURRENCIES[0];
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -522,23 +436,18 @@ const NewRequest = ({ session }) => {
 
   const validateStep3 = () => {
     if (!form.delivery_mode) { setError('Please select a delivery option.'); return false; }
-
-    if (form.delivery_mode === 'handover') {
-      if (form.handover_type === 'trusted_person') {
-        if (!form.trusted_person_name.trim()) { setError('Please enter the trusted person\'s name.'); return false; }
-        if (!form.trusted_person_phone.trim()) { setError('Please enter their phone number.'); return false; }
-        if (!form.trusted_person_location.trim()) { setError('Please enter the meeting location.'); return false; }
-      }
+    if (form.delivery_mode === 'handover' && form.handover_type === 'trusted_person') {
+      if (!form.trusted_person_name.trim()) { setError('Please enter the trusted person\'s name.'); return false; }
+      if (!form.trusted_person_phone.trim()) { setError('Please enter their phone number.'); return false; }
+      if (!form.trusted_person_location.trim()) { setError('Please enter the meeting location.'); return false; }
     }
-
     if (form.delivery_mode === 'purchase') {
       if (!form.purchase_store) { setError('Please search for and select the store.'); return false; }
       if (!form.purchase_price || parseFloat(form.purchase_price) <= 0) { setError('Please enter the purchase price.'); return false; }
       if (!form.purchase_url && !form.purchase_details.trim()) {
-        setError('Please provide either a product link or product specifications (or both).'); return false;
+        setError('Please provide either a product link or product specifications.'); return false;
       }
     }
-
     if (!safetyAcknowledged) { setError('Please accept the Safety & Legal Declaration to continue.'); return false; }
     return true;
   };
@@ -569,7 +478,6 @@ const NewRequest = ({ session }) => {
 
     const isPurchase = form.delivery_mode === 'purchase';
 
-    // Build trusted person notes string
     let trustedPersonNote = null;
     if (form.delivery_mode === 'handover' && form.handover_type === 'trusted_person') {
       trustedPersonNote = `Handover contact: ${form.trusted_person_name} · ${form.trusted_person_phone} · Meeting location: ${form.trusted_person_location}${form.trusted_person_notes ? ` · ${form.trusted_person_notes}` : ''}`;
@@ -600,7 +508,7 @@ const NewRequest = ({ session }) => {
       purchase_store_lat: isPurchase ? form.purchase_store?.lat : null,
       purchase_store_lng: isPurchase ? form.purchase_store?.lng : null,
       purchase_price: isPurchase ? parseFloat(form.purchase_price) : null,
-      purchase_currency: isPurchase ? form.purchase_currency : null,
+      purchase_currency: isPurchase ? 'USD' : null,
       purchase_url: isPurchase ? form.purchase_url : null,
       purchase_details: isPurchase ? form.purchase_details : null,
       handover_type: form.delivery_mode === 'handover' ? form.handover_type : null,
@@ -610,7 +518,7 @@ const NewRequest = ({ session }) => {
       trusted_person_notes: form.handover_type === 'trusted_person' ? form.trusted_person_notes : null,
       item_dimensions: form.dimensions || null,
       max_budget: form.max_budget ? parseFloat(form.max_budget) : null,
-      budget_currency: form.budget_currency,
+      budget_currency: 'USD',
     }]);
 
     if (error) { setError(error.message); } else { setSuccess(true); }
@@ -622,12 +530,12 @@ const NewRequest = ({ session }) => {
     setForm({
       item_name: '', description: '', category: '',
       from_city: '', from_code: '', to_city: '', to_code: '',
-      weight_kg: '', dimensions: '', max_budget: '', budget_currency: 'USD',
+      weight_kg: '', dimensions: '', max_budget: '',
       needed_by: '', notes: '',
       delivery_mode: null, handover_type: 'self',
       trusted_person_name: '', trusted_person_phone: '',
       trusted_person_location: '', trusted_person_notes: '',
-      purchase_store: null, purchase_price: '', purchase_currency: 'USD',
+      purchase_store: null, purchase_price: '',
       purchase_url: '', purchase_details: '',
     });
     setPhotoFile(null); setPhotoPreview(null); setSafetyAcknowledged(false);
@@ -649,7 +557,7 @@ const NewRequest = ({ session }) => {
           { label: 'Route', value: `${form.from_city || form.from_code} → ${form.to_city || form.to_code}` },
           { label: 'Weight', value: `${form.weight_kg}kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
           { label: 'Delivery', value: form.delivery_mode === 'purchase' ? '🛍️ Shop & Ship' : form.handover_type === 'trusted_person' ? '🤝 Via trusted person' : '🙋 Self handover' },
-          form.max_budget && { label: 'Max budget', value: `${budgetCurrency.symbol}${form.max_budget}` },
+          form.max_budget && { label: 'Max budget', value: `$${form.max_budget} USD` },
           form.needed_by && { label: 'Needed by', value: formatDateForDisplay(form.needed_by) },
         ].filter(Boolean).map((row, i) => (
           <div key={i} className="flex justify-between text-sm">
@@ -699,7 +607,7 @@ const NewRequest = ({ session }) => {
         </div>
       )}
 
-      {/* ── STEP 1: Item Details ── */}
+      {/* ── STEP 1 ── */}
       {step === 1 && (
         <div className="space-y-4">
           <div>
@@ -735,7 +643,6 @@ const NewRequest = ({ session }) => {
               rows={3} className="input-field resize-none" />
           </div>
 
-          {/* Photo */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
               Item Photo <span className="text-gray-300 font-normal normal-case">(optional but recommended)</span>
@@ -765,10 +672,9 @@ const NewRequest = ({ session }) => {
         </div>
       )}
 
-      {/* ── STEP 2: Route & Size ── */}
+      {/* ── STEP 2 ── */}
       {step === 2 && (
         <div className="space-y-4">
-          {/* Item summary */}
           <div className="bg-gray-50 rounded-xl p-3.5 flex items-center gap-3 border border-gray-100">
             {photoPreview ? (
               <div className="w-12 h-12 rounded-lg overflow-hidden bg-white border border-gray-100 flex-shrink-0">
@@ -799,7 +705,6 @@ const NewRequest = ({ session }) => {
             placeholder="Search city, airport or code..."
           />
 
-          {/* Weight + Dimensions side by side */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
@@ -822,41 +727,40 @@ const NewRequest = ({ session }) => {
             </div>
           </div>
 
-          {/* Max budget — currency + amount nicely aligned */}
-          <CurrencyAmountInput
-            label={`Max Budget ${budgetCurrency.symbol ? `(${budgetCurrency.code})` : ''}`}
-            required={false}
-            currencyValue={form.budget_currency}
-            amountValue={form.max_budget}
-            onCurrencyChange={val => setForm({ ...form, budget_currency: val })}
-            onAmountChange={val => setForm({ ...form, max_budget: val })}
-            placeholder="Optional max you'll pay"
-          />
-
-          {form.max_budget && (
-            <div className="bg-violet-50 rounded-xl p-3.5 flex items-center justify-between border border-violet-100">
-              <span className="text-sm text-gray-600 font-medium">Your maximum budget</span>
-              <span className="text-base font-bold text-violet-700">
-                {budgetCurrency.symbol !== budgetCurrency.code ? budgetCurrency.symbol : ''}{form.max_budget} {form.budget_currency}
-              </span>
+          {/* Max budget — USD only */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+              Max Budget (USD) <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            </label>
+            <div className="relative">
+              <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <input type="number" placeholder="Optional max you'll pay" min="0" step="0.01"
+                value={form.max_budget} onChange={e => {
+                  const v = e.target.value;
+                  if (v === '' || parseFloat(v) >= 0) setForm({ ...form, max_budget: v });
+                }}
+                className="input-field pl-9" />
             </div>
-          )}
+            {form.max_budget && (
+              <div className="mt-2 bg-violet-50 rounded-xl p-3.5 flex items-center justify-between border border-violet-100">
+                <span className="text-sm text-gray-600 font-medium">Your maximum budget</span>
+                <span className="text-base font-bold text-violet-700">${form.max_budget} USD</span>
+              </div>
+            )}
+          </div>
 
-          {/* Needed by — dd/mm/yyyy display */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
               Needed By <span className="text-gray-300 font-normal normal-case">(dd/mm/yyyy, optional)</span>
             </label>
             <div className="relative">
               <Calendar size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-              <input type="date" min={today}
-                value={form.needed_by} onChange={e => setForm({ ...form, needed_by: e.target.value })}
+              <input type="date" min={today} value={form.needed_by}
+                onChange={e => setForm({ ...form, needed_by: e.target.value })}
                 className="input-field pl-9" />
             </div>
             {form.needed_by && (
-              <p className="text-xs text-gray-400 mt-1 ml-1">
-                Selected: {formatDateForDisplay(form.needed_by)}
-              </p>
+              <p className="text-xs text-gray-400 mt-1 ml-1">Selected: {formatDateForDisplay(form.needed_by)}</p>
             )}
           </div>
 
@@ -876,39 +780,25 @@ const NewRequest = ({ session }) => {
         </div>
       )}
 
-      {/* ── STEP 3: Delivery & Safety ── */}
+      {/* ── STEP 3 ── */}
       {step === 3 && (
         <div className="space-y-5">
 
-          {/* Summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Item</span>
-              <span className="font-semibold text-gray-900">{form.item_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Route</span>
-              <span className="font-semibold text-gray-900">
-                {form.from_city || form.from_code} → {form.to_city || form.to_code}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Weight</span>
-              <span className="font-semibold text-gray-900">
-                {form.weight_kg}kg{form.dimensions ? ` · ${form.dimensions}` : ''}
-              </span>
-            </div>
-            {form.max_budget && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Max budget</span>
-                <span className="font-semibold text-violet-700">
-                  {budgetCurrency.symbol !== budgetCurrency.code ? budgetCurrency.symbol : ''}{form.max_budget} {form.budget_currency}
-                </span>
+            {[
+              { label: 'Item', value: form.item_name },
+              { label: 'Route', value: `${form.from_city || form.from_code} → ${form.to_city || form.to_code}` },
+              { label: 'Weight', value: `${form.weight_kg}kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
+              form.max_budget && { label: 'Max budget', value: `$${form.max_budget} USD` },
+            ].filter(Boolean).map((row, i) => (
+              <div key={i} className="flex justify-between">
+                <span className="text-gray-500">{row.label}</span>
+                <span className="font-semibold text-gray-900">{row.value}</span>
               </div>
-            )}
+            ))}
           </div>
 
-          {/* ── Delivery mode — either/or ── */}
+          {/* Delivery mode */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
               How should this be delivered? *
@@ -950,17 +840,15 @@ const NewRequest = ({ session }) => {
             </div>
           </div>
 
-          {/* ── HANDOVER sub-flow ── */}
+          {/* Handover sub-flow */}
           {form.delivery_mode === 'handover' && (
             <div className="space-y-4">
-
-              {/* Safety warning about traveler running away */}
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                 <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-bold text-red-700 mb-1">⚠️ Item Security Notice</p>
                   <p className="text-xs text-red-600 leading-relaxed">
-                    <strong>Do not hand over the item until escrow is confirmed paid.</strong> Once the deal is matched and terms agreed, the shipper must pay escrow before you release the item. The traveler's identity is logged in the deal. Fetchr's escrow covers the shipping fee — the item itself is your responsibility until handover. Always verify the traveler's identity before releasing the item.
+                    <strong>Do not hand over the item until escrow is confirmed paid.</strong> Once the deal is matched and terms agreed, the shipper must pay escrow before you release the item. The traveler's identity is logged in the deal. Always verify the traveler's identity before releasing the item.
                   </p>
                 </div>
               </div>
@@ -971,18 +859,8 @@ const NewRequest = ({ session }) => {
                 </label>
                 <div className="space-y-2">
                   {[
-                    {
-                      value: 'self',
-                      icon: '🙋',
-                      label: 'I will hand it over myself',
-                      desc: 'You will personally meet the traveler and hand over the item.',
-                    },
-                    {
-                      value: 'trusted_person',
-                      icon: '🤝',
-                      label: 'A trusted person will hand it over on my behalf',
-                      desc: 'A family member, friend, or colleague will meet the traveler. Provide their contact details below.',
-                    },
+                    { value: 'self', icon: '🙋', label: 'I will hand it over myself', desc: 'You will personally meet the traveler and hand over the item.' },
+                    { value: 'trusted_person', icon: '🤝', label: 'A trusted person will hand it over on my behalf', desc: 'A family member, friend, or colleague will meet the traveler.' },
                   ].map(opt => (
                     <button key={opt.value} type="button"
                       onClick={() => setForm({ ...form, handover_type: opt.value })}
@@ -1006,7 +884,6 @@ const NewRequest = ({ session }) => {
                 </div>
               </div>
 
-              {/* Trusted person details */}
               {form.handover_type === 'trusted_person' && (
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
                   <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
@@ -1015,41 +892,27 @@ const NewRequest = ({ session }) => {
                   <p className="text-xs text-indigo-600 leading-relaxed">
                     These details will be shared with the matched traveler so they can coordinate the handover.
                   </p>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Full Name *</label>
-                    <div className="relative">
-                      <User size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
-                      <input type="text" placeholder="e.g. Sarah Johnson"
-                        value={form.trusted_person_name}
-                        onChange={e => setForm({ ...form, trusted_person_name: e.target.value })}
-                        className="input-field pl-8 py-2.5" />
+                  {[
+                    { label: 'Full Name *', key: 'trusted_person_name', placeholder: 'e.g. Sarah Johnson', icon: User },
+                    { label: 'Phone / WhatsApp *', key: 'trusted_person_phone', placeholder: 'e.g. +971 50 123 4567', icon: Phone },
+                    { label: 'Meeting Location *', key: 'trusted_person_location', placeholder: 'e.g. Dubai Mall main entrance...', icon: MapPin },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{f.label}</label>
+                      <div className="relative">
+                        <f.icon size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                        <input type="text" placeholder={f.placeholder}
+                          value={form[f.key]}
+                          onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                          className="input-field pl-8 py-2.5" />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Phone / WhatsApp *</label>
-                    <div className="relative">
-                      <Phone size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
-                      <input type="tel" placeholder="e.g. +971 50 123 4567"
-                        value={form.trusted_person_phone}
-                        onChange={e => setForm({ ...form, trusted_person_phone: e.target.value })}
-                        className="input-field pl-8 py-2.5" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Meeting Location *</label>
-                    <div className="relative">
-                      <MapPin size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
-                      <input type="text" placeholder="e.g. Dubai Mall main entrance, Ground floor Carrefour..."
-                        value={form.trusted_person_location}
-                        onChange={e => setForm({ ...form, trusted_person_location: e.target.value })}
-                        className="input-field pl-8 py-2.5" />
-                    </div>
-                  </div>
+                  ))}
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
                       Additional Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
                     </label>
-                    <input type="text" placeholder="e.g. Available weekdays 9am-6pm, will call ahead..."
+                    <input type="text" placeholder="e.g. Available weekdays 9am-6pm..."
                       value={form.trusted_person_notes}
                       onChange={e => setForm({ ...form, trusted_person_notes: e.target.value })}
                       className="input-field py-2.5" />
@@ -1059,7 +922,7 @@ const NewRequest = ({ session }) => {
             </div>
           )}
 
-          {/* ── PURCHASE sub-flow ── */}
+          {/* Purchase sub-flow */}
           {form.delivery_mode === 'purchase' && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2">
@@ -1067,7 +930,7 @@ const NewRequest = ({ session }) => {
                 <p className="text-sm font-bold text-blue-700">Purchase Details</p>
               </div>
               <p className="text-xs text-blue-600 leading-relaxed">
-                Provide as much detail as possible so the traveler can find and purchase the exact item. The final price is agreed in the deal chat.
+                All amounts in USD. Provide as much detail as possible so the traveler can find and purchase the exact item.
               </p>
 
               <StoreSearch
@@ -1075,15 +938,21 @@ const NewRequest = ({ session }) => {
                 onChange={place => setForm({ ...form, purchase_store: place })}
               />
 
-              <CurrencyAmountInput
-                label="Anticipated Purchase Price"
-                required={true}
-                currencyValue={form.purchase_currency}
-                amountValue={form.purchase_price}
-                onCurrencyChange={val => setForm({ ...form, purchase_currency: val })}
-                onAmountChange={val => setForm({ ...form, purchase_price: val })}
-                placeholder="e.g. 299.00"
-              />
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                  Anticipated Purchase Price (USD) *
+                </label>
+                <div className="relative">
+                  <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+                  <input type="number" placeholder="e.g. 299.00" min="0" step="0.01"
+                    value={form.purchase_price}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v === '' || parseFloat(v) >= 0) setForm({ ...form, purchase_price: v });
+                    }}
+                    className="input-field pl-9" />
+                </div>
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
@@ -1105,11 +974,10 @@ const NewRequest = ({ session }) => {
                   {form.purchase_url && <span className="text-gray-300 font-normal normal-case">(optional if link provided)</span>}
                 </label>
                 <textarea
-                  placeholder="Size, color, model number, storage, specific variants the traveler must get..."
+                  placeholder="Size, color, model number, storage, specific variants..."
                   value={form.purchase_details}
                   onChange={e => setForm({ ...form, purchase_details: e.target.value })}
-                  rows={3}
-                  className="input-field resize-none py-2.5"
+                  rows={3} className="input-field resize-none py-2.5"
                 />
                 {!form.purchase_url && (
                   <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
@@ -1120,7 +988,7 @@ const NewRequest = ({ session }) => {
             </div>
           )}
 
-          {/* ── Safety & Legal Declaration ── */}
+          {/* Safety declaration */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="text-xs font-bold text-amber-800 mb-3 flex items-center gap-1.5">
               <Shield size={13} /> Safety & Legal Declaration
@@ -1132,8 +1000,8 @@ const NewRequest = ({ session }) => {
               <label htmlFor="safety-ack-req" className="text-xs text-amber-800 leading-relaxed cursor-pointer">
                 I confirm that:
                 <ul className="mt-1.5 space-y-1 list-disc list-inside ml-1">
-                  <li>The item is <strong>legal</strong> and complies with all airline regulations and customs laws of origin and destination countries.</li>
-                  <li>I am <strong>not</strong> requesting transport of illegal substances, weapons, counterfeit goods, currency above legal limits, or any prohibited items.</li>
+                  <li>The item is <strong>legal</strong> and complies with all airline regulations and customs laws.</li>
+                  <li>I am <strong>not</strong> requesting transport of illegal substances, weapons, counterfeit goods, or any prohibited items.</li>
                   <li>I accept <strong>full legal responsibility</strong> for this shipment.</li>
                   <li>Fetchr is a <strong>matchmaking and payment platform only</strong> — no liability for items transported.</li>
                   <li>Violation results in <strong>immediate account termination</strong> and may be reported to authorities.</li>

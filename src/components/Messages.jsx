@@ -83,9 +83,14 @@ const Messages = ({ session }) => {
     setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
   };
 
-  const fetchCancelRequest = async (matchId) => {
+const fetchCancelRequest = async (matchId) => {
     const { data } = await supabase.from('cancellation_requests')
-      .select('*').eq('match_id', matchId).eq('status', 'pending').maybeSingle();
+      .select('*')
+      .eq('match_id', matchId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     setCancelRequest(data || null);
   };
 
@@ -260,15 +265,23 @@ const Messages = ({ session }) => {
     setSubmittingComplete(false);
   };
 
-  const requestCancellation = async () => {
+const requestCancellation = async () => {
     if (!cancelReason.trim()) return;
     setSubmittingCancel(true);
+
+    // First close any old cancellation requests for this match
+    await supabase.from('cancellation_requests')
+      .update({ status: 'superseded' })
+      .eq('match_id', activeMatch.id)
+      .in('status', ['pending', 'rejected']);
+
     await supabase.from('cancellation_requests').insert([{
       match_id: activeMatch.id,
       requested_by: session.user.id,
       reason: cancelReason,
       status: 'pending',
     }]);
+
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id,
       sender_id: session.user.id,
