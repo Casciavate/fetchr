@@ -180,27 +180,35 @@ Deno.serve(async (req) => {
     }
 
     // ── Create PaymentIntent for top up (saved card flow — requires CVC recollection) ──
-    if (action === 'create_topup_intent') {
+if (action === 'create_topup_intent') {
       const { amount, paymentMethodId } = data
       if (!amount || amount <= 0) throw new Error('Invalid amount')
 
       const amountCents = Math.round(amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email!)
 
-      // Create intent but don't confirm — frontend confirms with CVC
+      // Create intent — NOT confirmed here
+      // Frontend confirms via stripe.confirmCardPayment so 3DS popup
+      // can appear in the browser if the card issuer requires it
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountCents,
         currency: 'usd',
         customer: customerId,
         payment_method: paymentMethodId,
-        // Don't confirm here — frontend confirms with CVC recollection
+        // confirm: false (default) — frontend confirms
         metadata: {
           type: 'wallet_topup',
           user_id: user.id,
           amount_usd: amount.toString(),
         },
-        description: `Fetchr wallet top up (saved card) — ${user.email}`,
+        description: `Fetchr wallet top up — ${user.email}`,
       })
+
+      return new Response(JSON.stringify({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
 
       return new Response(JSON.stringify({
         clientSecret: paymentIntent.client_secret,
