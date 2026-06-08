@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
     // 3. Use the LOWER value as safe ceiling
     // 4. Create Stripe Payout
     // 5. Deduct from wallet and record transaction with full audit trail
-    if (action === 'withdraw_to_bank') {
+if (action === 'withdraw_to_bank') {
       const { amount } = data
       if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
 
@@ -287,7 +287,7 @@ Deno.serve(async (req) => {
       const netAmount = amount - fee
       const netCents = Math.round(netAmount * 100)
 
-      // Step 1: Verify balance
+      // Step 1: Verify balance against DB
       const safeBalance = await verifyWithdrawalEligibility(user.id, amount)
 
       // Step 2: Get saved bank details
@@ -296,55 +296,63 @@ Deno.serve(async (req) => {
         .select('stripe_bank_token, bank_account_last4, bank_account_holder, stripe_customer_id')
         .eq('id', user.id).single()
 
-      if (!profile?.stripe_bank_token && !profile?.bank_account_last4) {
+      if (!profile?.bank_account_last4) {
         throw new Error('No bank account saved. Please add a bank account in your profile first.')
       }
 
-      // Step 3: Create Stripe Payout
-      // In test mode: Stripe simulates the payout automatically
-      // In production: real funds transferred to bank
+      // Step 3: Create payout
+      // In test mode, stripe.payouts.create requires a bank account registered
+      // on your Stripe account — use the bank token we saved when the user
+      // added their bank account in profile.
+      // In production this works automatically once your Stripe account
+      // has completed verification and has a default payout bank account.
       let payoutId: string
-      let payoutStatus: string
+      let payoutStatus = 'pending'
 
-      try {
-        const payout = await stripe.payouts.create({
-          amount: netCents,
-          currency: 'usd',
-          method: 'standard',
-          description: `Fetchr wallet withdrawal — ${user.email}`,
-          metadata: {
-            user_id: user.id,
-            gross_amount: amount.toString(),
-            fee: fee.toString(),
-            net_amount: netAmount.toString(),
-            bank_last4: profile.bank_account_last4 || '',
-            verified_balance_used: safeBalance.toString(),
-          },
-        })
-        payoutId = payout.id
-        payoutStatus = payout.status
-      } catch (stripeError: any) {
-        // In test mode with no Stripe balance — simulate payout
-        if (stripeError.code === 'balance_insufficient' &&
-            Deno.env.get('STRIPE_SECRET_KEY')?.startsWith('sk_test_')) {
-          payoutId = `test_po_${Date.now()}`
-          payoutStatus = 'pending'
-        } else {
-          throw stripeError
+      const isTestMode = Deno.env.get('STRIPE_SECRET_KEY')?.startsWith('sk_test_')
+
+      if (isTestMode) {
+        // In test mode: simulate payout — Stripe test mode does not support
+        // payouts to arbitrary bank tokens without a verified Stripe account.
+        // We record the intent and mark as pending, which is accurate:
+        // in production this would trigger a real bank transfer.
+        payoutId = `sim_po_${Date.now()}_${user.id.slice(0, 8)}`
+        payoutStatus = 'pending'
+        console.log(`[TEST MODE] Simulated payout of $${netAmount.toFixed(2)} to bank ****${profile.bank_account_last4}`)
+      } else {
+        // Production: real Stripe payout
+        try {
+          const payout = await stripe.payouts.create({
+            amount: netCents,
+            currency: 'usd',
+            method: 'standard',
+            description: `Fetchr withdrawal — ${user.email}`,
+            metadata: {
+              user_id: user.id,
+              gross_amount: amount.toString(),
+              fee: fee.toString(),
+              net_amount: netAmount.toString(),
+              bank_last4: profile.bank_account_last4,
+            },
+          })
+          payoutId = payout.id
+          payoutStatus = payout.status
+        } catch (e: any) {
+          throw new Error(`Payout failed: ${e.message}`)
         }
       }
 
-      // Step 4: Atomically deduct from wallet
+      // Step 4: Deduct from wallet
       const newBalance = safeBalance - amount
       await adminClient.from('profiles')
         .update({ wallet_balance: newBalance }).eq('id', user.id)
 
-      // Step 5: Record transaction with full audit metadata
+      // Step 5: Record with full audit trail
       await adminClient.from('transactions').insert({
         user_id: user.id,
         type: 'withdrawal',
         amount,
-        description: `Withdrawal to bank ****${profile.bank_account_last4 || '0000'}`,
+        description: `Withdrawal to bank ****${profile.bank_account_last4}`,
         status: 'pending',
         metadata: {
           payout_id: payoutId,
@@ -353,6 +361,7 @@ Deno.serve(async (req) => {
           net: netAmount,
           bank_last4: profile.bank_account_last4,
           verified_balance_at_withdrawal: safeBalance,
+          mode: isTestMode ? 'test_simulated' : 'live',
         },
       })
 
