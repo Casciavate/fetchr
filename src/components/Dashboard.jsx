@@ -286,7 +286,7 @@ const Dashboard = ({ session }) => {
       case 'flights': return <MyFlights session={session} onAddFlight={() => navigate('add-flight')} />;
       case 'new-request': return <NewRequest session={session} />;
       case 'my-requests': return <MyRequests session={session} onNewRequest={() => navigate('new-request')} />;
-      case 'matches': return <Matches session={session} />;
+case 'matches': return <Matches session={session} onNavigate={navigate} />;
       case 'messages': return <Messages session={session} />;
       case 'active-deals': return <ActiveDeals session={session} onNavigate={navigate} />;
       case 'completed': return <Completed session={session} />;

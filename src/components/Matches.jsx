@@ -5,7 +5,7 @@ import {
   ChevronRight, Shield, X, Award, Globe, Clock, Zap, ShoppingBag
 } from 'lucide-react';
 
-const Matches = ({ session }) => {
+const Matches = ({ session, onNavigate }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState({});
@@ -55,11 +55,10 @@ const Matches = ({ session }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleAccept = async (matchId) => {
+const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
 
-    // Always re-fetch the match fresh from DB before deciding
-    // This prevents stale local state causing the "nothing happens" bug
+    // Always fetch fresh from DB to avoid stale state
     const { data: freshMatch } = await supabase
       .from('matches')
       .select('*')
@@ -78,7 +77,7 @@ const Matches = ({ session }) => {
       : freshMatch.traveler_accepted;
 
     if (otherAccepted) {
-      // Both accepted — move to accepted and open chat
+      // Both accepted — update DB
       await supabase.from('matches').update({
         [myField]: true,
         status: 'accepted',
@@ -95,16 +94,24 @@ const Matches = ({ session }) => {
         content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery.`,
         is_read: false,
       }]);
+
+      // Remove from matches list and go to messages
+      setMatches(prev => prev.filter(m => m.id !== matchId));
+      setActing(prev => ({ ...prev, [matchId]: null }));
+
+      // Navigate to messages tab
+      if (typeof onNavigate === 'function') {
+        onNavigate('messages');
+      }
     } else {
-      // First to accept — show awaiting badge
       await supabase.from('matches').update({
         [myField]: true,
         status: 'awaiting_other',
       }).eq('id', matchId);
-    }
 
-    await fetchMatches();
-    setActing(prev => ({ ...prev, [matchId]: null }));
+      await fetchMatches();
+      setActing(prev => ({ ...prev, [matchId]: null }));
+    }
   };
 
   const handleDecline = async (matchId) => {
