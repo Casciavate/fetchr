@@ -12,8 +12,8 @@ const Matches = ({ session, onNavigate }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const fetchMatches = async () => {
-    setLoading(true);
+const fetchMatches = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     await supabase.rpc('find_matches');
     const { data, error } = await supabase
       .from('matches')
@@ -28,7 +28,7 @@ const Matches = ({ session, onNavigate }) => {
       .in('status', ['pending', 'awaiting_other'])
       .order('match_score', { ascending: false });
     if (!error) setMatches(data || []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   const fetchProfile = async (userId) => {
@@ -51,35 +51,47 @@ const Matches = ({ session, onNavigate }) => {
 
 useEffect(() => {
     fetchMatches();
-    const interval = setInterval(fetchMatches, 5000);
 
     const userId = session.user.id;
 
-    // Watch for matches becoming 'accepted' — handles the party who accepted first
-    // When the second party accepts, this fires and navigates both to Messages
-    const sub = supabase.channel(`matches-accept-watch-${userId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'matches',
-      }, (payload) => {
-        const updated = payload.new;
-        // If this match involves us AND just became accepted, go to messages
-        if (
-          (updated.traveler_id === userId || updated.shipper_id === userId) &&
-          updated.status === 'accepted'
-        ) {
-          // Remove it from our list and navigate
-          setMatches(prev => prev.filter(m => m.id !== updated.id));
-          if (onNavigate) onNavigate('messages');
-        }
-      })
-      .subscribe();
+    // Poll every 2 seconds
+    // On each poll: check if any match that WAS awaiting_other is now accepted
+    // This is the reliable way to catch the second-party accept for BOTH users
+    const interval = setInterval(async () => {
+      await supabase.rpc('find_matches');
+      const { data } = await supabase
+        .from('matches')
+        .select('id, status, traveler_id, shipper_id')
+        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+        .in('status', ['pending', 'awaiting_other', 'accepted']);
 
-    return () => {
-      clearInterval(interval);
-      supabase.removeChannel(sub);
-    };
+      if (!data) return;
+
+      // If any match is now 'accepted', navigate to messages immediately
+      const acceptedMatch = data.find(m => m.status === 'accepted');
+      if (acceptedMatch) {
+        if (onNavigate) onNavigate('messages');
+        return;
+      }
+
+      // Otherwise refresh the match list normally
+      const { data: fullData, error } = await supabase
+        .from('matches')
+        .select(`
+          *,
+          flight:flights(*),
+          request:shipment_requests(*),
+          traveler:profiles!matches_traveler_id_fkey(*),
+          shipper:profiles!matches_shipper_id_fkey(*)
+        `)
+        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+        .in('status', ['pending', 'awaiting_other'])
+        .order('match_score', { ascending: false });
+
+      if (!error) setMatches(fullData || []);
+    }, 2000);
+
+    return () => clearInterval(interval);
   }, []);
 
 const handleAccept = async (matchId) => {
