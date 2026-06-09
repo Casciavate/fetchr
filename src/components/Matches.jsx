@@ -49,10 +49,37 @@ const Matches = ({ session, onNavigate }) => {
     setProfileLoading(false);
   };
 
-  useEffect(() => {
+useEffect(() => {
     fetchMatches();
     const interval = setInterval(fetchMatches, 5000);
-    return () => clearInterval(interval);
+
+    const userId = session.user.id;
+
+    // Watch for matches becoming 'accepted' — handles the party who accepted first
+    // When the second party accepts, this fires and navigates both to Messages
+    const sub = supabase.channel(`matches-accept-watch-${userId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+      }, (payload) => {
+        const updated = payload.new;
+        // If this match involves us AND just became accepted, go to messages
+        if (
+          (updated.traveler_id === userId || updated.shipper_id === userId) &&
+          updated.status === 'accepted'
+        ) {
+          // Remove it from our list and navigate
+          setMatches(prev => prev.filter(m => m.id !== updated.id));
+          if (onNavigate) onNavigate('messages');
+        }
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(sub);
+    };
   }, []);
 
 const handleAccept = async (matchId) => {

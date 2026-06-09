@@ -112,6 +112,9 @@ const Dashboard = ({ session }) => {
       totalRequests: requestsCount || 0,
     });
 
+// Generate new matches for this user before fetching
+    await supabase.rpc('find_matches');
+
     // Widget data — all in parallel
     const [
       { data: matchesData },
