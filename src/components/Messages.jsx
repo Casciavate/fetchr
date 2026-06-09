@@ -36,7 +36,7 @@ const Messages = ({ session }) => {
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-const fetchMatches = async () => {
+  const fetchMatches = async () => {
     const { data } = await supabase
       .from('matches')
       .select(`*, flight:flights(*), request:shipment_requests(*),
@@ -58,23 +58,12 @@ const fetchMatches = async () => {
     return data || [];
   };
 
- 
-
-  const fetchUnreadCounts = async (matches) => {
-    const counts = {};
-    for (const match of matches) {
-      const { count } = await supabase.from('messages')
-        .select('id', { count: 'exact' })
-        .eq('match_id', match.id).eq('is_read', false)
-        .neq('sender_id', session.user.id);
-      counts[match.id] = count || 0;
-    }
-    setUnreadCounts(counts);
-  };
-useEffect(() => {
+  // Single useEffect: retry loop on mount + polling + realtime
+  useEffect(() => {
     let cancelled = false;
     const userId = session.user.id;
 
+    // Retry loop handles race condition where navigation happens before DB write commits
     const loadWithRetry = async () => {
       setLoading(true);
       for (let i = 0; i < 15; i++) {
@@ -101,6 +90,7 @@ useEffect(() => {
 
     loadWithRetry();
 
+    // Poll every 3 seconds to catch updates
     const pollInterval = setInterval(async () => {
       if (cancelled) return;
       const { data } = await supabase
@@ -113,21 +103,26 @@ useEffect(() => {
         .order('created_at', { ascending: false });
 
       if (!data || cancelled) return;
-      setAcceptedMatches(data);
-      setActiveMatch(prev => {
-        if (!prev) return data[0] || null;
-        const stillExists = data.find(m => m.id === prev.id);
-        return stillExists ? { ...prev, ...stillExists } : (data[0] || null);
-      });
-      if (data.length > 0) await fetchUnreadCounts(data);
+      if (data.length > 0) {
+        setAcceptedMatches(data);
+        setActiveMatch(prev => {
+          if (!prev) return data[0];
+          const still = data.find(m => m.id === prev.id);
+          return still ? { ...prev, ...still } : data[0];
+        });
+        await fetchUnreadCounts(data);
+      }
     }, 3000);
 
+    // Realtime subscription for match status changes
     const sub = supabase.channel(`messages-main-${userId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' },
         (payload) => {
           const u = payload.new;
-          if ((u.traveler_id === userId || u.shipper_id === userId) &&
-            ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)) {
+          if (
+            (u.traveler_id === userId || u.shipper_id === userId) &&
+            ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)
+          ) {
             fetchMatches();
           }
         })
@@ -139,6 +134,52 @@ useEffect(() => {
       supabase.removeChannel(sub);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeMatch) {
+      fetchMessages(activeMatch.id);
+      fetchCancelRequest(activeMatch.id);
+    }
+  }, [activeMatch?.id]);
+
+  // Realtime messages + match updates for active conversation
+  useEffect(() => {
+    if (!activeMatch) return;
+    const sub = supabase.channel(`messages:${activeMatch.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'messages',
+        filter: `match_id=eq.${activeMatch.id}`
+      }, (payload) => {
+        setMessages(prev =>
+          prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]
+        );
+        setTimeout(scrollToBottom, 100);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'matches',
+        filter: `id=eq.${activeMatch.id}`
+      }, (payload) => {
+        setActiveMatch(prev => ({ ...prev, ...payload.new }));
+        setAcceptedMatches(prev =>
+          prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
+        );
+      })
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [activeMatch?.id]);
+
+  const fetchUnreadCounts = async (matches) => {
+    const counts = {};
+    for (const match of matches) {
+      const { count } = await supabase.from('messages')
+        .select('id', { count: 'exact' })
+        .eq('match_id', match.id).eq('is_read', false)
+        .neq('sender_id', session.user.id);
+      counts[match.id] = count || 0;
+    }
+    setUnreadCounts(counts);
+  };
+
   const fetchMessages = async (matchId) => {
     const { data } = await supabase
       .from('messages')
@@ -155,7 +196,7 @@ useEffect(() => {
     setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
   };
 
-const fetchCancelRequest = async (matchId) => {
+  const fetchCancelRequest = async (matchId) => {
     const { data } = await supabase.from('cancellation_requests')
       .select('*')
       .eq('match_id', matchId)
@@ -182,7 +223,6 @@ const fetchCancelRequest = async (matchId) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
-  // Both parties agree to terms before escrow unlocks
   const agreeToTerms = async () => {
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'terms_agreed_traveler' : 'terms_agreed_shipper';
@@ -213,7 +253,6 @@ const fetchCancelRequest = async (matchId) => {
     setTimeout(scrollToBottom, 100);
   };
 
-  // Traveler uploads proof photo after receiving item
   const uploadProof = async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     setUploadingProof(true);
@@ -270,7 +309,6 @@ const fetchCancelRequest = async (matchId) => {
     setSubmittingComplete(true);
 
     if (otherDone) {
-      // Both confirmed — capture payment and release
       if (activeMatch.payment_intent_id) {
         const { data: { session: auth } } = await supabase.auth.getSession();
         await fetch(
@@ -337,11 +375,10 @@ const fetchCancelRequest = async (matchId) => {
     setSubmittingComplete(false);
   };
 
-const requestCancellation = async () => {
+  const requestCancellation = async () => {
     if (!cancelReason.trim()) return;
     setSubmittingCancel(true);
 
-    // First close any old cancellation requests for this match
     await supabase.from('cancellation_requests')
       .update({ status: 'superseded' })
       .eq('match_id', activeMatch.id)
@@ -434,44 +471,6 @@ const requestCancellation = async () => {
     setCancelRequest(null);
   };
 
-  useEffect(() => {
-    if (activeMatch) {
-      fetchMessages(activeMatch.id);
-      fetchCancelRequest(activeMatch.id);
-    }
-  }, [activeMatch?.id]);
-
-  // Real-time messages + match updates
-  useEffect(() => {
-    if (!activeMatch) return;
-    const sub = supabase.channel(`messages:${activeMatch.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `match_id=eq.${activeMatch.id}`
-      }, (payload) => {
-        setMessages(prev =>
-          prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]
-        );
-        setTimeout(scrollToBottom, 100);
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'matches',
-        filter: `id=eq.${activeMatch.id}`
-      }, (payload) => {
-        setActiveMatch(prev => ({ ...prev, ...payload.new }));
-        setAcceptedMatches(prev =>
-          prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
-        );
-      })
-      .subscribe();
-    return () => supabase.removeChannel(sub);
-  }, [activeMatch?.id]);
-
-  // Helpers
   const isTraveler = (match) => match?.traveler_id === session.user.id;
   const isShipper = (match) => match?.shipper_id === session.user.id;
   const getOtherParty = (match) => isTraveler(match) ? match.shipper : match.traveler;
@@ -494,12 +493,6 @@ const requestCancellation = async () => {
     ? (isTraveler(activeMatch)
         ? activeMatch.terms_agreed_traveler
         : activeMatch.terms_agreed_shipper)
-    : false;
-
-  const otherTermsAgreed = activeMatch
-    ? (isTraveler(activeMatch)
-        ? activeMatch.terms_agreed_shipper
-        : activeMatch.terms_agreed_traveler)
     : false;
 
   const myCompleted = activeMatch
@@ -533,7 +526,7 @@ const requestCancellation = async () => {
   return (
     <div className="flex h-[calc(100vh-120px)] bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden animate-fade-in">
 
-      {/* ── Sidebar ── */}
+      {/* Sidebar */}
       <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-gray-100 flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
         <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div>
@@ -600,7 +593,7 @@ const requestCancellation = async () => {
         </div>
       </div>
 
-      {/* ── Chat area ── */}
+      {/* Chat area */}
       {activeMatch ? (
         <div className="flex-1 flex flex-col min-w-0">
 
@@ -658,10 +651,7 @@ const requestCancellation = async () => {
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-
-              {/* Agree Terms — shown when status is accepted and not yet agreed */}
               {activeMatch.status === 'accepted' && !myTermsAgreed && (
                 <button onClick={agreeToTerms}
                   className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition shadow-button">
@@ -669,7 +659,6 @@ const requestCancellation = async () => {
                 </button>
               )}
 
-              {/* Pay Escrow — shipper only, after terms agreed */}
               {isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
                 <button onClick={() => { setShowPayment(!showPayment); setShowCancelRequest(false); }}
                   className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -679,7 +668,6 @@ const requestCancellation = async () => {
                 </button>
               )}
 
-              {/* Upload Proof — traveler only, after escrow paid */}
               {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
                 <>
                   <button onClick={() => proofInputRef.current?.click()}
@@ -696,7 +684,6 @@ const requestCancellation = async () => {
                 </>
               )}
 
-              {/* Confirm Delivery — shown after proof uploaded */}
               {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && (
                 <button onClick={handleCompleteDeal}
                   disabled={submittingComplete || myCompleted}
@@ -712,7 +699,6 @@ const requestCancellation = async () => {
                 </button>
               )}
 
-              {/* Cancel */}
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
                 className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500 transition">
                 <XCircle size={12} /> Cancel
@@ -736,12 +722,10 @@ const requestCancellation = async () => {
             </span>
           </div>
 
-          {/* Context-sensitive safety notice */}
+          {/* Safety notice */}
           {activeMatch.status === 'accepted' && (
             <div className={`px-4 py-2.5 flex items-start gap-2 border-b flex-shrink-0 ${
-              isTraveler(activeMatch)
-                ? 'bg-amber-50/60 border-amber-100'
-                : 'bg-blue-50/60 border-blue-100'
+              isTraveler(activeMatch) ? 'bg-amber-50/60 border-amber-100' : 'bg-blue-50/60 border-blue-100'
             }`}>
               <span className="text-sm flex-shrink-0 mt-0.5">
                 {isTraveler(activeMatch) ? '⚠️' : 'ℹ️'}
@@ -776,10 +760,7 @@ const requestCancellation = async () => {
                 {activeMatch.terms_agreed_shipper ? '✓' : '○'} Shipper
               </span>
               <p className="text-amber-600 ml-auto text-right">
-                {!myTermsAgreed
-                  ? 'Click "Agree Terms" above to proceed'
-                  : 'Waiting for other party...'
-                }
+                {!myTermsAgreed ? 'Click "Agree Terms" above to proceed' : 'Waiting for other party...'}
               </p>
             </div>
           )}
@@ -819,9 +800,7 @@ const requestCancellation = async () => {
               />
               <div className="flex gap-2">
                 <button onClick={() => setShowCancelRequest(false)}
-                  className="flex-1 btn-secondary py-2 text-xs">
-                  Close
-                </button>
+                  className="flex-1 btn-secondary py-2 text-xs">Close</button>
                 <button onClick={requestCancellation}
                   disabled={!cancelReason.trim() || submittingCancel}
                   className="flex-1 bg-red-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-red-600 transition disabled:opacity-50">
@@ -837,16 +816,10 @@ const requestCancellation = async () => {
               <p className="text-sm font-bold text-amber-700 mb-1 flex items-center gap-1.5">
                 <AlertTriangle size={14} /> Cancellation Requested
               </p>
-              <p className="text-xs text-amber-600 mb-2">
-                Reason: {cancelRequest.reason}
-              </p>
+              <p className="text-xs text-amber-600 mb-2">Reason: {cancelRequest.reason}</p>
               <div className="flex gap-2">
-                <button onClick={rejectCancellation}
-                  className="flex-1 btn-secondary py-2 text-xs">
-                  Decline
-                </button>
-                <button onClick={agreeCancellation}
-                  disabled={submittingCancel}
+                <button onClick={rejectCancellation} className="flex-1 btn-secondary py-2 text-xs">Decline</button>
+                <button onClick={agreeCancellation} disabled={submittingCancel}
                   className="flex-1 bg-amber-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-amber-600 transition disabled:opacity-50">
                   {submittingCancel ? 'Processing...' : 'Agree to Cancel'}
                 </button>
@@ -867,7 +840,6 @@ const requestCancellation = async () => {
                 msg.content?.startsWith('🔒') ||
                 msg.content?.startsWith('📸');
 
-              // Proof image message
               if (msg.content?.startsWith('📸 PROOF UPLOADED:')) {
                 const url = msg.content.replace('📸 PROOF UPLOADED: ', '');
                 return (
@@ -884,7 +856,6 @@ const requestCancellation = async () => {
                 );
               }
 
-              // System message
               if (isSystem) {
                 return (
                   <div key={msg.id} className="flex justify-center">
@@ -895,7 +866,6 @@ const requestCancellation = async () => {
                 );
               }
 
-              // Regular message
               return (
                 <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
@@ -912,9 +882,7 @@ const requestCancellation = async () => {
                       {msg.content}
                     </div>
                     <p className={`text-xs text-gray-400 mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
-                      {new Date(msg.created_at).toLocaleTimeString([], {
-                        hour: '2-digit', minute: '2-digit'
-                      })}
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
