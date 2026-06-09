@@ -57,17 +57,36 @@ const Matches = ({ session }) => {
 
   const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
-    const match = matches.find(m => m.id === matchId);
-    const isTrav = match.traveler_id === session.user.id;
+
+    // Always re-fetch the match fresh from DB before deciding
+    // This prevents stale local state causing the "nothing happens" bug
+    const { data: freshMatch } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('id', matchId)
+      .single();
+
+    if (!freshMatch) {
+      setActing(prev => ({ ...prev, [matchId]: null }));
+      return;
+    }
+
+    const isTrav = freshMatch.traveler_id === session.user.id;
     const myField = isTrav ? 'traveler_accepted' : 'shipper_accepted';
-    const otherAccepted = isTrav ? match.shipper_accepted : match.traveler_accepted;
+    const otherAccepted = isTrav
+      ? freshMatch.shipper_accepted
+      : freshMatch.traveler_accepted;
 
     if (otherAccepted) {
-      // Both accepted — move to accepted, open chat
+      // Both accepted — move to accepted and open chat
       await supabase.from('matches').update({
         [myField]: true,
         status: 'accepted',
         deal_stage: 'matched',
+        terms_agreed_traveler: false,
+        terms_agreed_shipper: false,
+        traveler_completed: false,
+        shipper_completed: false,
       }).eq('id', matchId);
 
       await supabase.from('messages').insert([{
@@ -77,14 +96,13 @@ const Matches = ({ session }) => {
         is_read: false,
       }]);
     } else {
-      // First to accept — stay visible with awaiting_other status
+      // First to accept — show awaiting badge
       await supabase.from('matches').update({
         [myField]: true,
         status: 'awaiting_other',
       }).eq('id', matchId);
     }
 
-    // Refresh but do NOT remove from list
     await fetchMatches();
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -110,8 +128,6 @@ const Matches = ({ session }) => {
     return data?.publicUrl;
   };
 
-  // Fetchr takes a cut FROM the traveler's share
-  // Shipper always pays exactly the agreed price — no additions
   const getFeePreview = (match) => {
     const agreedPrice = (match.flight?.price_per_kg || 0) *
       (match.request?.weight_kg || 0);
@@ -170,53 +186,62 @@ const Matches = ({ session }) => {
           {matches.map(match => {
             const other = getOtherParty(match);
             const avatarUrl = getAvatarUrl(other);
-            const myAccepted = isTraveler(match)
+            const fees = getFeePreview(match);
+
+            // Derive acceptance state from DB fields (not status string)
+            const iAmTraveler = isTraveler(match);
+            const iHaveAccepted = iAmTraveler
               ? match.traveler_accepted
               : match.shipper_accepted;
-            const otherAccepted = isTraveler(match)
+            const otherHasAccepted = iAmTraveler
               ? match.shipper_accepted
               : match.traveler_accepted;
-            const fees = getFeePreview(match);
 
             return (
               <div key={match.id}
                 className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
 
-                {/* Match score bar */}
+                {/* Match score bar — capped at 100% width */}
                 <div className={`h-1 ${
                   match.match_score >= 90
                     ? 'bg-gradient-to-r from-emerald-400 to-green-500'
                     : match.match_score >= 75
                       ? 'bg-gradient-to-r from-blue-400 to-indigo-500'
                       : 'bg-gradient-to-r from-amber-400 to-orange-500'
-                }`} style={{ width: `${match.match_score}%` }} />
+                }`} style={{ width: `${Math.min(match.match_score, 100)}%` }} />
 
                 <div className="p-5">
 
-                  {/* Header badges */}
+                  {/* Header badges — correct per-party logic */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`badge ${getScoreBadge(match.match_score)}`}>
-                        <Zap size={10} /> {match.match_score}% Match
+                      <span className={`badge ${getScoreBadge(Math.min(match.match_score, 100))}`}>
+                        <Zap size={10} /> {Math.min(match.match_score, 100)}% Match
                       </span>
-                      {match.status === 'awaiting_other' && (
+
+                      {/* I have accepted, waiting for other */}
+                      {iHaveAccepted && !otherHasAccepted && (
                         <span className="badge badge-yellow">
-                          <Clock size={10} /> Awaiting other party
+                          <Clock size={10} /> Waiting for {iAmTraveler ? 'shipper' : 'traveler'}
                         </span>
                       )}
-                      {myAccepted && (
+
+                      {/* Other party accepted, waiting for me */}
+                      {otherHasAccepted && !iHaveAccepted && (
+                        <span className="badge badge-blue">
+                          <Clock size={10} /> {iAmTraveler ? 'Shipper' : 'Traveler'} accepted — your turn!
+                        </span>
+                      )}
+
+                      {/* I accepted */}
+                      {iHaveAccepted && (
                         <span className="badge badge-green">
                           <CheckCircle size={10} /> You accepted
                         </span>
                       )}
-                      {otherAccepted && !myAccepted && (
-                        <span className="badge badge-blue">
-                          <Clock size={10} /> Other party accepted
-                        </span>
-                      )}
                     </div>
-                    <span className={`badge ${isTraveler(match) ? 'badge-blue' : 'badge-purple'}`}>
-                      {isTraveler(match) ? '✈️ Traveler' : '📦 Shipper'}
+                    <span className={`badge ${iAmTraveler ? 'badge-blue' : 'badge-purple'}`}>
+                      {iAmTraveler ? '✈️ Traveler' : '📦 Shipper'}
                     </span>
                   </div>
 
@@ -264,7 +289,7 @@ const Matches = ({ session }) => {
                     </div>
                   )}
 
-                  {/* Fee preview — CORRECT logic */}
+                  {/* Fee preview */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                       Deal Preview
@@ -349,7 +374,7 @@ const Matches = ({ session }) => {
                   )}
 
                   {/* Actions */}
-                  {!myAccepted ? (
+                  {!iHaveAccepted ? (
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleDecline(match.id)}
@@ -361,16 +386,25 @@ const Matches = ({ session }) => {
                       <button
                         onClick={() => handleAccept(match.id)}
                         disabled={!!acting[match.id]}
-                        className="flex-[2] flex items-center justify-center gap-2 btn-primary py-3 rounded-xl text-sm disabled:opacity-50">
+                        className={`flex-[2] flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all ${
+                          otherHasAccepted
+                            ? 'bg-emerald-500 text-white hover:bg-emerald-600 animate-pulse'
+                            : 'btn-primary'
+                        }`}>
                         <CheckCircle size={16} />
-                        {acting[match.id] === 'accepting' ? 'Accepting...' : 'Accept Match'}
+                        {acting[match.id] === 'accepting'
+                          ? 'Accepting...'
+                          : otherHasAccepted
+                            ? '✅ Confirm & Start Chat'
+                            : 'Accept Match'
+                        }
                       </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 bg-emerald-50 rounded-xl p-3.5 border border-emerald-100">
                       <CheckCircle size={18} className="text-emerald-500 flex-shrink-0" />
                       <p className="text-sm text-emerald-700 font-semibold">
-                        You accepted — waiting for {isTraveler(match) ? 'shipper' : 'traveler'} to confirm
+                        You accepted — waiting for {iAmTraveler ? 'shipper' : 'traveler'} to confirm
                       </p>
                     </div>
                   )}
