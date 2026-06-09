@@ -263,11 +263,10 @@ Deno.serve(async (req) => {
       if (subtotalUSD >= 500) fetchrPct = 0.07
       else if (subtotalUSD >= 200) fetchrPct = 0.085
       else if (subtotalUSD < 20) fetchrPct = 0.12
-      const fetchrFeeUSD = subtotalUSD * fetchrPct
-      const fetchrFeeCents = Math.round(fetchrFeeUSD * 100)
-      const stripeFeeUSD = (subtotalUSD + fetchrFeeUSD) * 0.029 + 0.30
-      const stripeFeeCents = Math.round(stripeFeeUSD * 100)
-      const totalCents = Math.round(subtotalUSD * 100) + fetchrFeeCents + stripeFeeCents
+const fetchrFeeUSD = subtotalUSD * fetchrPct
+      const travelerReceivesUSD = subtotalUSD - fetchrFeeUSD
+      // Shipper pays only the deal value — Fetchr fee deducted from traveler payout
+      const totalCents = Math.round(subtotalUSD * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const paymentIntent = await stripe.paymentIntents.create({
         amount: totalCents, currency,
@@ -276,8 +275,8 @@ Deno.serve(async (req) => {
         metadata: {
           match_id: matchId,
           subtotal_cents: Math.round(subtotalUSD * 100).toString(),
-          fetchr_fee_cents: fetchrFeeCents.toString(),
-          stripe_fee_cents: stripeFeeCents.toString(),
+fetchr_fee_cents: Math.round(fetchrFeeUSD * 100).toString(),
+          traveler_receives_cents: Math.round(travelerReceivesUSD * 100).toString(),
           fetchr_pct: Math.round(fetchrPct * 100).toString(),
           traveler_id: match.traveler_id,
           shipper_id: match.shipper_id,
