@@ -5,7 +5,7 @@ import {
   XCircle, AlertTriangle, ChevronDown, MessageCircle,
   Camera, Lock, Info, X, Edit2, ShoppingBag, MapPin, Phone
 } from 'lucide-react';
-import EscrowPayment from './EscrowPayment';
+import EscrowPayment, { ProofUploadModal, calcFees } from './EscrowPayment';
 
 const STAGES = [
   { id: 'matched', label: 'Matched', icon: '🤝' },
@@ -23,6 +23,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
     agreed_price_per_kg: match.agreed_price_per_kg || match.flight?.price_per_kg || '',
     agreed_weight_kg: match.agreed_weight_kg || match.request?.weight_kg || '',
     agreed_notes: match.agreed_notes || '',
+    agreed_shop_fee: match.agreed_shop_fee || match.flight?.shop_and_ship_fee || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -46,6 +47,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
       agreed_price_per_kg: parseFloat(form.agreed_price_per_kg) || null,
       agreed_weight_kg: parseFloat(form.agreed_weight_kg) || null,
       agreed_notes: form.agreed_notes || null,
+      agreed_shop_fee: isPurchase ? (parseFloat(form.agreed_shop_fee) || null) : null,
       terms_agreed_traveler: false,
       terms_agreed_shipper: false,
       status: 'accepted',
@@ -247,6 +249,18 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                     className="input-field py-2.5" />
                 </div>
               </div>
+              {isPurchase && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+                    Shop & Ship Service Fee ($) <span className="text-blue-400 font-normal normal-case">— traveler's fee for purchasing the item</span>
+                  </label>
+                  <input type="number" min="0" step="0.5" placeholder="e.g. 15.00"
+                    value={form.agreed_shop_fee}
+                    onChange={e => setForm({ ...form, agreed_shop_fee: e.target.value })}
+                    className="input-field py-2.5" />
+                  <p className="text-xs text-gray-400 mt-1">This is the traveler's service fee for going to the store and buying the item. Fetchr fee applies to this amount too.</p>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Notes</label>
                 <textarea rows={2} placeholder="Any agreed conditions..."
@@ -341,8 +355,8 @@ const Messages = ({ session }) => {
   const [showSidebar, setShowSidebar] = useState(true);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [showDealDetails, setShowDealDetails] = useState(false);
+  const [showProofModal, setShowProofModal] = useState(false);
   const messagesEndRef = useRef(null);
-  const proofInputRef = useRef(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
@@ -714,6 +728,19 @@ const Messages = ({ session }) => {
           onSaveAmendment={(updates) => { setActiveMatch(prev => ({ ...prev, ...updates })); setShowDealDetails(false); fetchMessages(activeMatch.id); }} />
       )}
 
+      {showProofModal && activeMatch && (
+        <ProofUploadModal
+          match={activeMatch}
+          session={session}
+          onClose={() => setShowProofModal(false)}
+          onUploaded={(url) => {
+            setShowProofModal(false);
+            setActiveMatch(prev => ({ ...prev, proof_photo_url: url, status: 'proof_uploaded', deal_stage: 'proof_uploaded' }));
+            fetchMessages(activeMatch.id);
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-gray-100 flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
         <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
@@ -827,14 +854,10 @@ const Messages = ({ session }) => {
 
               {/* Upload Proof — traveler only */}
               {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
-                <>
-                  <button onClick={() => proofInputRef.current?.click()} disabled={uploadingProof}
-                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-blue-500 text-white hover:bg-blue-600 transition disabled:opacity-50">
-                    {uploadingProof ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Camera size={12} />}
-                    Upload Proof
-                  </button>
-                  <input ref={proofInputRef} type="file" accept="image/*" onChange={e => uploadProof(e.target.files?.[0])} className="hidden" />
-                </>
+                <button onClick={() => setShowProofModal(true)}
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-blue-500 text-white hover:bg-blue-600 transition">
+                  <Camera size={12} /> Upload Proof
+                </button>
               )}
 
               {/* Confirm Delivery */}
@@ -947,16 +970,30 @@ const Messages = ({ session }) => {
                 msg.content?.startsWith('❌') || msg.content?.startsWith('🔒') ||
                 msg.content?.startsWith('📸') || msg.content?.startsWith('✏️');
 
-              if (msg.content?.startsWith('📸 PROOF UPLOADED:')) {
-                const url = msg.content.replace('📸 PROOF UPLOADED: ', '');
+              if (msg.content?.includes('PROOF_IMAGE_1:') || msg.content?.startsWith('📸 PROOF UPLOADED:')) {
+                // Parse proof images — could be single URL or multi-image format
+                const lines = msg.content.split('\n');
+                const imageUrls = lines
+                  .filter(l => l.startsWith('PROOF_IMAGE_') || l.startsWith('📸 PROOF UPLOADED: http'))
+                  .map(l => l.includes('PROOF_IMAGE_') ? l.split(':').slice(1).join(':').trim() : l.replace('📸 PROOF UPLOADED: ', '').trim());
+                const notes = lines.find(l => l.startsWith('Notes:'))?.replace('Notes: ', '');
+                if (imageUrls.length === 0 && msg.content.startsWith('📸 PROOF UPLOADED:')) {
+                  imageUrls.push(msg.content.replace('📸 PROOF UPLOADED:', '').split('\n')[0].trim());
+                }
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 max-w-xs text-center">
-                      <p className="text-xs font-bold text-blue-700 mb-2">📸 Delivery Proof</p>
-                      <a href={url} target="_blank" rel="noreferrer">
-                        <img src={url} alt="Proof" className="rounded-xl w-full h-36 object-cover hover:opacity-90 transition" />
-                      </a>
-                      <p className="text-xs text-blue-500 mt-1">Tap to view full size</p>
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 max-w-sm w-full">
+                      <p className="text-xs font-bold text-blue-700 mb-3">📸 Delivery Proof Submitted</p>
+                      <div className={`grid gap-2 mb-3 ${imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {imageUrls.filter(Boolean).map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            <img src={url} alt={`Proof ${i + 1}`}
+                              className="rounded-xl w-full h-32 object-cover hover:opacity-90 transition border border-blue-200" />
+                          </a>
+                        ))}
+                      </div>
+                      {notes && <p className="text-xs text-blue-600 italic">"{notes}"</p>}
+                      <p className="text-xs text-blue-400 mt-1">Tap photos to view full size</p>
                     </div>
                   </div>
                 );

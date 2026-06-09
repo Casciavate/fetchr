@@ -1,83 +1,336 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
-import { Shield, CreditCard, DollarSign, CheckCircle, AlertTriangle, Lock } from 'lucide-react';
+import {
+  Shield, CheckCircle, AlertTriangle, Lock,
+  DollarSign, Package, Plane, ShoppingBag, Camera, X, Upload
+} from 'lucide-react';
 
-const EscrowPayment = ({ match, session, onPaymentComplete }) => {
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+
+const CARD_ELEMENT_OPTIONS = {
+  style: {
+    base: {
+      fontSize: '14px',
+      fontFamily: 'Inter, sans-serif',
+      color: '#1f2937',
+      '::placeholder': { color: '#9ca3af' },
+      iconColor: '#7c3aed',
+    },
+    invalid: { color: '#ef4444', iconColor: '#ef4444' },
+  },
+  hidePostalCode: true,
+};
+
+// ── Fee calculator (correct logic) ──
+// Fetchr fee = % of (delivery fee + shop & ship fee)  [NOT on purchase price]
+// Shipper pays = delivery fee + shop & ship fee + item purchase price
+// Traveler receives = delivery fee + shop & ship fee - Fetchr fee + item purchase price
+export const calcFees = (match) => {
+  const pricePerKg = parseFloat(match.agreed_price_per_kg || match.flight?.price_per_kg || 0);
+  const weightKg = parseFloat(match.agreed_weight_kg || match.request?.weight_kg || 0);
+  const deliveryFee = pricePerKg * weightKg;
+
+  const isPurchase = !!(match.request?.requires_purchase);
+  const purchasePrice = isPurchase ? (parseFloat(match.request?.purchase_price) || 0) : 0;
+
+  // Shop & ship fee — traveler-defined service fee for going to buy the item
+  // Stored on agreed_shop_fee (set during deal amendment) or flight's shop_and_ship_fee
+  const shopFee = isPurchase
+    ? (parseFloat(match.agreed_shop_fee || match.flight?.shop_and_ship_fee) || 0)
+    : 0;
+
+  // Fetchr fee applies to delivery + shop fee only
+  const fetchrBase = deliveryFee + shopFee;
+  let fetchrPct = 0.10;
+  if (fetchrBase >= 500) fetchrPct = 0.07;
+  else if (fetchrBase >= 200) fetchrPct = 0.085;
+  else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12;
+
+  const fetchrFee = fetchrBase * fetchrPct;
+
+  // What shipper pays total
+  const totalShipperPays = deliveryFee + shopFee + purchasePrice;
+
+  // What traveler receives
+  const travelerReceives = deliveryFee + shopFee - fetchrFee + purchasePrice;
+
+  // Amount held in escrow (what Stripe charges — does NOT include item purchase price
+  // as that's a separate reimbursement; but for simplicity we hold total)
+  const escrowAmount = totalShipperPays;
+
+  return {
+    deliveryFee,
+    shopFee,
+    purchasePrice,
+    fetchrBase,
+    fetchrFee,
+    fetchrPct,
+    totalShipperPays,
+    travelerReceives,
+    escrowAmount,
+    isPurchase,
+  };
+};
+
+// ── Proof Upload Modal ──
+export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
+  const [notes, setNotes] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+  const isPurchase = match.request?.requires_purchase;
+
+  const handleFileChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    const valid = selected.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
+    if (valid.length !== selected.length) setError('Some files were skipped (images only, max 10MB each)');
+    else setError('');
+    setFiles(prev => [...prev, ...valid].slice(0, 5));
+    const newPreviews = valid.map(f => URL.createObjectURL(f));
+    setPreviews(prev => [...prev, ...newPreviews].slice(0, 5));
+  };
+
+  const removeFile = (i) => {
+    setFiles(prev => prev.filter((_, idx) => idx !== i));
+    setPreviews(prev => prev.filter((_, idx) => idx !== i));
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) { setError('Please select at least one photo.'); return; }
+    setUploading(true); setError('');
+    try {
+      const uploadedUrls = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = `proofs/${match.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('avatars').upload(path, file, { upsert: true });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+        uploadedUrls.push(urlData.publicUrl);
+      }
+
+      const primaryUrl = uploadedUrls[0];
+      const allUrls = uploadedUrls.join('\n');
+
+      // Update match
+      await supabase.from('matches').update({
+        proof_photo_url: primaryUrl,
+        proof_uploaded_at: new Date().toISOString(),
+        status: 'proof_uploaded',
+        deal_stage: 'proof_uploaded',
+        proof_notes: notes || null,
+      }).eq('id', match.id);
+
+      // Post message with all proof images
+      const content = [
+        `📸 PROOF UPLOADED:`,
+        ...uploadedUrls.map((url, i) => `PROOF_IMAGE_${i + 1}:${url}`),
+        notes ? `Notes: ${notes}` : null,
+      ].filter(Boolean).join('\n');
+
+      await supabase.from('messages').insert([{
+        match_id: match.id,
+        sender_id: session.user.id,
+        content,
+        is_read: false,
+      }]);
+
+      onUploaded(primaryUrl);
+    } catch (e) {
+      setError(e.message || 'Upload failed. Please try again.');
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
+      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Upload Delivery Proof</h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+            <p className="text-xs font-bold text-blue-700 mb-1">What to upload</p>
+            <ul className="text-xs text-blue-600 space-y-0.5">
+              <li>📦 Photo of the item received</li>
+              {isPurchase && <li>🧾 Purchase receipt from the store</li>}
+              {isPurchase && <li>📸 Photo of the purchased item</li>}
+              <li>✅ Any other proof of delivery</li>
+            </ul>
+          </div>
+
+          {/* Photo picker */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+              Photos (up to 5)
+            </label>
+            {previews.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {previews.map((url, i) => (
+                  <div key={i} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => removeFile(i)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <X size={10} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+                {previews.length < 5 && (
+                  <button onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-200 rounded-xl aspect-square flex items-center justify-center hover:border-violet-300 hover:bg-violet-50 transition">
+                    <Camera size={20} className="text-gray-300" />
+                  </button>
+                )}
+              </div>
+            )}
+            {previews.length === 0 && (
+              <button onClick={() => fileInputRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 hover:border-violet-300 hover:bg-violet-50 transition">
+                <Upload size={24} className="text-gray-300" />
+                <p className="text-sm text-gray-400 font-medium">Tap to select photos</p>
+                <p className="text-xs text-gray-300">JPG, PNG · Max 10MB each</p>
+              </button>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*" multiple
+              onChange={handleFileChange} className="hidden" />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            </label>
+            <textarea
+              placeholder={isPurchase
+                ? "e.g. Item purchased from Apple Store, receipt included..."
+                : "e.g. Item delivered in perfect condition..."}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={2}
+              className="input-field resize-none text-sm"
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
+              <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
+            <button onClick={handleUpload}
+              disabled={uploading || files.length === 0}
+              className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+              {uploading
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</>
+                : <><Upload size={15} /> Submit Proof</>
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main Escrow Payment Component ──
+const EscrowInner = ({ match, session, onPaymentComplete }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [cardReady, setCardReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '', name: '' });
-  const [paymentMethod, setPaymentMethod] = useState('card'); // 'card' or 'wallet'
+  const [profile, setProfile] = useState(null);
+  const [useNewCard, setUseNewCard] = useState(false);
 
-  const subtotal = (match.flight?.price_per_kg || 0) * (match.request?.weight_kg || 0);
-  let fetchrPct = 0.10;
-  if (subtotal >= 500) fetchrPct = 0.07;
-  else if (subtotal >= 200) fetchrPct = 0.085;
-  else if (subtotal < 20) fetchrPct = 0.12;
-  const fetchrFee = subtotal * fetchrPct;
-  const stripeFee = (subtotal + fetchrFee) * 0.029 + 0.30;
-  const totalCharged = subtotal + fetchrFee + stripeFee;
-  const travelerReceives = subtotal - fetchrFee;
+  const fees = calcFees(match);
 
-  const walletBalance = 0; // Would come from profile in real implementation
-  const canUseWallet = walletBalance >= totalCharged;
+  useEffect(() => {
+    supabase.from('profiles').select('*')
+      .eq('id', session.user.id).single()
+      .then(({ data }) => { if (data) setProfile(data); });
+  }, [session.user.id]);
 
-  const formatCard = (v) => v.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim().slice(0, 19);
-  const formatExp = (v) => v.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5);
+  const hasSavedCard = !!(profile?.stripe_payment_method_id);
+  const showCardForm = !hasSavedCard || useNewCard;
+
+  const callStripe = async (action, data) => {
+    const { data: { session: auth } } = await supabase.auth.getSession();
+    const res = await fetch(
+      'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+        body: JSON.stringify({ action, data }),
+      }
+    );
+    const result = await res.json();
+    if (!res.ok || result.error) throw new Error(result.error || 'Payment failed');
+    return result;
+  };
 
   const handlePay = async () => {
-    if (paymentMethod === 'card') {
-      if (!cardDetails.number || !cardDetails.expiry || !cardDetails.cvc || !cardDetails.name) {
-        setError('Please fill all card details.'); return;
-      }
-    }
+    if (!stripe || !elements) return;
+    if (showCardForm && !cardReady) { setError('Card form not ready.'); return; }
     setLoading(true); setError('');
 
     try {
-      const { data: { session: authSession } } = await supabase.auth.getSession();
+      // Send amount in DOLLARS — edge function does *100 conversion
+      const amountDollars = fees.escrowAmount;
 
-      const res = await fetch(
-        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authSession.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'create_payment_intent',
-            data: {
-              matchId: match.id,
-              amount: Math.round(subtotal * 100), // in cents
-              currency: 'usd',
-            }
-          })
-        }
+      let paymentMethodId = null;
+
+      if (showCardForm) {
+        const cardElement = elements.getElement(CardElement);
+        const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+          type: 'card', card: cardElement,
+        });
+        if (pmError) throw new Error(pmError.message);
+        paymentMethodId = paymentMethod.id;
+      } else {
+        paymentMethodId = profile.stripe_payment_method_id;
+      }
+
+      // Call edge function — sends dollars, edge function converts to cents
+      const result = await callStripe('create_payment_intent', {
+        matchId: match.id,
+        amount: amountDollars,  // DOLLARS
+        currency: 'usd',
+        paymentMethodId,
+      });
+
+      if (!result.clientSecret) throw new Error('No client secret returned');
+
+      // Confirm the payment
+      const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(
+        result.clientSecret,
+        { payment_method: paymentMethodId }
       );
-
-      const result = await res.json();
-      if (!res.ok || result.error) throw new Error(result.error || 'Payment failed');
+      if (confirmError) throw new Error(confirmError.message);
+      if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
+        throw new Error(`Unexpected payment status: ${paymentIntent.status}`);
+      }
 
       setSuccess(true);
-      setTimeout(() => onPaymentComplete?.(), 2000);
+      setTimeout(() => onPaymentComplete?.(), 1500);
+
     } catch (e) {
       setError(e.message || 'Payment failed. Please try again.');
     }
     setLoading(false);
   };
-
-  if (success) return (
-    <div className="p-6 text-center">
-      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <CheckCircle size={32} className="text-emerald-500" />
-      </div>
-      <p className="text-lg font-bold text-gray-900 mb-1">Escrow Secured!</p>
-      <p className="text-sm text-gray-500">
-        ${totalCharged.toFixed(2)} is now held securely.
-        The traveler will receive ${travelerReceives.toFixed(2)} upon confirmed delivery.
-      </p>
-    </div>
-  );
 
   if (match.status === 'in_escrow') return (
     <div className="p-6 text-center">
@@ -86,12 +339,23 @@ const EscrowPayment = ({ match, session, onPaymentComplete }) => {
       </div>
       <p className="text-base font-bold text-gray-900 mb-1">Escrow Active</p>
       <p className="text-sm text-gray-500 mb-3">
-        ${totalCharged.toFixed(2)} is secured. Awaiting delivery confirmation.
+        ${fees.escrowAmount.toFixed(2)} secured. Traveler receives ${fees.travelerReceives.toFixed(2)} upon confirmed delivery.
       </p>
       <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700 border border-blue-100">
-        <p className="font-bold mb-1">What happens next:</p>
-        <p>Once both parties confirm delivery, ${travelerReceives.toFixed(2)} will be released to the traveler's wallet automatically.</p>
+        Funds released automatically once both parties confirm delivery.
       </div>
+    </div>
+  );
+
+  if (success) return (
+    <div className="p-6 text-center">
+      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+        <CheckCircle size={32} className="text-emerald-500" />
+      </div>
+      <p className="text-lg font-bold text-gray-900 mb-1">Escrow Secured!</p>
+      <p className="text-sm text-gray-500">
+        ${fees.escrowAmount.toFixed(2)} held securely. Traveler receives ${fees.travelerReceives.toFixed(2)} upon delivery.
+      </p>
     </div>
   );
 
@@ -103,93 +367,106 @@ const EscrowPayment = ({ match, session, onPaymentComplete }) => {
       </div>
 
       <div className="text-xs text-gray-500 leading-relaxed bg-violet-50 rounded-xl p-3 border border-violet-100">
-        Your payment is held securely by Fetchr. Funds are only released to the traveler after you both confirm delivery. If anything goes wrong, we refund you.
+        Payment is held securely. Released to the traveler only after both parties confirm delivery.
       </div>
 
-      {/* Fee breakdown */}
-      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-        <div className="flex justify-between p-3 text-sm">
-          <span className="text-gray-500">Shipping ({match.request?.weight_kg}kg × ${match.flight?.price_per_kg}/kg)</span>
-          <span className="font-semibold">${subtotal.toFixed(2)}</span>
+      {/* Full breakdown */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
+          <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Payment Breakdown</p>
         </div>
-        <div className="flex justify-between p-3 text-sm">
-          <span className="text-gray-500">Fetchr service fee ({Math.round(fetchrPct * 100)}%)</span>
-          <span className="font-semibold">${fetchrFee.toFixed(2)}</span>
+
+        <div className="px-4 py-3 space-y-2 text-sm border-b border-gray-100">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Plane size={12} className="text-violet-500" />
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Delivery Service</p>
+          </div>
+          <div className="flex justify-between text-gray-600">
+            <span>{match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
+            <span className="font-semibold">${fees.deliveryFee.toFixed(2)}</span>
+          </div>
+          {fees.isPurchase && fees.shopFee > 0 && (
+            <div className="flex justify-between text-gray-600">
+              <span className="flex items-center gap-1"><ShoppingBag size={11} /> Shop & ship service fee</span>
+              <span className="font-semibold">${fees.shopFee.toFixed(2)}</span>
+            </div>
+          )}
+          {fees.isPurchase && fees.shopFee === 0 && (
+            <div className="flex justify-between text-amber-600 text-xs">
+              <span>⚠️ Shop & ship fee (not yet agreed)</span>
+              <span>TBD</span>
+            </div>
+          )}
+          <div className="flex justify-between text-red-400 text-xs pt-1 border-t border-gray-100">
+            <span>Fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on delivery{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
+            <span>−${fees.fetchrFee.toFixed(2)}</span>
+          </div>
         </div>
-        <div className="flex justify-between p-3 text-sm">
-          <span className="text-gray-500">Processing fee</span>
-          <span className="font-semibold">${stripeFee.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between p-3 text-sm font-bold">
-          <span className="text-gray-900">Total charged to you</span>
-          <span className="text-violet-700">${totalCharged.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between p-3 text-sm">
-          <span className="text-emerald-600 font-medium">Traveler receives (on delivery)</span>
-          <span className="text-emerald-600 font-bold">${travelerReceives.toFixed(2)}</span>
+
+        {fees.isPurchase && fees.purchasePrice > 0 && (
+          <div className="px-4 py-3 space-y-2 text-sm border-b border-gray-100">
+            <div className="flex items-center gap-1.5 mb-2">
+              <ShoppingBag size={12} className="text-blue-500" />
+              <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Item Purchase</p>
+            </div>
+            <div className="flex justify-between text-gray-600">
+              <span>Item purchase price (reimbursed to traveler)</span>
+              <span className="font-semibold">${fees.purchasePrice.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="px-4 py-3 bg-violet-50 space-y-1.5">
+          <div className="flex justify-between font-bold text-violet-700 text-base">
+            <span>Total you pay</span>
+            <span>${fees.totalShipperPays.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-emerald-600 text-sm font-semibold">
+            <span>Traveler receives on delivery</span>
+            <span>${fees.travelerReceives.toFixed(2)}</span>
+          </div>
+          <p className="text-xs text-gray-400 pt-1">
+            Held in escrow. Released automatically when both parties confirm delivery.
+          </p>
         </div>
       </div>
 
-      {/* Payment method */}
-      <div className="grid grid-cols-2 gap-2">
-        {[
-          { id: 'card', label: '💳 Card', available: true },
-          { id: 'wallet', label: `💰 Wallet ($${walletBalance.toFixed(0)})`, available: canUseWallet },
-        ].map(opt => (
-          <button key={opt.id}
-            onClick={() => opt.available && setPaymentMethod(opt.id)}
-            disabled={!opt.available}
-            className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${
-              paymentMethod === opt.id
-                ? 'border-violet-400 bg-violet-50 text-violet-700'
-                : opt.available
-                  ? 'border-gray-200 text-gray-600 hover:border-violet-200'
-                  : 'border-gray-100 text-gray-300 cursor-not-allowed'
-            }`}>
-            {opt.label}
-            {!opt.available && opt.id === 'wallet' && (
-              <p className="text-xs font-normal mt-0.5">Insufficient balance</p>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Saved card selector */}
+      {hasSavedCard && (
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Method</label>
+          {[
+            { val: false, label: `${profile?.payout_card_brand ? profile.payout_card_brand.charAt(0).toUpperCase() + profile.payout_card_brand.slice(1) : 'Card'} ****${profile?.payout_card_last4}`, sub: 'Saved card', icon: '💳' },
+            { val: true, label: 'Use a different card', sub: 'Enter new card details', icon: '➕' },
+          ].map(opt => (
+            <button key={String(opt.val)} type="button"
+              onClick={() => { setUseNewCard(opt.val); setError(''); }}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${useNewCard === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
+              <span className="text-xl">{opt.icon}</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-gray-800">{opt.label}</p>
+                <p className="text-xs text-gray-400">{opt.sub}</p>
+              </div>
+              {useNewCard === opt.val && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Card details */}
-      {paymentMethod === 'card' && (
-        <div className="space-y-2.5">
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Name on Card</label>
-            <input type="text" placeholder="John Smith" value={cardDetails.name}
-              onChange={e => setCardDetails({ ...cardDetails, name: e.target.value })}
-              className="input-field" />
+      {/* Card input */}
+      {showCardForm && (
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Card Details</label>
+          <div className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white">
+            <CardElement
+              options={{ ...CARD_ELEMENT_OPTIONS, wallets: { link: 'never' } }}
+              onReady={() => setCardReady(true)}
+            />
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Card Number</label>
-            <div className="relative">
-              <CreditCard size={14} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-              <input type="text" placeholder="4242 4242 4242 4242"
-                value={cardDetails.number}
-                onChange={e => setCardDetails({ ...cardDetails, number: formatCard(e.target.value) })}
-                className="input-field pl-9" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Expiry</label>
-              <input type="text" placeholder="MM/YY" value={cardDetails.expiry}
-                onChange={e => setCardDetails({ ...cardDetails, expiry: formatExp(e.target.value) })}
-                className="input-field" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">CVC</label>
-              <input type="text" placeholder="123" maxLength={4}
-                value={cardDetails.cvc}
-                onChange={e => setCardDetails({ ...cardDetails, cvc: e.target.value.replace(/\D/g, '') })}
-                className="input-field" />
-            </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+            <Lock size={10} /> Encrypted by Stripe · never stored on Fetchr servers
+          </p>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
             <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
             <p className="text-xs text-amber-600 mt-0.5">
               Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC
@@ -205,19 +482,26 @@ const EscrowPayment = ({ match, session, onPaymentComplete }) => {
         </div>
       )}
 
-      <button onClick={handlePay} disabled={loading}
-        className="w-full btn-primary py-3.5 disabled:opacity-50">
+      <button onClick={handlePay}
+        disabled={loading || !stripe || (showCardForm && !cardReady)}
+        className="w-full btn-primary py-3.5 disabled:opacity-50 flex items-center justify-center gap-2">
         {loading
           ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
-          : <><Lock size={15} /> Pay ${totalCharged.toFixed(2)} into Escrow</>
+          : <><Lock size={15} /> Pay ${fees.totalShipperPays.toFixed(2)} into Escrow</>
         }
       </button>
 
       <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
-        <Shield size={11} /> Protected by Fetchr Secure Escrow · Powered by Stripe
+        <Shield size={11} /> Fetchr Secure Escrow · Powered by Stripe
       </p>
     </div>
   );
 };
+
+const EscrowPayment = ({ match, session, onPaymentComplete }) => (
+  <Elements stripe={stripePromise}>
+    <EscrowInner match={match} session={session} onPaymentComplete={onPaymentComplete} />
+  </Elements>
+);
 
 export default EscrowPayment;
