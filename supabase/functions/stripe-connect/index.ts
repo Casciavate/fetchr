@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       const { amount, paymentMethodId } = data
       if (!amount || amount <= 0) throw new Error('Invalid amount')
       if (!paymentMethodId) throw new Error('No payment method provided')
-      const amountCents = Math.round(amount * 100)
+      const amountCents = Math.round(data.amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email)
       try {
         await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId })
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     if (action === 'create_topup_intent') {
       const { amount, paymentMethodId } = data
       if (!amount || amount <= 0) throw new Error('Invalid amount')
-      const amountCents = Math.round(amount * 100)
+      const amountCents = Math.round(data.amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountCents,
