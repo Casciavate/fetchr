@@ -37,7 +37,6 @@ const Messages = ({ session }) => {
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
 const fetchMatches = async () => {
-    setLoading(true);
     const { data } = await supabase
       .from('matches')
       .select(`*, flight:flights(*), request:shipment_requests(*),
@@ -47,19 +46,61 @@ const fetchMatches = async () => {
       .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
       .order('created_at', { ascending: false });
 
-    if (data) {
+    if (data && data.length > 0) {
       setAcceptedMatches(data);
-      // Always set active match to most recent if none selected
-      // or if current active match is no longer in the list
       setActiveMatch(prev => {
-        if (!prev) return data[0] || null;
+        if (!prev) return data[0];
         const stillExists = data.find(m => m.id === prev.id);
-        return stillExists ? { ...prev, ...stillExists } : (data[0] || null);
+        return stillExists ? { ...prev, ...stillExists } : data[0];
       });
       await fetchUnreadCounts(data);
     }
-    setLoading(false);
+    return data || [];
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Retry up to 10 times with 800ms delay
+    // Handles race condition where navigation happens before DB write commits
+    const loadWithRetry = async () => {
+      setLoading(true);
+      for (let i = 0; i < 10; i++) {
+        if (cancelled) return;
+        const data = await fetchMatches();
+        if (data.length > 0) break;
+        await new Promise(r => setTimeout(r, 800));
+      }
+      if (!cancelled) setLoading(false);
+    };
+
+    loadWithRetry();
+
+    const userId = session.user.id;
+    const pollInterval = setInterval(() => fetchMatches(), 3000);
+
+    const sub = supabase.channel('messages-matches-listener')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+      }, (payload) => {
+        const updated = payload.new;
+        if (
+          (updated.traveler_id === userId || updated.shipper_id === userId) &&
+          ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(updated.status)
+        ) {
+          fetchMatches();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(sub);
+      clearInterval(pollInterval);
+    };
+  }, []);
 
   const fetchUnreadCounts = async (matches) => {
     const counts = {};

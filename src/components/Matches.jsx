@@ -69,8 +69,11 @@ useEffect(() => {
 
       // If any match is now 'accepted', navigate to messages immediately
       const acceptedMatch = data.find(m => m.status === 'accepted');
-      if (acceptedMatch) {
-        if (onNavigate) onNavigate('messages');
+if (acceptedMatch) {
+        setMatches(prev => prev.filter(m => m.id !== acceptedMatch.id));
+        setTimeout(() => {
+          if (onNavigate) onNavigate('messages');
+        }, 600);
         return;
       }
 
@@ -129,12 +132,13 @@ const handleAccept = async (matchId) => {
         is_read: false,
       }]);
 
-      // Remove from local list immediately
-      setMatches(prev => prev.filter(m => m.id !== matchId));
+setMatches(prev => prev.filter(m => m.id !== matchId));
       setActing(prev => ({ ...prev, [matchId]: null }));
 
-      // Go straight to messages
-      if (onNavigate) onNavigate('messages');
+      // Small delay so DB write commits before Messages mounts and queries
+      setTimeout(() => {
+        if (onNavigate) onNavigate('messages');
+      }, 600);
 
     } else {
       await supabase.from('matches').update({
