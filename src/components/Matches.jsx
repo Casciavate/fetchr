@@ -58,12 +58,8 @@ const Matches = ({ session, onNavigate }) => {
 const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
 
-    // Always fetch fresh from DB to avoid stale state
     const { data: freshMatch } = await supabase
-      .from('matches')
-      .select('*')
-      .eq('id', matchId)
-      .single();
+      .from('matches').select('*').eq('id', matchId).single();
 
     if (!freshMatch) {
       setActing(prev => ({ ...prev, [matchId]: null }));
@@ -77,7 +73,6 @@ const handleAccept = async (matchId) => {
       : freshMatch.traveler_accepted;
 
     if (otherAccepted) {
-      // Both accepted — update DB
       await supabase.from('matches').update({
         [myField]: true,
         status: 'accepted',
@@ -95,14 +90,13 @@ const handleAccept = async (matchId) => {
         is_read: false,
       }]);
 
-      // Remove from matches list and go to messages
+      // Remove from local list immediately
       setMatches(prev => prev.filter(m => m.id !== matchId));
       setActing(prev => ({ ...prev, [matchId]: null }));
 
-      // Navigate to messages tab
-      if (typeof onNavigate === 'function') {
-        onNavigate('messages');
-      }
+      // Go straight to messages
+      if (onNavigate) onNavigate('messages');
+
     } else {
       await supabase.from('matches').update({
         [myField]: true,

@@ -36,7 +36,7 @@ const Messages = ({ session }) => {
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-  const fetchMatches = async () => {
+const fetchMatches = async () => {
     setLoading(true);
     const { data } = await supabase
       .from('matches')
@@ -49,7 +49,13 @@ const Messages = ({ session }) => {
 
     if (data) {
       setAcceptedMatches(data);
-      if (data.length > 0 && !activeMatch) setActiveMatch(data[0]);
+      // Always set active match to most recent if none selected
+      // or if current active match is no longer in the list
+      setActiveMatch(prev => {
+        if (!prev) return data[0] || null;
+        const stillExists = data.find(m => m.id === prev.id);
+        return stillExists ? { ...prev, ...stillExists } : (data[0] || null);
+      });
       await fetchUnreadCounts(data);
     }
     setLoading(false);
@@ -363,10 +369,15 @@ const requestCancellation = async () => {
   };
 
   // Initial load + real-time subscription for new accepted matches
-  useEffect(() => {
+useEffect(() => {
     fetchMatches();
 
     const userId = session.user.id;
+
+    // Poll every 3 seconds while in messages — catches new accepted matches
+    // for the party who accepted first and is waiting
+    const pollInterval = setInterval(() => fetchMatches(), 3000);
+
     const sub = supabase.channel('messages-matches-listener')
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -383,7 +394,10 @@ const requestCancellation = async () => {
       })
       .subscribe();
 
-    return () => supabase.removeChannel(sub);
+    return () => {
+      supabase.removeChannel(sub);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   useEffect(() => {
