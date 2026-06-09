@@ -50,57 +50,15 @@ const fetchMatches = async () => {
       setAcceptedMatches(data);
       setActiveMatch(prev => {
         if (!prev) return data[0];
-        const stillExists = data.find(m => m.id === prev.id);
-        return stillExists ? { ...prev, ...stillExists } : data[0];
+        const still = data.find(m => m.id === prev.id);
+        return still ? { ...prev, ...still } : data[0];
       });
       await fetchUnreadCounts(data);
     }
     return data || [];
   };
 
-  useEffect(() => {
-    let cancelled = false;
-
-    // Retry up to 10 times with 800ms delay
-    // Handles race condition where navigation happens before DB write commits
-    const loadWithRetry = async () => {
-      setLoading(true);
-      for (let i = 0; i < 10; i++) {
-        if (cancelled) return;
-        const data = await fetchMatches();
-        if (data.length > 0) break;
-        await new Promise(r => setTimeout(r, 800));
-      }
-      if (!cancelled) setLoading(false);
-    };
-
-    loadWithRetry();
-
-    const userId = session.user.id;
-    const pollInterval = setInterval(() => fetchMatches(), 3000);
-
-    const sub = supabase.channel('messages-matches-listener')
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'matches',
-      }, (payload) => {
-        const updated = payload.new;
-        if (
-          (updated.traveler_id === userId || updated.shipper_id === userId) &&
-          ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(updated.status)
-        ) {
-          fetchMatches();
-        }
-      })
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(sub);
-      clearInterval(pollInterval);
-    };
-  }, []);
+ 
 
   const fetchUnreadCounts = async (matches) => {
     const counts = {};
@@ -113,7 +71,74 @@ const fetchMatches = async () => {
     }
     setUnreadCounts(counts);
   };
+useEffect(() => {
+    let cancelled = false;
+    const userId = session.user.id;
 
+    const loadWithRetry = async () => {
+      setLoading(true);
+      for (let i = 0; i < 15; i++) {
+        if (cancelled) return;
+        const { data } = await supabase
+          .from('matches')
+          .select(`*, flight:flights(*), request:shipment_requests(*),
+            traveler:profiles!matches_traveler_id_fkey(*),
+            shipper:profiles!matches_shipper_id_fkey(*)`)
+          .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+          .order('created_at', { ascending: false });
+
+        if (data && data.length > 0) {
+          setAcceptedMatches(data);
+          setActiveMatch(data[0]);
+          await fetchUnreadCounts(data);
+          break;
+        }
+        await new Promise(r => setTimeout(r, 600));
+      }
+      if (!cancelled) setLoading(false);
+    };
+
+    loadWithRetry();
+
+    const pollInterval = setInterval(async () => {
+      if (cancelled) return;
+      const { data } = await supabase
+        .from('matches')
+        .select(`*, flight:flights(*), request:shipment_requests(*),
+          traveler:profiles!matches_traveler_id_fkey(*),
+          shipper:profiles!matches_shipper_id_fkey(*)`)
+        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .order('created_at', { ascending: false });
+
+      if (!data || cancelled) return;
+      setAcceptedMatches(data);
+      setActiveMatch(prev => {
+        if (!prev) return data[0] || null;
+        const stillExists = data.find(m => m.id === prev.id);
+        return stillExists ? { ...prev, ...stillExists } : (data[0] || null);
+      });
+      if (data.length > 0) await fetchUnreadCounts(data);
+    }, 3000);
+
+    const sub = supabase.channel(`messages-main-${userId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' },
+        (payload) => {
+          const u = payload.new;
+          if ((u.traveler_id === userId || u.shipper_id === userId) &&
+            ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)) {
+            fetchMatches();
+          }
+        })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollInterval);
+      supabase.removeChannel(sub);
+    };
+  }, []);
   const fetchMessages = async (matchId) => {
     const { data } = await supabase
       .from('messages')
@@ -408,38 +433,6 @@ const requestCancellation = async () => {
     if (msg) setMessages(prev => [...prev, msg[0]]);
     setCancelRequest(null);
   };
-
-  // Initial load + real-time subscription for new accepted matches
-useEffect(() => {
-    fetchMatches();
-
-    const userId = session.user.id;
-
-    // Poll every 3 seconds while in messages — catches new accepted matches
-    // for the party who accepted first and is waiting
-    const pollInterval = setInterval(() => fetchMatches(), 3000);
-
-    const sub = supabase.channel('messages-matches-listener')
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'matches',
-      }, (payload) => {
-        const updated = payload.new;
-        if (
-          (updated.traveler_id === userId || updated.shipper_id === userId) &&
-          ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(updated.status)
-        ) {
-          fetchMatches();
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(sub);
-      clearInterval(pollInterval);
-    };
-  }, []);
 
   useEffect(() => {
     if (activeMatch) {
