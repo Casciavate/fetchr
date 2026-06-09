@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
       return safeBalance
     }
 
+    // ── Setup Intent (save card) ──
     if (action === 'create_setup_intent') {
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const setupIntent = await stripe.setupIntents.create({
@@ -78,6 +79,7 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Save payment method ──
     if (action === 'save_payment_method') {
       const { paymentMethodId } = data
       const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
@@ -91,11 +93,12 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Wallet top up (new card) ──
     if (action === 'top_up_wallet') {
       const { amount, paymentMethodId } = data
       if (!amount || amount <= 0) throw new Error('Invalid amount')
       if (!paymentMethodId) throw new Error('No payment method provided')
-      const amountCents = Math.round(data.amount * 100)
+      const amountCents = Math.round(amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email)
       try {
         await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId })
@@ -135,10 +138,11 @@ Deno.serve(async (req) => {
       throw new Error(`Payment failed: ${paymentIntent.status}`)
     }
 
+    // ── Wallet top up intent (saved card) ──
     if (action === 'create_topup_intent') {
       const { amount, paymentMethodId } = data
       if (!amount || amount <= 0) throw new Error('Invalid amount')
-      const amountCents = Math.round(data.amount * 100)
+      const amountCents = Math.round(amount * 100)
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountCents,
@@ -154,6 +158,7 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Confirm top up after 3DS ──
     if (action === 'confirm_top_up') {
       const { paymentIntentId, amount } = data
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
@@ -174,12 +179,13 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Save bank account ──
     if (action === 'save_bank_account') {
       const { accountHolderName, accountNumber, routingNumber, country, currency = 'usd' } = data
       if (!accountHolderName || !accountNumber || !country) {
         throw new Error('Missing required bank account fields')
       }
-      const bankAccountParams = {
+      const bankAccountParams: any = {
         country: country.toUpperCase(),
         currency: currency.toLowerCase(),
         account_holder_name: accountHolderName,
@@ -201,31 +207,24 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Withdraw to bank ──
     if (action === 'withdraw_to_bank') {
       const { amount } = data
       if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
-
       const WITHDRAWAL_FEE_PCT = 0.025
       const fee = amount * WITHDRAWAL_FEE_PCT
       const netAmount = amount - fee
-
       const safeBalance = await verifyWithdrawalEligibility(user.id, amount)
-
       const { data: profile } = await adminClient
         .from('profiles')
         .select('bank_account_last4, bank_account_holder')
         .eq('id', user.id).single()
-
       if (!profile?.bank_account_last4) {
         throw new Error('No bank account saved. Please add a bank account in your profile first.')
       }
-
       const payoutId = `withdrawal_${Date.now()}_${user.id.slice(0, 8)}`
       const newBalance = safeBalance - amount
-
-      await adminClient.from('profiles')
-        .update({ wallet_balance: newBalance }).eq('id', user.id)
-
+      await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
       await adminClient.from('transactions').insert({
         user_id: user.id,
         type: 'withdrawal',
@@ -233,84 +232,118 @@ Deno.serve(async (req) => {
         description: `Withdrawal to bank ****${profile.bank_account_last4}`,
         status: 'pending',
         metadata: {
-          payout_id: payoutId,
-          fee,
-          net: netAmount,
+          payout_id: payoutId, fee, net: netAmount,
           bank_last4: profile.bank_account_last4,
           verified_balance_at_withdrawal: safeBalance,
           note: 'Payout processed on go-live with verified Stripe account',
         },
       })
-
       return new Response(JSON.stringify({
-        success: true,
-        newBalance,
-        payoutId,
-        netAmount,
-        fee,
+        success: true, newBalance, payoutId, netAmount, fee,
         estimatedArrival: '3-5 business days',
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Create escrow payment intent ──
+    // Shipper pays the deal value only.
+    // Fetchr fee is deducted from traveler payout at capture time — NOT added to shipper charge.
     if (action === 'create_payment_intent') {
-      const { matchId, amount, currency = 'usd' } = data
+      const { matchId, amount, currency = 'usd', paymentMethodId } = data
+      if (!matchId) throw new Error('matchId required')
+      if (!amount || amount <= 0) throw new Error('Invalid amount')
+
       const { data: match } = await adminClient
         .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
         .eq('id', matchId).single()
       if (!match) throw new Error('Match not found')
+
+      // Fee calculation — for metadata/records only, NOT added to charge
       const subtotalUSD = amount
       let fetchrPct = 0.10
       if (subtotalUSD >= 500) fetchrPct = 0.07
       else if (subtotalUSD >= 200) fetchrPct = 0.085
-      else if (subtotalUSD < 20) fetchrPct = 0.12
-const fetchrFeeUSD = subtotalUSD * fetchrPct
+      else if (subtotalUSD < 20 && subtotalUSD > 0) fetchrPct = 0.12
+      const fetchrFeeUSD = subtotalUSD * fetchrPct
       const travelerReceivesUSD = subtotalUSD - fetchrFeeUSD
-      // Shipper pays only the deal value — Fetchr fee deducted from traveler payout
+
+      // Shipper is charged exactly the deal value
       const totalCents = Math.round(subtotalUSD * 100)
+
       const customerId = await getOrCreateCustomer(user.id, user.email)
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: totalCents, currency,
+
+      // Build payment intent params
+      const piParams: any = {
+        amount: totalCents,
+        currency,
         customer: customerId,
-        capture_method: 'manual',
+        capture_method: 'manual', // held in escrow until delivery confirmed
         metadata: {
           match_id: matchId,
-          subtotal_cents: Math.round(subtotalUSD * 100).toString(),
-fetchr_fee_cents: Math.round(fetchrFeeUSD * 100).toString(),
+          subtotal_cents: totalCents.toString(),
+          fetchr_fee_cents: Math.round(fetchrFeeUSD * 100).toString(),
           traveler_receives_cents: Math.round(travelerReceivesUSD * 100).toString(),
           fetchr_pct: Math.round(fetchrPct * 100).toString(),
           traveler_id: match.traveler_id,
           shipper_id: match.shipper_id,
         },
         description: `Fetchr escrow: ${match.request?.item_name} (${match.flight?.from_code} → ${match.flight?.to_code})`,
-      })
+      }
+
+      // Attach payment method if provided (new card flow)
+      if (paymentMethodId) {
+        try {
+          await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId })
+        } catch (e) { /* already attached */ }
+        piParams.payment_method = paymentMethodId
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create(piParams)
+
+      // Save payment_intent_id to match and advance to in_escrow
       await adminClient.from('matches').update({
+        status: 'in_escrow',
+        deal_stage: 'in_escrow',
         payment_intent_id: paymentIntent.id,
-        escrow_amount: subtotalUSD - fetchrFeeUSD,
-        status: 'in_escrow', deal_stage: 'in_escrow',
+        escrow_amount: travelerReceivesUSD,
       }).eq('id', matchId)
+
+      // Record escrow transaction
       await adminClient.from('transactions').insert({
-        user_id: match.shipper_id, type: 'escrow_hold',
-        amount: subtotalUSD + fetchrFeeUSD + stripeFeeUSD,
+        user_id: match.shipper_id,
+        type: 'escrow_hold',
+        amount: subtotalUSD,
         description: `Escrow held: ${match.request?.item_name}`,
-        match_id: matchId, status: 'pending',
-        metadata: { payment_intent_id: paymentIntent.id, fetchr_fee: fetchrFeeUSD, stripe_fee: stripeFeeUSD },
+        match_id: matchId,
+        status: 'pending',
+        metadata: {
+          payment_intent_id: paymentIntent.id,
+          fetchr_fee: fetchrFeeUSD,
+          traveler_receives: travelerReceivesUSD,
+        },
       })
+
+      // Post system message to chat
       await adminClient.from('messages').insert({
-        match_id: matchId, sender_id: user.id,
-        content: `🔒 ESCROW SECURED: $${subtotalUSD.toFixed(2)} is now held in escrow. Fetchr fee: $${fetchrFeeUSD.toFixed(2)} (${Math.round(fetchrPct * 100)}%). Traveler receives $${(subtotalUSD - fetchrFeeUSD).toFixed(2)} upon confirmed delivery.`,
+        match_id: matchId,
+        sender_id: user.id,
+        content: `🔒 ESCROW SECURED: $${subtotalUSD.toFixed(2)} is now held securely. Traveler receives $${travelerReceivesUSD.toFixed(2)} upon confirmed delivery (Fetchr fee: $${fetchrFeeUSD.toFixed(2)}).`,
         is_read: false,
       })
+
       return new Response(JSON.stringify({
+        success: true,
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
         breakdown: {
-          subtotal: subtotalUSD, fetchrFee: fetchrFeeUSD,
-          stripeFee: stripeFeeUSD, total: totalCents / 100,
-          travelerReceives: subtotalUSD - fetchrFeeUSD,
+          subtotal: subtotalUSD,
+          fetchrFee: fetchrFeeUSD,
+          travelerReceives: travelerReceivesUSD,
+          total: subtotalUSD,
         },
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Capture escrow on delivery confirmed ──
     if (action === 'capture_payment') {
       const { paymentIntentId, matchId } = data
       await stripe.paymentIntents.capture(paymentIntentId)
@@ -318,35 +351,44 @@ fetchr_fee_cents: Math.round(fetchrFeeUSD * 100).toString(),
       const subtotalCents = parseInt(pi.metadata.subtotal_cents || '0')
       const fetchrFeeCents = parseInt(pi.metadata.fetchr_fee_cents || '0')
       const travelerReceivesUSD = (subtotalCents - fetchrFeeCents) / 100
+
       const { data: match } = await adminClient
-        .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
+        .from('matches').select('*')
         .eq('id', matchId).maybeSingle()
+
       if (match) {
         const { data: travelerProfile } = await adminClient
           .from('profiles').select('wallet_balance').eq('id', match.traveler_id).single()
         await adminClient.from('profiles').update({
-          wallet_balance: (travelerProfile?.wallet_balance || 0) + travelerReceivesUSD
+          wallet_balance: (travelerProfile?.wallet_balance || 0) + travelerReceivesUSD,
         }).eq('id', match.traveler_id)
+
         await adminClient.from('transactions').insert([
           {
-            user_id: match.traveler_id, type: 'escrow_release',
+            user_id: match.traveler_id,
+            type: 'escrow_release',
             amount: travelerReceivesUSD,
-            description: `Delivery payment: ${match.request?.item_name}`,
-            match_id: match.id, status: 'completed',
+            description: `Delivery payment: ${match.request?.item_name || 'item'}`,
+            match_id: match.id,
+            status: 'completed',
             metadata: { payment_intent_id: paymentIntentId, fetchr_fee: fetchrFeeCents / 100 },
           },
           {
-            user_id: match.shipper_id, type: 'fetchr_fee',
+            user_id: match.shipper_id,
+            type: 'fetchr_fee',
             amount: fetchrFeeCents / 100,
-            description: `Fetchr service fee: ${match.request?.item_name}`,
-            match_id: match.id, status: 'completed',
+            description: `Fetchr service fee: ${match.request?.item_name || 'item'}`,
+            match_id: match.id,
+            status: 'completed',
             metadata: { payment_intent_id: paymentIntentId },
           },
         ])
+
         await adminClient.from('transactions')
           .update({ status: 'completed' })
           .eq('match_id', match.id).eq('type', 'escrow_hold')
       }
+
       return new Response(JSON.stringify({
         success: true,
         travelerReceives: travelerReceivesUSD,
@@ -354,11 +396,13 @@ fetchr_fee_cents: Math.round(fetchrFeeUSD * 100).toString(),
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Cancel escrow (deal cancelled) ──
     if (action === 'cancel_payment') {
       const { paymentIntentId, matchId } = data
       await stripe.paymentIntents.cancel(paymentIntentId)
       if (matchId) {
-        await adminClient.from('transactions').update({ status: 'refunded' })
+        await adminClient.from('transactions')
+          .update({ status: 'refunded' })
           .eq('match_id', matchId).eq('type', 'escrow_hold')
       }
       return new Response(JSON.stringify({ success: true, refunded: true }),
