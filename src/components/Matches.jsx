@@ -12,7 +12,7 @@ const Matches = ({ session, onNavigate }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
-const fetchMatches = async (showLoading = true) => {
+  const fetchMatches = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     await supabase.rpc('find_matches');
     const { data, error } = await supabase
@@ -49,16 +49,16 @@ const fetchMatches = async (showLoading = true) => {
     setProfileLoading(false);
   };
 
-useEffect(() => {
+  useEffect(() => {
     fetchMatches();
-
     const userId = session.user.id;
 
-    // Poll every 2 seconds
-    // On each poll: check if any match that WAS awaiting_other is now accepted
-    // This is the reliable way to catch the second-party accept for BOTH users
+    // Poll every 2 seconds — detects when match becomes 'accepted'
+    // This handles the first party who is waiting for the second to accept
     const interval = setInterval(async () => {
       await supabase.rpc('find_matches');
+
+      // Lightweight check: has any of our matches become 'accepted'?
       const { data } = await supabase
         .from('matches')
         .select('id, status, traveler_id, shipper_id')
@@ -67,17 +67,15 @@ useEffect(() => {
 
       if (!data) return;
 
-      // If any match is now 'accepted', navigate to messages immediately
+      // If any match is now 'accepted', remove it and go to messages
       const acceptedMatch = data.find(m => m.status === 'accepted');
-if (acceptedMatch) {
+      if (acceptedMatch) {
         setMatches(prev => prev.filter(m => m.id !== acceptedMatch.id));
-        setTimeout(() => {
-          if (onNavigate) onNavigate('messages');
-        }, 600);
+        if (onNavigate) onNavigate('messages');
         return;
       }
 
-      // Otherwise refresh the match list normally
+      // Otherwise refresh full match list
       const { data: fullData, error } = await supabase
         .from('matches')
         .select(`
@@ -97,9 +95,10 @@ if (acceptedMatch) {
     return () => clearInterval(interval);
   }, []);
 
-const handleAccept = async (matchId) => {
+  const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
 
+    // Always fetch fresh from DB to avoid stale local state
     const { data: freshMatch } = await supabase
       .from('matches').select('*').eq('id', matchId).single();
 
@@ -110,12 +109,16 @@ const handleAccept = async (matchId) => {
 
     const isTrav = freshMatch.traveler_id === session.user.id;
     const myField = isTrav ? 'traveler_accepted' : 'shipper_accepted';
-    const otherAccepted = isTrav
-      ? freshMatch.shipper_accepted
-      : freshMatch.traveler_accepted;
+
+    // status === 'awaiting_other' means the other party already accepted
+    // Also check boolean fields as fallback
+    const otherAccepted =
+      freshMatch.status === 'awaiting_other' ||
+      (isTrav ? freshMatch.shipper_accepted : freshMatch.traveler_accepted);
 
     if (otherAccepted) {
-      await supabase.from('matches').update({
+      // Both accepted — write final accepted status to DB
+      const { error } = await supabase.from('matches').update({
         [myField]: true,
         status: 'accepted',
         deal_stage: 'matched',
@@ -125,6 +128,13 @@ const handleAccept = async (matchId) => {
         shipper_completed: false,
       }).eq('id', matchId);
 
+      if (error) {
+        console.error('Accept error:', error);
+        setActing(prev => ({ ...prev, [matchId]: null }));
+        return;
+      }
+
+      // Insert welcome message into chat
       await supabase.from('messages').insert([{
         match_id: matchId,
         sender_id: session.user.id,
@@ -132,21 +142,23 @@ const handleAccept = async (matchId) => {
         is_read: false,
       }]);
 
-setMatches(prev => prev.filter(m => m.id !== matchId));
+      // Remove from local list immediately so it disappears
+      setMatches(prev => prev.filter(m => m.id !== matchId));
       setActing(prev => ({ ...prev, [matchId]: null }));
 
-      // Small delay so DB write commits before Messages mounts and queries
+      // Navigate to messages — delay slightly so DB write commits before Messages queries
       setTimeout(() => {
         if (onNavigate) onNavigate('messages');
-      }, 600);
+      }, 800);
 
     } else {
+      // I am first to accept — mark my acceptance and wait for other party
       await supabase.from('matches').update({
         [myField]: true,
         status: 'awaiting_other',
       }).eq('id', matchId);
 
-      await fetchMatches();
+      await fetchMatches(false);
       setActing(prev => ({ ...prev, [matchId]: null }));
     }
   };
@@ -196,7 +208,7 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
         <Search size={24} className="text-violet-500" />
       </div>
       <p className="text-gray-500 font-medium">Finding your matches...</p>
-      <p className="text-gray-400 text-sm mt-1">This updates every 5 seconds</p>
+      <p className="text-gray-400 text-sm mt-1">This updates every 2 seconds</p>
     </div>
   );
 
@@ -206,7 +218,7 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Your Matches</h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} · Auto-refreshes every 5s
+            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} · Auto-refreshes every 2s
           </p>
         </div>
         <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
@@ -231,8 +243,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
             const other = getOtherParty(match);
             const avatarUrl = getAvatarUrl(other);
             const fees = getFeePreview(match);
-
-            // Derive acceptance state from DB fields (not status string)
             const iAmTraveler = isTraveler(match);
             const iHaveAccepted = iAmTraveler
               ? match.traveler_accepted
@@ -240,12 +250,13 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
             const otherHasAccepted = iAmTraveler
               ? match.shipper_accepted
               : match.traveler_accepted;
+            // Also treat awaiting_other as other having accepted
+            const otherHasAcceptedFull = otherHasAccepted || match.status === 'awaiting_other';
 
             return (
               <div key={match.id}
                 className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
 
-                {/* Match score bar — capped at 100% width */}
                 <div className={`h-1 ${
                   match.match_score >= 90
                     ? 'bg-gradient-to-r from-emerald-400 to-green-500'
@@ -256,28 +267,21 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
 
                 <div className="p-5">
 
-                  {/* Header badges — correct per-party logic */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`badge ${getScoreBadge(Math.min(match.match_score, 100))}`}>
                         <Zap size={10} /> {Math.min(match.match_score, 100)}% Match
                       </span>
-
-                      {/* I have accepted, waiting for other */}
-                      {iHaveAccepted && !otherHasAccepted && (
+                      {iHaveAccepted && !otherHasAcceptedFull && (
                         <span className="badge badge-yellow">
                           <Clock size={10} /> Waiting for {iAmTraveler ? 'shipper' : 'traveler'}
                         </span>
                       )}
-
-                      {/* Other party accepted, waiting for me */}
-                      {otherHasAccepted && !iHaveAccepted && (
+                      {otherHasAcceptedFull && !iHaveAccepted && (
                         <span className="badge badge-blue">
                           <Clock size={10} /> {iAmTraveler ? 'Shipper' : 'Traveler'} accepted — your turn!
                         </span>
                       )}
-
-                      {/* I accepted */}
                       {iHaveAccepted && (
                         <span className="badge badge-green">
                           <CheckCircle size={10} /> You accepted
@@ -289,7 +293,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </span>
                   </div>
 
-                  {/* Route cards */}
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
                       <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
@@ -323,7 +326,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </div>
                   </div>
 
-                  {/* Shop & Ship badge */}
                   {match.flight?.delivery_type === 'both' && (
                     <div className="flex items-center gap-2 bg-blue-50 text-blue-700 rounded-xl px-3 py-2 mb-4 border border-blue-100">
                       <ShoppingBag size={14} />
@@ -333,7 +335,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </div>
                   )}
 
-                  {/* Fee preview */}
                   <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                       Deal Preview
@@ -368,7 +369,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </p>
                   </div>
 
-                  {/* Other party profile */}
                   <button
                     onClick={() => fetchProfile(other?.id)}
                     className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100 mb-4 group">
@@ -406,7 +406,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </div>
                   </button>
 
-                  {/* Item photo */}
                   {match.request?.item_photo_url && (
                     <div className="mb-4 rounded-xl overflow-hidden border border-gray-100">
                       <img
@@ -417,7 +416,6 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                     </div>
                   )}
 
-                  {/* Actions */}
                   {!iHaveAccepted ? (
                     <div className="flex gap-3">
                       <button
@@ -431,14 +429,14 @@ setMatches(prev => prev.filter(m => m.id !== matchId));
                         onClick={() => handleAccept(match.id)}
                         disabled={!!acting[match.id]}
                         className={`flex-[2] flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all ${
-                          otherHasAccepted
+                          otherHasAcceptedFull
                             ? 'bg-emerald-500 text-white hover:bg-emerald-600 animate-pulse'
                             : 'btn-primary'
                         }`}>
                         <CheckCircle size={16} />
                         {acting[match.id] === 'accepting'
                           ? 'Accepting...'
-                          : otherHasAccepted
+                          : otherHasAcceptedFull
                             ? '✅ Confirm & Start Chat'
                             : 'Accept Match'
                         }
