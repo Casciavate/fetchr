@@ -30,16 +30,18 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   const pricePerKg = parseFloat(form.agreed_price_per_kg) || 0;
   const weightKg = parseFloat(form.agreed_weight_kg) || 0;
   const dealValue = pricePerKg * weightKg;
-  let fetchrPct = 0.10;
-  if (dealValue >= 500) fetchrPct = 0.07;
-  else if (dealValue >= 200) fetchrPct = 0.085;
-  else if (dealValue < 20 && dealValue > 0) fetchrPct = 0.12;
-  const fetchrFee = dealValue * fetchrPct;
-  const travelerReceives = dealValue - fetchrFee;
   const isPurchase = match.request?.requires_purchase;
   const purchasePrice = parseFloat(match.request?.purchase_price) || 0;
-  const shopFee = parseFloat(match.flight?.shop_and_ship_fee) || 0;
-  const totalShipperPays = dealValue + (isPurchase ? purchasePrice + shopFee : 0);
+  const shopFee = parseFloat(form.agreed_shop_fee || match.agreed_shop_fee || match.flight?.shop_and_ship_fee) || 0;
+  // Fetchr fee on transport + shop fee ONLY, not purchase price
+  const fetchrBase = dealValue + (isPurchase ? shopFee : 0);
+  let fetchrPct = 0.10;
+  if (fetchrBase >= 500) fetchrPct = 0.07;
+  else if (fetchrBase >= 200) fetchrPct = 0.085;
+  else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12;
+  const fetchrFee = fetchrBase * fetchrPct;
+  const travelerReceives = fetchrBase - fetchrFee + (isPurchase ? purchasePrice : 0);
+  const totalShipperPays = dealValue + (isPurchase ? shopFee + purchasePrice : 0);
 
   const handleSave = async () => {
     setSaving(true);
@@ -290,34 +292,52 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                 <DollarSign size={13} /> Financial Summary
               </p>
               <div className="space-y-2 text-sm">
+                {/* 1. Transport */}
                 <div className="flex justify-between text-gray-600">
                   <span>{match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
                   <span className="font-semibold">${dealValue.toFixed(2)}</span>
                 </div>
+                {/* 2. Shop & ship fee */}
+                {isPurchase && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Shop & ship service fee</span>
+                    <span className="font-semibold">{shopFee > 0 ? `$${shopFee.toFixed(2)}` : <span className="text-amber-500">TBD — set in Amend</span>}</span>
+                  </div>
+                )}
+                {/* 3. Item purchase price */}
                 {isPurchase && purchasePrice > 0 && (
                   <div className="flex justify-between text-gray-600">
                     <span>Item purchase price</span>
                     <span className="font-semibold">${purchasePrice.toFixed(2)}</span>
                   </div>
                 )}
-                {isPurchase && shopFee > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Shop & ship service fee</span>
-                    <span className="font-semibold">${shopFee.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-red-400 text-xs">
-                  <span>Fetchr fee ({Math.round(fetchrPct * 100)}%) — from traveler's share</span>
-                  <span>−${fetchrFee.toFixed(2)}</span>
-                </div>
-                <div className="border-t border-violet-200 pt-2 space-y-1">
+                {/* 4. Shipper pays total */}
+                <div className="border-t border-violet-200 pt-2">
                   <div className="flex justify-between font-bold text-violet-700">
                     <span>Shipper pays total</span>
                     <span>${totalShipperPays.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-emerald-600">
+                </div>
+                {/* 5. Fetchr fee (on transport + shop only) */}
+                <div className="bg-white/60 rounded-xl p-3 space-y-1.5 text-xs mt-1">
+                  <p className="text-gray-400 font-semibold uppercase tracking-wide">Distribution</p>
+                  <div className="flex justify-between text-red-400">
+                    <span>Fetchr fee ({Math.round(fetchrPct * 100)}%) on ${fetchrBase.toFixed(2)}</span>
+                    <span>−${fetchrFee.toFixed(2)}</span>
+                  </div>
+                  {isPurchase && purchasePrice > 0 && (
+                    <div className="flex justify-between text-gray-500">
+                      <span>Item purchase reimbursement</span>
+                      <span>+${purchasePrice.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">
                     <span>Traveler receives</span>
                     <span>${travelerReceives.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-violet-600">
+                    <span>Fetchr revenue</span>
+                    <span>${fetchrFee.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -488,6 +508,21 @@ const Messages = ({ session }) => {
         setAcceptedMatches(prev =>
           prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
         );
+      })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'cancellation_requests',
+        filter: `match_id=eq.${activeMatch.id}`
+      }, (payload) => {
+        // Refresh cancel request for the other party immediately
+        if (payload.new.requested_by !== activeMatch.traveler_id &&
+            payload.new.requested_by !== activeMatch.shipper_id) return;
+        fetchCancelRequest(activeMatch.id);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'cancellation_requests',
+        filter: `match_id=eq.${activeMatch.id}`
+      }, () => {
+        fetchCancelRequest(activeMatch.id);
       })
       .subscribe();
     return () => supabase.removeChannel(sub);

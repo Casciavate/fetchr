@@ -23,45 +23,34 @@ const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: true,
 };
 
-// ── Fee calculator (correct logic) ──
-// Fetchr fee = % of (delivery fee + shop & ship fee)  [NOT on purchase price]
-// Shipper pays = delivery fee + shop & ship fee + item purchase price
-// Traveler receives = delivery fee + shop & ship fee - Fetchr fee + item purchase price
+// ── Correct fee logic ──
+// Fetchr fee = % of (transport fee + shop & ship fee) ONLY — NOT on item purchase price
+// Shipper pays = transport + shop & ship + item purchase
+// Traveler receives = transport + shop & ship - Fetchr fee + item purchase (reimbursement)
 export const calcFees = (match) => {
   const pricePerKg = parseFloat(match.agreed_price_per_kg || match.flight?.price_per_kg || 0);
   const weightKg = parseFloat(match.agreed_weight_kg || match.request?.weight_kg || 0);
-  const deliveryFee = pricePerKg * weightKg;
+  const transportFee = pricePerKg * weightKg;
 
   const isPurchase = !!(match.request?.requires_purchase);
   const purchasePrice = isPurchase ? (parseFloat(match.request?.purchase_price) || 0) : 0;
-
-  // Shop & ship fee — traveler-defined service fee for going to buy the item
-  // Stored on agreed_shop_fee (set during deal amendment) or flight's shop_and_ship_fee
   const shopFee = isPurchase
-    ? (parseFloat(match.agreed_shop_fee || match.flight?.shop_and_ship_fee) || 0)
+    ? parseFloat(match.agreed_shop_fee || match.flight?.shop_and_ship_fee || 0)
     : 0;
 
-  // Fetchr fee applies to delivery + shop fee only
-  const fetchrBase = deliveryFee + shopFee;
+  // Fetchr fee only on transport + shop fee
+  const fetchrBase = transportFee + shopFee;
   let fetchrPct = 0.10;
   if (fetchrBase >= 500) fetchrPct = 0.07;
   else if (fetchrBase >= 200) fetchrPct = 0.085;
   else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12;
-
   const fetchrFee = fetchrBase * fetchrPct;
 
-  // What shipper pays total
-  const totalShipperPays = deliveryFee + shopFee + purchasePrice;
-
-  // What traveler receives
-  const travelerReceives = deliveryFee + shopFee - fetchrFee + purchasePrice;
-
-  // Amount held in escrow (what Stripe charges — does NOT include item purchase price
-  // as that's a separate reimbursement; but for simplicity we hold total)
-  const escrowAmount = totalShipperPays;
+  const totalShipperPays = transportFee + shopFee + purchasePrice;
+  const travelerReceives = transportFee + shopFee - fetchrFee + purchasePrice;
 
   return {
-    deliveryFee,
+    transportFee,
     shopFee,
     purchasePrice,
     fetchrBase,
@@ -69,7 +58,6 @@ export const calcFees = (match) => {
     fetchrPct,
     totalShipperPays,
     travelerReceives,
-    escrowAmount,
     isPurchase,
   };
 };
@@ -87,9 +75,10 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
   const handleFileChange = (e) => {
     const selected = Array.from(e.target.files || []);
     const valid = selected.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
-    if (valid.length !== selected.length) setError('Some files were skipped (images only, max 10MB each)');
+    if (valid.length !== selected.length) setError('Images only, max 10MB each');
     else setError('');
-    setFiles(prev => [...prev, ...valid].slice(0, 5));
+    const combined = [...files, ...valid].slice(0, 5);
+    setFiles(combined);
     const newPreviews = valid.map(f => URL.createObjectURL(f));
     setPreviews(prev => [...prev, ...newPreviews].slice(0, 5));
   };
@@ -114,33 +103,28 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
         uploadedUrls.push(urlData.publicUrl);
       }
 
-      const primaryUrl = uploadedUrls[0];
-      const allUrls = uploadedUrls.join('\n');
-
-      // Update match
       await supabase.from('matches').update({
-        proof_photo_url: primaryUrl,
+        proof_photo_url: uploadedUrls[0],
         proof_uploaded_at: new Date().toISOString(),
         status: 'proof_uploaded',
         deal_stage: 'proof_uploaded',
         proof_notes: notes || null,
       }).eq('id', match.id);
 
-      // Post message with all proof images
-      const content = [
-        `📸 PROOF UPLOADED:`,
+      const lines = [
+        '📸 PROOF UPLOADED:',
         ...uploadedUrls.map((url, i) => `PROOF_IMAGE_${i + 1}:${url}`),
         notes ? `Notes: ${notes}` : null,
-      ].filter(Boolean).join('\n');
+      ].filter(Boolean);
 
       await supabase.from('messages').insert([{
         match_id: match.id,
         sender_id: session.user.id,
-        content,
+        content: lines.join('\n'),
         is_read: false,
       }]);
 
-      onUploaded(primaryUrl);
+      onUploaded(uploadedUrls[0]);
     } catch (e) {
       setError(e.message || 'Upload failed. Please try again.');
     }
@@ -156,24 +140,20 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
             <X size={18} className="text-gray-500" />
           </button>
         </div>
-
         <div className="p-5 space-y-4">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
             <p className="text-xs font-bold text-blue-700 mb-1">What to upload</p>
             <ul className="text-xs text-blue-600 space-y-0.5">
-              <li>📦 Photo of the item received</li>
+              <li>📦 Photo of the item</li>
               {isPurchase && <li>🧾 Purchase receipt from the store</li>}
               {isPurchase && <li>📸 Photo of the purchased item</li>}
-              <li>✅ Any other proof of delivery</li>
+              <li>✅ Any other delivery confirmation</li>
             </ul>
           </div>
 
-          {/* Photo picker */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              Photos (up to 5)
-            </label>
-            {previews.length > 0 && (
+            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Photos (up to 5)</label>
+            {previews.length > 0 ? (
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {previews.map((url, i) => (
                   <div key={i} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square">
@@ -191,8 +171,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
                   </button>
                 )}
               </div>
-            )}
-            {previews.length === 0 && (
+            ) : (
               <button onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 hover:border-violet-300 hover:bg-violet-50 transition">
                 <Upload size={24} className="text-gray-300" />
@@ -200,24 +179,17 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
                 <p className="text-xs text-gray-300">JPG, PNG · Max 10MB each</p>
               </button>
             )}
-            <input ref={fileInputRef} type="file" accept="image/*" multiple
-              onChange={handleFileChange} className="hidden" />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
               Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
             </label>
             <textarea
-              placeholder={isPurchase
-                ? "e.g. Item purchased from Apple Store, receipt included..."
-                : "e.g. Item delivered in perfect condition..."}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={2}
-              className="input-field resize-none text-sm"
-            />
+              placeholder={isPurchase ? "e.g. Purchased from Apple Store, receipt attached..." : "e.g. Item delivered in perfect condition..."}
+              value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              className="input-field resize-none text-sm" />
           </div>
 
           {error && (
@@ -229,13 +201,11 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
 
           <div className="flex gap-2">
             <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
-            <button onClick={handleUpload}
-              disabled={uploading || files.length === 0}
+            <button onClick={handleUpload} disabled={uploading || files.length === 0}
               className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
               {uploading
                 ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</>
-                : <><Upload size={15} /> Submit Proof</>
-              }
+                : <><Upload size={15} /> Submit Proof</>}
             </button>
           </div>
         </div>
@@ -244,7 +214,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
   );
 };
 
-// ── Main Escrow Payment Component ──
+// ── Escrow Payment Inner ──
 const EscrowInner = ({ match, session, onPaymentComplete }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -253,29 +223,29 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('card'); // 'card' | 'wallet' | 'split'
   const [useNewCard, setUseNewCard] = useState(false);
+  const [splitWalletAmount, setSplitWalletAmount] = useState('');
 
   const fees = calcFees(match);
 
   useEffect(() => {
-    supabase.from('profiles').select('*')
-      .eq('id', session.user.id).single()
+    supabase.from('profiles').select('*').eq('id', session.user.id).single()
       .then(({ data }) => { if (data) setProfile(data); });
   }, [session.user.id]);
 
+  const walletBalance = profile?.wallet_balance || 0;
   const hasSavedCard = !!(profile?.stripe_payment_method_id);
-  const showCardForm = !hasSavedCard || useNewCard;
+  const canPayFullWithWallet = walletBalance >= fees.totalShipperPays;
+  const showCardForm = (paymentMethod === 'card' || paymentMethod === 'split') && (!hasSavedCard || useNewCard);
 
   const callStripe = async (action, data) => {
     const { data: { session: auth } } = await supabase.auth.getSession();
-    const res = await fetch(
-      'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
-        body: JSON.stringify({ action, data }),
-      }
-    );
+    const res = await fetch('https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+      body: JSON.stringify({ action, data }),
+    });
     const result = await res.json();
     if (!res.ok || result.error) throw new Error(result.error || 'Payment failed');
     return result;
@@ -283,44 +253,65 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
 
   const handlePay = async () => {
     if (!stripe || !elements) return;
-    if (showCardForm && !cardReady) { setError('Card form not ready.'); return; }
+    if ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady) {
+      setError('Card form not ready.'); return;
+    }
     setLoading(true); setError('');
 
     try {
-      // Send amount in DOLLARS — edge function does *100 conversion
-      const amountDollars = fees.escrowAmount;
+      const total = fees.totalShipperPays;
 
-      let paymentMethodId = null;
-
-      if (showCardForm) {
-        const cardElement = elements.getElement(CardElement);
-        const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
-          type: 'card', card: cardElement,
-        });
-        if (pmError) throw new Error(pmError.message);
-        paymentMethodId = paymentMethod.id;
-      } else {
-        paymentMethodId = profile.stripe_payment_method_id;
+      // Wallet-only payment
+      if (paymentMethod === 'wallet') {
+        if (walletBalance < total) throw new Error(`Insufficient wallet balance. Available: $${walletBalance.toFixed(2)}`);
+        await callStripe('escrow_from_wallet', { matchId: match.id, amount: total });
+        setSuccess(true);
+        setTimeout(() => onPaymentComplete?.(), 1500);
+        return;
       }
 
-      // Call edge function — sends dollars, edge function converts to cents
+      // Split: deduct wallet portion, charge card for remainder
+      let cardAmount = total;
+      if (paymentMethod === 'split') {
+        const walletPortion = Math.min(parseFloat(splitWalletAmount) || 0, walletBalance);
+        cardAmount = total - walletPortion;
+        if (cardAmount <= 0.50) {
+          // Stripe minimum is $0.50 — if remainder is tiny, use wallet only
+          await callStripe('escrow_from_wallet', { matchId: match.id, amount: total });
+          setSuccess(true);
+          setTimeout(() => onPaymentComplete?.(), 1500);
+          return;
+        }
+      }
+
+      // Card payment (full or remainder)
+      let pmId = hasSavedCard && !useNewCard
+        ? profile.stripe_payment_method_id
+        : null;
+
+      if (!pmId) {
+        const cardElement = elements.getElement(CardElement);
+        const { error: pmError, paymentMethod: pm } = await stripe.createPaymentMethod({ type: 'card', card: cardElement });
+        if (pmError) throw new Error(pmError.message);
+        pmId = pm.id;
+      }
+
       const result = await callStripe('create_payment_intent', {
         matchId: match.id,
-        amount: amountDollars,  // DOLLARS
+        amount: cardAmount,  // dollars
         currency: 'usd',
-        paymentMethodId,
+        paymentMethodId: pmId,
+        walletContribution: paymentMethod === 'split' ? (total - cardAmount) : 0,
       });
 
       if (!result.clientSecret) throw new Error('No client secret returned');
 
-      // Confirm the payment
       const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(
-        result.clientSecret,
-        { payment_method: paymentMethodId }
+        result.clientSecret, { payment_method: pmId }
       );
       if (confirmError) throw new Error(confirmError.message);
       if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
-        throw new Error(`Unexpected payment status: ${paymentIntent.status}`);
+        throw new Error(`Unexpected status: ${paymentIntent.status}`);
       }
 
       setSuccess(true);
@@ -338,11 +329,9 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
         <Lock size={28} className="text-blue-600" />
       </div>
       <p className="text-base font-bold text-gray-900 mb-1">Escrow Active</p>
-      <p className="text-sm text-gray-500 mb-3">
-        ${fees.escrowAmount.toFixed(2)} secured. Traveler receives ${fees.travelerReceives.toFixed(2)} upon confirmed delivery.
-      </p>
+      <p className="text-sm text-gray-500 mb-3">${fees.totalShipperPays.toFixed(2)} secured.</p>
       <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700 border border-blue-100">
-        Funds released automatically once both parties confirm delivery.
+        Traveler receives ${fees.travelerReceives.toFixed(2)} upon confirmed delivery.
       </div>
     </div>
   );
@@ -354,123 +343,165 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       </div>
       <p className="text-lg font-bold text-gray-900 mb-1">Escrow Secured!</p>
       <p className="text-sm text-gray-500">
-        ${fees.escrowAmount.toFixed(2)} held securely. Traveler receives ${fees.travelerReceives.toFixed(2)} upon delivery.
+        ${fees.totalShipperPays.toFixed(2)} held securely. Traveler receives ${fees.travelerReceives.toFixed(2)} upon delivery.
       </p>
     </div>
   );
 
   return (
     <div className="p-5 space-y-4">
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2">
         <Shield size={18} className="text-violet-600" />
         <h3 className="font-bold text-gray-900">Secure Escrow Payment</h3>
       </div>
 
-      <div className="text-xs text-gray-500 leading-relaxed bg-violet-50 rounded-xl p-3 border border-violet-100">
-        Payment is held securely. Released to the traveler only after both parties confirm delivery.
+      <div className="text-xs text-gray-500 bg-violet-50 rounded-xl p-3 border border-violet-100">
+        Payment held securely by Fetchr. Released to traveler only after both confirm delivery.
       </div>
 
-      {/* Full breakdown */}
+      {/* Payment breakdown */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
           <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Payment Breakdown</p>
         </div>
 
-        <div className="px-4 py-3 space-y-2 text-sm border-b border-gray-100">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Plane size={12} className="text-violet-500" />
-            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Delivery Service</p>
+        <div className="px-4 py-3 space-y-2 text-sm">
+          {/* Transport */}
+          <div className="flex justify-between text-gray-700">
+            <span className="flex items-center gap-1.5">
+              <Plane size={12} className="text-violet-400" />
+              {match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg
+            </span>
+            <span className="font-semibold">${fees.transportFee.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-gray-600">
-            <span>{match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
-            <span className="font-semibold">${fees.deliveryFee.toFixed(2)}</span>
-          </div>
-          {fees.isPurchase && fees.shopFee > 0 && (
-            <div className="flex justify-between text-gray-600">
-              <span className="flex items-center gap-1"><ShoppingBag size={11} /> Shop & ship service fee</span>
-              <span className="font-semibold">${fees.shopFee.toFixed(2)}</span>
-            </div>
-          )}
-          {fees.isPurchase && fees.shopFee === 0 && (
-            <div className="flex justify-between text-amber-600 text-xs">
-              <span>⚠️ Shop & ship fee (not yet agreed)</span>
-              <span>TBD</span>
-            </div>
-          )}
-          <div className="flex justify-between text-red-400 text-xs pt-1 border-t border-gray-100">
-            <span>Fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on delivery{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
-            <span>−${fees.fetchrFee.toFixed(2)}</span>
-          </div>
-        </div>
 
-        {fees.isPurchase && fees.purchasePrice > 0 && (
-          <div className="px-4 py-3 space-y-2 text-sm border-b border-gray-100">
-            <div className="flex items-center gap-1.5 mb-2">
-              <ShoppingBag size={12} className="text-blue-500" />
-              <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Item Purchase</p>
+          {/* Shop & ship fee */}
+          {fees.isPurchase && (
+            <div className="flex justify-between text-gray-700">
+              <span className="flex items-center gap-1.5">
+                <ShoppingBag size={12} className="text-blue-400" />
+                Shop & ship service fee
+              </span>
+              <span className="font-semibold">${fees.shopFee > 0 ? fees.shopFee.toFixed(2) : 'TBD'}</span>
             </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Item purchase price (reimbursed to traveler)</span>
+          )}
+
+          {/* Item purchase */}
+          {fees.isPurchase && fees.purchasePrice > 0 && (
+            <div className="flex justify-between text-gray-700">
+              <span className="flex items-center gap-1.5">
+                <Package size={12} className="text-blue-400" />
+                Item purchase price
+              </span>
               <span className="font-semibold">${fees.purchasePrice.toFixed(2)}</span>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="px-4 py-3 bg-violet-50 space-y-1.5">
-          <div className="flex justify-between font-bold text-violet-700 text-base">
-            <span>Total you pay</span>
-            <span>${fees.totalShipperPays.toFixed(2)}</span>
+          <div className="border-t border-gray-100 pt-2 mt-1">
+            <div className="flex justify-between font-bold text-gray-900 text-base">
+              <span>Shipper pays total</span>
+              <span>${fees.totalShipperPays.toFixed(2)}</span>
+            </div>
           </div>
-          <div className="flex justify-between text-emerald-600 text-sm font-semibold">
-            <span>Traveler receives on delivery</span>
-            <span>${fees.travelerReceives.toFixed(2)}</span>
+
+          {/* Fetchr fee note */}
+          <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-xs mt-1">
+            <p className="font-semibold text-gray-500 uppercase tracking-wide">How funds are distributed</p>
+            <div className="flex justify-between text-red-400">
+              <span>Fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on transport{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
+              <span>−${fees.fetchrFee.toFixed(2)}</span>
+            </div>
+            {fees.isPurchase && fees.purchasePrice > 0 && (
+              <div className="flex justify-between text-gray-500">
+                <span>Item purchase reimbursement to traveler</span>
+                <span>+${fees.purchasePrice.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">
+              <span>Traveler receives</span>
+              <span>${fees.travelerReceives.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-semibold text-violet-600">
+              <span>Fetchr revenue</span>
+              <span>${fees.fetchrFee.toFixed(2)}</span>
+            </div>
           </div>
-          <p className="text-xs text-gray-400 pt-1">
-            Held in escrow. Released automatically when both parties confirm delivery.
-          </p>
         </div>
       </div>
 
-      {/* Saved card selector */}
-      {hasSavedCard && (
+      {/* Payment method selector */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Payment Method</label>
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Method</label>
+          {/* Card */}
+          <button type="button" onClick={() => setPaymentMethod('card')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'card' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
+            <span className="text-xl">💳</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-gray-800">Credit / Debit Card</p>
+              <p className="text-xs text-gray-400">Pay full amount by card</p>
+            </div>
+            {paymentMethod === 'card' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+          </button>
+
+          {/* Wallet full */}
+          {canPayFullWithWallet && (
+            <button type="button" onClick={() => setPaymentMethod('wallet')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'wallet' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
+              <span className="text-xl">💰</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-gray-800">Wallet (${walletBalance.toFixed(2)} available)</p>
+                <p className="text-xs text-gray-400">Pay full amount from wallet balance</p>
+              </div>
+              {paymentMethod === 'wallet' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+            </button>
+          )}
+
+          {/* Split */}
+          {walletBalance > 0 && !canPayFullWithWallet && (
+            <button type="button" onClick={() => { setPaymentMethod('split'); setSplitWalletAmount(walletBalance.toFixed(2)); }}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'split' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
+              <span className="text-xl">⚡</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-gray-800">Wallet + Card</p>
+                <p className="text-xs text-gray-400">Use ${walletBalance.toFixed(2)} wallet + card for remainder ${(fees.totalShipperPays - walletBalance).toFixed(2)}</p>
+              </div>
+              {paymentMethod === 'split' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Saved card option */}
+      {(paymentMethod === 'card' || paymentMethod === 'split') && hasSavedCard && (
+        <div className="space-y-2">
           {[
             { val: false, label: `${profile?.payout_card_brand ? profile.payout_card_brand.charAt(0).toUpperCase() + profile.payout_card_brand.slice(1) : 'Card'} ****${profile?.payout_card_last4}`, sub: 'Saved card', icon: '💳' },
-            { val: true, label: 'Use a different card', sub: 'Enter new card details', icon: '➕' },
+            { val: true, label: 'Use a different card', sub: 'Enter new details', icon: '➕' },
           ].map(opt => (
-            <button key={String(opt.val)} type="button"
-              onClick={() => { setUseNewCard(opt.val); setError(''); }}
+            <button key={String(opt.val)} type="button" onClick={() => { setUseNewCard(opt.val); setError(''); }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${useNewCard === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
-              <span className="text-xl">{opt.icon}</span>
+              <span className="text-lg">{opt.icon}</span>
               <div className="flex-1">
                 <p className="text-sm font-bold text-gray-800">{opt.label}</p>
                 <p className="text-xs text-gray-400">{opt.sub}</p>
               </div>
-              {useNewCard === opt.val && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+              {useNewCard === opt.val && <CheckCircle size={14} className="text-violet-600" />}
             </button>
           ))}
         </div>
       )}
 
-      {/* Card input */}
-      {showCardForm && (
+      {/* Card form */}
+      {(paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && (
         <div>
           <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Card Details</label>
           <div className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white">
-            <CardElement
-              options={{ ...CARD_ELEMENT_OPTIONS, wallets: { link: 'never' } }}
-              onReady={() => setCardReady(true)}
-            />
+            <CardElement options={{ ...CARD_ELEMENT_OPTIONS, wallets: { link: 'never' } }} onReady={() => setCardReady(true)} />
           </div>
-          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-            <Lock size={10} /> Encrypted by Stripe · never stored on Fetchr servers
-          </p>
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
             <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC
-            </p>
+            <p className="text-xs text-amber-600 mt-0.5">Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC</p>
           </div>
         </div>
       )}
@@ -483,7 +514,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       )}
 
       <button onClick={handlePay}
-        disabled={loading || !stripe || (showCardForm && !cardReady)}
+        disabled={loading || !stripe || ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady)}
         className="w-full btn-primary py-3.5 disabled:opacity-50 flex items-center justify-center gap-2">
         {loading
           ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
