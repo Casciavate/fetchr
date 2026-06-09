@@ -64,29 +64,45 @@ const Messages = ({ session }) => {
     const userId = session.user.id;
 
     // Retry loop handles race condition where navigation happens before DB write commits
-    const loadWithRetry = async () => {
-      setLoading(true);
-      for (let i = 0; i < 15; i++) {
-        if (cancelled) return;
-        const { data } = await supabase
-          .from('matches')
-          .select(`*, flight:flights(*), request:shipment_requests(*),
-            traveler:profiles!matches_traveler_id_fkey(*),
-            shipper:profiles!matches_shipper_id_fkey(*)`)
-          .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
-          .order('created_at', { ascending: false });
+const loadWithRetry = async () => {
+  setLoading(true);
 
-        if (data && data.length > 0) {
-          setAcceptedMatches(data);
-          setActiveMatch(data[0]);
-          await fetchUnreadCounts(data);
-          break;
-        }
-        await new Promise(r => setTimeout(r, 600));
-      }
-      if (!cancelled) setLoading(false);
-    };
+  // First check: is there anything at all for this user?
+  // If not, show empty state immediately — no point retrying
+  const { count } = await supabase
+    .from('matches')
+    .select('id', { count: 'exact', head: true })
+    .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+    .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded']);
+
+  if (count === 0) {
+    if (!cancelled) setLoading(false);
+    return;
+  }
+
+  // There IS a match — retry loop handles the race condition
+  // where navigation happens before DB write fully propagates
+  for (let i = 0; i < 15; i++) {
+    if (cancelled) return;
+    const { data } = await supabase
+      .from('matches')
+      .select(`*, flight:flights(*), request:shipment_requests(*),
+        traveler:profiles!matches_traveler_id_fkey(*),
+        shipper:profiles!matches_shipper_id_fkey(*)`)
+      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+      .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) {
+      setAcceptedMatches(data);
+      setActiveMatch(data[0]);
+      await fetchUnreadCounts(data);
+      break;
+    }
+    await new Promise(r => setTimeout(r, 600));
+  }
+  if (!cancelled) setLoading(false);
+};
 
     loadWithRetry();
 
