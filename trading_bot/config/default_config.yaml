@@ -1,0 +1,242 @@
+# =============================================================================
+# Systematic trading system - master configuration
+# -----------------------------------------------------------------------------
+# EVERY tunable risk parameter lives here. Nothing in risk_gate/ or signal_layer/
+# hardcodes a limit. Changes to this file are hashed and appended to
+# state/config_audit.log with a timestamp and a field-level diff.
+#
+# Values below were set from the real IBKR account snapshot taken at build time
+# (see docs/ACCOUNT_CONTEXT.md). Re-confirm before any live use.
+# =============================================================================
+
+account:
+  # Base/reporting currency of the IBKR account. All risk math is done in this
+  # currency after FX conversion.
+  base_currency: CHF
+
+  # "cash" or "margin". The connected account reports initial_margin = 0 and
+  # buying_power == total_cash_value, which is the signature of a cash account.
+  account_type: cash
+
+  # Asset classes the account is actually permissioned for. Anything not listed
+  # here is rejected by the risk gate regardless of what a strategy proposes.
+  # Observed holdings are 100% STK (ETFs are STK at IBKR). Options/futures/forex
+  # are NOT enabled until confirmed against the account's trading permissions.
+  permissioned_asset_classes: [STK]
+
+  # Snapshot values - used only as a fallback when a live snapshot is absent.
+  # The system always prefers the broker-reported values.
+  starting_equity: 304246.88
+  starting_cash: 29638.75
+
+  # Pattern Day Trader is a FINRA rule that applies to margin accounts at US
+  # brokers. This account is a cash account trading non-US-listed ETFs, so it
+  # does not apply. Set true (and confirm the current FINRA threshold) if the
+  # account is ever converted to a US margin account.
+  pdt_rules_apply: false
+  pdt_equity_threshold: 25000
+
+  # Cash accounts settle T+1/T+2; reusing unsettled proceeds is a good-faith
+  # violation. When true the risk gate only counts settled cash as buyable.
+  enforce_settled_cash_only: true
+
+  # FX rates into base_currency. There is no default of 1.0 anywhere in the
+  # system: an unknown currency is an error, because silently treating a GBP
+  # price as CHF would understate the position by ~10% and corrupt every risk
+  # calculation downstream. Refresh these from the broker before each session -
+  # stale rates are a real source of sizing error.
+  fx_rates:
+    CHF: 1.0
+    USD: 0.8078
+    GBP: 1.0892
+    EUR: 0.9350
+
+risk:
+  # --- Sizing -------------------------------------------------------------
+  # No single position may exceed this fraction of account equity.
+  max_position_pct: 0.08
+  # No single sector/asset-bucket may exceed this fraction of equity.
+  max_sector_pct: 0.25
+  # Max notional of any one order as a fraction of equity.
+  max_order_notional_pct: 0.08
+  # Orders smaller than this (base currency) are rejected as noise/fee-inefficient.
+  min_order_notional: 250.0
+
+  # --- Exposure -----------------------------------------------------------
+  # Gross exposure cap (sum of |position value|) as a fraction of equity.
+  max_gross_exposure_pct: 1.0
+  # Hard leverage cap. 1.0 == no leverage. This is a cash account: keep at 1.0.
+  max_leverage: 1.0
+
+  # --- Circuit breakers ---------------------------------------------------
+  # Realized + unrealized loss for the day, as a fraction of the day's starting
+  # equity. Breach => halt. Requires a human to re-enable (see runbook).
+  max_daily_loss_pct: 0.02
+  # "halt" = stop new orders, keep positions. "flatten" = also propose exits.
+  # Note: even "flatten" only PROPOSES exits - it cannot self-submit.
+  daily_loss_action: halt
+
+  # Peak-to-trough equity drawdown. Breach => full trading halt pending review.
+  max_drawdown_pct: 0.12
+
+  # --- Rate limiting (runaway-loop protection) ----------------------------
+  max_orders_per_minute: 6
+  max_orders_per_hour: 30
+  max_orders_per_day: 60
+
+  # --- Kill switch / state files -----------------------------------------
+  # Presence of this file blocks ALL order submission immediately.
+  kill_switch_file: state/KILL_SWITCH
+  halt_state_file: state/halt_state.json
+  rate_limit_state_file: state/rate_limit.json
+  equity_peak_file: state/equity_peak.json
+
+universe:
+  # Liquidity filters. Expressed in the instrument's own currency then converted.
+  min_avg_daily_dollar_volume: 2000000.0
+  avg_dollar_volume_lookback_days: 20
+  # Penny-stock / illiquid exclusion.
+  min_price: 5.0
+  # Minimum bar history required before an instrument is tradeable at all.
+  min_history_days: 300
+  # Max acceptable median bid/ask spread in basis points.
+  max_spread_bps: 30.0
+
+  allowed_asset_classes: [STK]
+  # EBS = SIX Swiss, LSEETF/LSE = London. SMART only for permissioned regions.
+  allowed_exchanges: [EBS, LSE, LSEETF, SMART]
+  allowed_currencies: [CHF, GBP, USD, EUR]
+  exclude_symbols: []
+
+  # Candidate instruments the systematic sleeve may consider. Ships EMPTY on
+  # purpose: populating it means committing to specific contracts, and every
+  # one must be verified against the account's actual trading permissions and
+  # market-data subscriptions first. `propose` refuses to run until it is set.
+  candidates: []
+
+  # Per-symbol contract metadata. `contract_id` is IBKR's conId and is strongly
+  # preferred over the symbol alone - symbols collide across venues, and
+  # resolving "WORLD" by name could route an order to the wrong listing.
+  #   SYMBOL:
+  #     exchange: EBS
+  #     currency: CHF
+  #     asset_class: STK
+  #     sector: BROAD_EQUITY
+  #     contract_id: 689952248
+  instruments: {}
+
+  # Instruments the account already holds long-term. Treated as core holdings:
+  # the systematic sleeve will not propose trades in them unless explicitly
+  # allowed, so the bot cannot churn the buy-and-hold portfolio.
+  core_holdings: [AGGS, CHCORP, IWDC, PHAU, TI5G, WLDS, WORLD]
+  trade_core_holdings: false
+
+strategies:
+  # Each strategy is independently switchable. Weights are relative and are
+  # normalised across ENABLED strategies only.
+  momentum:
+    enabled: true
+    weight: 1.0
+    lookback_days: 126
+    skip_recent_days: 21      # classic 12-1 style gap to avoid short-term reversal
+    top_n: 5
+    min_momentum: 0.0
+    trend_filter_ma_days: 200
+    stop_loss_atr_mult: 3.0
+    atr_days: 14
+
+  mean_reversion:
+    enabled: true
+    weight: 1.0
+    ma_days: 20
+    zscore_days: 20
+    entry_zscore: -2.0
+    exit_zscore: -0.5
+    trend_filter_ma_days: 200   # only buy dips above the long-term trend
+    max_positions: 5
+    stop_loss_atr_mult: 2.5
+    atr_days: 14
+
+  breakout:
+    enabled: false              # off until backtested and reviewed
+    weight: 1.0
+    breakout_days: 55
+    exit_days: 20
+    volume_confirm_mult: 1.5
+    volume_avg_days: 50
+    max_positions: 5
+    stop_loss_atr_mult: 2.5
+    atr_days: 14
+
+portfolio:
+  # Fraction of total equity the systematic sleeve is allowed to control. The
+  # rest is the untouched buy-and-hold core. 0.10 => the bot manages ~10%.
+  sleeve_pct_of_equity: 0.10
+  # Target number of concurrent systematic positions.
+  max_open_positions: 8
+  # Volatility targeting for position sizing (annualised).
+  target_position_volatility: 0.20
+  rebalance_frequency: weekly   # daily | weekly
+
+costs:
+  # Used by the backtest engine. Set these to your actual IBKR tiered/fixed
+  # schedule - optimistic costs are the most common way to fake a good backtest.
+  commission_bps: 5.0
+  min_commission: 1.5
+  slippage_bps: 5.0
+  half_spread_bps: 4.0
+
+execution:
+  connection:
+    host: 127.0.0.1
+    # TWS: 7497 paper / 7496 live. IB Gateway: 4002 paper / 4001 live.
+    # Verified against IBKR API docs at build time.
+    paper_port: 7497
+    live_port: 7496
+    gateway_paper_port: 4002
+    gateway_live_port: 4001
+    use_gateway: false
+    client_id: 17
+    connect_timeout_seconds: 15
+    readonly_probe_on_connect: true
+
+  # Limit orders by default. Market orders are opt-in per-order and the risk
+  # gate rejects them for anything failing the liquidity test.
+  default_order_type: LMT
+  allow_market_orders: false
+  max_slippage_bps: 25
+  limit_offset_bps: 10          # how far through the touch to price the limit
+  time_in_force: DAY
+  outside_rth: false
+
+  # Reconciliation against broker-reported state on every cycle.
+  reconcile_every_cycle: true
+  # Note the explicit decimal point: YAML 1.1 parses `1e-6` as a *string*,
+  # which would silently break the numeric drift comparison.
+  max_position_drift_tolerance: 1.0e-6
+
+approval:
+  # Proposals expire if a human does not act on them - stale signals must not be
+  # executed hours later at a different price.
+  proposal_ttl_minutes: 30
+  # Approval tokens are single-use and bound to the exact order payload.
+  token_ttl_minutes: 30
+  approval_store: state/approvals.db
+  # If true, a human must approve each order individually rather than a batch.
+  require_per_order_approval: true
+
+monitoring:
+  log_dir: logs
+  structured_log_file: logs/decisions.jsonl
+  daily_summary_file: logs/daily_summary.jsonl
+  log_level: INFO
+  alerts:
+    # "console" is the safe default: no outbound credentials required.
+    # Set channel to "slack" and provide SLACK_WEBHOOK_URL in the environment.
+    channel: console
+    alert_on:
+      - circuit_breaker
+      - kill_switch
+      - connection_loss
+      - order_rejected
+      - risk_block
