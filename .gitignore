@@ -2,14 +2,3 @@ node_modules/
 .env
 build/
 .DS_Store
-
-# --- trading_bot -----------------------------------------------------------
-# Runtime state must never be committed. The approval signing key is a secret;
-# the kill switch and halt files are machine-local operational state, and
-# committing a stale one could silently re-enable or block trading elsewhere.
-trading_bot/state/
-trading_bot/logs/
-trading_bot/data/*.csv
-__pycache__/
-*.py[cod]
-.pytest_cache/
