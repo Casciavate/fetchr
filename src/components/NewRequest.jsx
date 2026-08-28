@@ -263,6 +263,14 @@ const StoreSearch = ({ value, onChange }) => {
           ))}
         </div>
       )}
+      {open && !searching && results.length === 0 && query.length >= 3 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl px-4 py-3">
+          <p className="text-sm text-gray-500">No location found for "{query}".</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Try just the mall or building name (e.g. "Dubai Mall") instead of the store brand.
+          </p>
+        </div>
+      )}
       {value?.address && (
         <div className="mt-2 bg-emerald-50 rounded-xl px-3 py-2 flex items-start gap-2 border border-emerald-100">
           <MapPin size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
