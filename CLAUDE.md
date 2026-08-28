@@ -8,6 +8,33 @@ commission and holds funds in escrow until both parties confirm delivery.
 - Supabase project ref: `jvuzjmigkqolphkhzeei`
 - Edge function URL: https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect
 
+## Flight search (AddFlight) — no live schedule API, by design
+
+`AddFlight.jsx` cannot call a real flight-schedule provider (AeroDataBox,
+AviationStack, etc.) — the project is pre-revenue and that's an explicit
+"no external API cost" decision, to revisit once there's a paying user base.
+Until then, flight search runs entirely on two static datasets derived
+from OpenFlights open data (openflights.org, public domain, ~2014 snapshot):
+
+- `src/components/shared/airlines.js` — 965 airline name → IATA code
+  entries (`AIRLINE_CODES`, `AIRLINES`, `CODE_TO_AIRLINE`), with a small
+  `NAME_OVERRIDES` patch for carriers that rebranded/merged since the
+  snapshot or hit a stale code collision. Bundled directly (~8.6KB gzip).
+- `src/components/shared/routes.js` — direct-route coverage between the
+  airports in `AddFlight.jsx`'s `AIRPORTS` list (`ROUTE_AIRLINES`,
+  `AIRLINE_ROUTES`), used only for search suggestions, not live schedules.
+  Loaded via dynamic `import()` inside `AddFlight.jsx` so it doesn't bloat
+  the main bundle (~79KB gzip chunk, loads only when this screen opens).
+
+Flight-number → airline detection is live (first 2 characters = IATA
+code) and needs no network call. Route auto-fill from a flight number
+still calls OpenSky Network (free, no key) opportunistically, but that
+only has data for flights that already flew — it can't know about future
+bookings, which is the normal case here. Don't expect it to work for a
+future `flight_date`; that's not a bug, it's an inherent limitation of the
+free data source. Both static files can be regenerated from a fresh
+OpenFlights export the same way if the airport list grows.
+
 ## Stack
 
 React + Tailwind (Create React App), Supabase (Postgres + Auth + Storage +
