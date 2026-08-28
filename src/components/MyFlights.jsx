@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { AIRLINE_CODES } from './shared/airlines';
 import {
   Plane, Edit2, Trash2, Plus, AlertTriangle,
   CheckCircle, DollarSign, X, Save,
@@ -12,28 +13,6 @@ const CATEGORIES = [
   'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
   'Home & Living', 'Documents', 'Other'
 ];
-
-const AIRLINE_CODES = {
-  'Emirates': 'EK', 'Qatar Airways': 'QR', 'Etihad Airways': 'EY',
-  'Lufthansa': 'LH', 'British Airways': 'BA', 'Air France': 'AF',
-  'Turkish Airlines': 'TK', 'Flydubai': 'FZ', 'Air Arabia': 'G9',
-  'Singapore Airlines': 'SQ', 'Cathay Pacific': 'CX', 'Qantas': 'QF',
-  'American Airlines': 'AA', 'United Airlines': 'UA', 'Delta Air Lines': 'DL',
-  'Southwest Airlines': 'WN', 'Ryanair': 'FR', 'easyJet': 'U2',
-  'KLM': 'KL', 'Swiss': 'LX', 'Austrian Airlines': 'OS',
-  'Finnair': 'AY', 'SAS': 'SK', 'Iberia': 'IB', 'EgyptAir': 'MS',
-  'Ethiopian Airlines': 'ET', 'Kenya Airways': 'KQ', 'Saudia': 'SV',
-  'Gulf Air': 'GF', 'Oman Air': 'WY', 'Air India': 'AI',
-  'Japan Airlines': 'JL', 'Korean Air': 'KE', 'ANA': 'NH',
-  'Thai Airways': 'TG', 'Malaysia Airlines': 'MH', 'LATAM': 'LA',
-  'Air Canada': 'AC', 'IndiGo': '6E', 'flynas': 'XY',
-  'Jazeera Airways': 'J9', 'Pegasus Airlines': 'PC', 'Royal Jordanian': 'RJ',
-  'Middle East Airlines': 'ME', 'WizzAir': 'W6', 'Vueling': 'VY',
-  'TAP Air Portugal': 'TP', 'Aer Lingus': 'EI', 'Norwegian': 'DY',
-  'Air Asia': 'AK', 'Garuda Indonesia': 'GA', 'Philippine Airlines': 'PR',
-  'Vietnam Airlines': 'VN', 'China Eastern': 'MU', 'China Southern': 'CZ',
-  'Air China': 'CA', 'Hainan Airlines': 'HU', 'SunExpress': 'XQ',
-};
 
 const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];

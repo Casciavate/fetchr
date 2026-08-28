@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { AIRLINES, AIRLINE_CODES } from './shared/airlines';
 import {
   Plane, Search, MapPin, Calendar, DollarSign,
   CheckCircle, AlertCircle, ChevronDown, ShoppingBag,
@@ -12,49 +13,6 @@ const CATEGORIES = [
   'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
   'Home & Living', 'Documents', 'Other'
 ];
-
-const AIRLINES = [
-  'Emirates', 'Qatar Airways', 'Etihad Airways', 'Lufthansa',
-  'British Airways', 'Air France', 'Turkish Airlines', 'Flydubai',
-  'Air Arabia', 'Singapore Airlines', 'Cathay Pacific', 'Qantas',
-  'American Airlines', 'United Airlines', 'Delta Air Lines',
-  'Southwest Airlines', 'Ryanair', 'easyJet', 'KLM', 'Swiss',
-  'Austrian Airlines', 'Finnair', 'SAS', 'Iberia', 'EgyptAir',
-  'Ethiopian Airlines', 'Kenya Airways', 'Saudia', 'Gulf Air',
-  'Oman Air', 'Air India', 'Japan Airlines', 'Korean Air',
-  'ANA', 'Thai Airways', 'Malaysia Airlines', 'LATAM', 'Avianca',
-  'Air Canada', 'IndiGo', 'SpiceJet', 'flynas', 'Jazeera Airways',
-  'Pegasus Airlines', 'Royal Jordanian', 'Middle East Airlines',
-  'flyadeal', 'Air Arabia Abu Dhabi', 'WizzAir', 'Vueling',
-  'TAP Air Portugal', 'Aer Lingus', 'Norwegian', 'TUI Airways',
-  'Air Asia', 'Garuda Indonesia', 'Philippine Airlines',
-  'Vietnam Airlines', 'China Eastern', 'China Southern', 'Air China',
-  'Hainan Airlines', 'SunExpress',
-];
-
-const AIRLINE_CODES = {
-  'Emirates': 'EK', 'Qatar Airways': 'QR', 'Etihad Airways': 'EY',
-  'Lufthansa': 'LH', 'British Airways': 'BA', 'Air France': 'AF',
-  'Turkish Airlines': 'TK', 'Flydubai': 'FZ', 'Air Arabia': 'G9',
-  'Singapore Airlines': 'SQ', 'Cathay Pacific': 'CX', 'Qantas': 'QF',
-  'American Airlines': 'AA', 'United Airlines': 'UA', 'Delta Air Lines': 'DL',
-  'Southwest Airlines': 'WN', 'Ryanair': 'FR', 'easyJet': 'U2',
-  'KLM': 'KL', 'Swiss': 'LX', 'Austrian Airlines': 'OS',
-  'Finnair': 'AY', 'SAS': 'SK', 'Iberia': 'IB',
-  'EgyptAir': 'MS', 'Ethiopian Airlines': 'ET', 'Kenya Airways': 'KQ',
-  'Saudia': 'SV', 'Gulf Air': 'GF', 'Oman Air': 'WY',
-  'Air India': 'AI', 'Japan Airlines': 'JL', 'Korean Air': 'KE',
-  'ANA': 'NH', 'Thai Airways': 'TG', 'Malaysia Airlines': 'MH',
-  'LATAM': 'LA', 'Avianca': 'AV', 'Air Canada': 'AC',
-  'IndiGo': '6E', 'SpiceJet': 'SG', 'flynas': 'XY',
-  'Jazeera Airways': 'J9', 'Pegasus Airlines': 'PC',
-  'Royal Jordanian': 'RJ', 'Middle East Airlines': 'ME',
-  'flyadeal': 'F3', 'WizzAir': 'W6', 'Vueling': 'VY',
-  'TAP Air Portugal': 'TP', 'Aer Lingus': 'EI', 'Norwegian': 'DY',
-  'Air Asia': 'AK', 'Garuda Indonesia': 'GA',
-  'Vietnam Airlines': 'VN', 'China Eastern': 'MU',
-  'China Southern': 'CZ', 'Air China': 'CA',
-};
 
 const AIRPORTS = [
   { code: 'DXB', city: 'Dubai', name: 'Dubai International', country: 'UAE' },

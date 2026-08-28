@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, Plane, Package, Star, CheckCircle, XCircle,
-  ChevronRight, Shield, X, Award, Globe, Clock, Zap, ShoppingBag
+  ChevronRight, Shield, X, Award, Globe, Clock, Zap, ShoppingBag,
+  AlertTriangle
 } from 'lucide-react';
 
 const Matches = ({ session, onNavigate }) => {
@@ -12,10 +13,17 @@ const Matches = ({ session, onNavigate }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
+  const fetchDeclinedIds = async (userId) => {
+    const { data } = await supabase
+      .from('match_declines').select('match_id').eq('user_id', userId);
+    return (data || []).map(d => d.match_id);
+  };
+
   const fetchMatches = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     await supabase.rpc('find_matches');
-    const { data, error } = await supabase
+    const declinedIds = await fetchDeclinedIds(session.user.id);
+    let query = supabase
       .from('matches')
       .select(`
         *,
@@ -27,6 +35,8 @@ const Matches = ({ session, onNavigate }) => {
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       .in('status', ['pending', 'awaiting_other'])
       .order('match_score', { ascending: false });
+    if (declinedIds.length > 0) query = query.not('id', 'in', `(${declinedIds.join(',')})`);
+    const { data, error } = await query;
     if (!error) setMatches(data || []);
     if (showLoading) setLoading(false);
   };
@@ -76,7 +86,8 @@ const Matches = ({ session, onNavigate }) => {
       }
 
       // Otherwise refresh full match list
-      const { data: fullData, error } = await supabase
+      const declinedIds = await fetchDeclinedIds(userId);
+      let fullQuery = supabase
         .from('matches')
         .select(`
           *,
@@ -88,6 +99,8 @@ const Matches = ({ session, onNavigate }) => {
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .in('status', ['pending', 'awaiting_other'])
         .order('match_score', { ascending: false });
+      if (declinedIds.length > 0) fullQuery = fullQuery.not('id', 'in', `(${declinedIds.join(',')})`);
+      const { data: fullData, error } = await fullQuery;
 
       if (!error) setMatches(fullData || []);
     }, 2000);
@@ -165,7 +178,9 @@ const Matches = ({ session, onNavigate }) => {
 
   const handleDecline = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'declining' }));
-    await supabase.from('matches').update({ status: 'rejected' }).eq('id', matchId);
+    // Per-user hide: the match stays in the pool for the other party.
+    await supabase.from('match_declines')
+      .upsert({ match_id: matchId, user_id: session.user.id }, { onConflict: 'match_id,user_id' });
     setMatches(prev => prev.filter(m => m.id !== matchId));
     setActing(prev => ({ ...prev, [matchId]: null }));
   };
@@ -331,6 +346,15 @@ const Matches = ({ session, onNavigate }) => {
                       <ShoppingBag size={14} />
                       <p className="text-xs font-semibold">
                         Shop & Ship available — traveler can purchase items at destination
+                      </p>
+                    </div>
+                  )}
+
+                  {match.request?.requires_purchase && match.flight?.delivery_type !== 'both' && (
+                    <div className="flex items-center gap-2 bg-amber-50 text-amber-700 rounded-xl px-3 py-2 mb-4 border border-amber-100">
+                      <AlertTriangle size={14} />
+                      <p className="text-xs font-semibold">
+                        Mismatch: this shipment needs Shop & Ship, but this traveler only offers handover
                       </p>
                     </div>
                   )}

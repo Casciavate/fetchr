@@ -335,10 +335,6 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                     <span>Traveler receives</span>
                     <span>${travelerReceives.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-semibold text-violet-600">
-                    <span>Fetchr revenue</span>
-                    <span>${fetchrFee.toFixed(2)}</span>
-                  </div>
                 </div>
               </div>
               {match.agreed_notes && (
@@ -605,7 +601,7 @@ const Messages = ({ session }) => {
     setUploadingProof(true);
     try {
       const ext = file.name.split('.').pop();
-      const path = `proofs/${activeMatch.id}-${Date.now()}.${ext}`;
+      const path = `${session.user.id}/proofs/${activeMatch.id}-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);

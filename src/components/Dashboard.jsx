@@ -11,20 +11,13 @@ import Completed from './Completed';
 import Profile from './Profile';
 import Earnings from './Earnings';
 import WalletScreen from './Wallet';
+import { AIRLINE_CODES } from './shared/airlines';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, LogOut, CheckCircle, Search,
   Menu, X, TrendingUp, Zap, ArrowUpRight
 } from 'lucide-react';
-
-const AIRLINE_CODES = {
-  'Emirates': 'EK', 'Qatar Airways': 'QR', 'Etihad Airways': 'EY',
-  'Lufthansa': 'LH', 'British Airways': 'BA', 'Air France': 'AF',
-  'Turkish Airlines': 'TK', 'Flydubai': 'FZ', 'Air Arabia': 'G9',
-  'Singapore Airlines': 'SQ', 'Cathay Pacific': 'CX', 'Qantas': 'QF',
-  'American Airlines': 'AA', 'United Airlines': 'UA', 'Delta Air Lines': 'DL',
-};
 
 const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];

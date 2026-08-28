@@ -95,7 +95,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
       const uploadedUrls = [];
       for (const file of files) {
         const ext = file.name.split('.').pop();
-        const path = `proofs/${match.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const path = `${session.user.id}/proofs/${match.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: upErr } = await supabase.storage
           .from('avatars').upload(path, file, { upsert: true });
         if (upErr) throw upErr;
@@ -420,10 +420,6 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
             <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">
               <span>Traveler receives</span>
               <span>${fees.travelerReceives.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-semibold text-violet-600">
-              <span>Fetchr revenue</span>
-              <span>${fees.fetchrFee.toFixed(2)}</span>
             </div>
           </div>
         </div>
