@@ -4,8 +4,27 @@ import { AIRLINES, AIRLINE_CODES, CODE_TO_AIRLINE } from './shared/airlines';
 import {
   Plane, Search, MapPin, Calendar, DollarSign,
   CheckCircle, AlertCircle, ShoppingBag,
-  Briefcase, Package, Plus, X, Weight, AlertTriangle
+  Briefcase, Package, Plus, X, Weight, AlertTriangle,
+  Radar, ChevronDown, PenLine
 } from 'lucide-react';
+
+const FLIGHT_SEARCH_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/flight-search';
+
+// Live schedule lookup — proxies to AeroDataBox server-side (see
+// supabase/functions/flight-search). Never throws for a "no data"
+// outcome; the caller checks `unavailable`/`flights` and falls back
+// to manual entry.
+const searchFlightSchedule = async (action, data) => {
+  const { data: { session: auth } } = await supabase.auth.getSession();
+  const res = await fetch(FLIGHT_SEARCH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+    body: JSON.stringify({ action, data }),
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Flight search failed');
+  return result;
+};
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -523,8 +542,18 @@ const AddFlight = ({ session }) => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [success, setSuccess] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [routeData, setRouteData] = useState(null);
+
+  // Live schedule search state — two entry points into the same
+  // AeroDataBox-backed lookup: by flight number, or by route + date.
+  const [searchTab, setSearchTab] = useState('number'); // 'number' | 'route'
+  const [numberSearching, setNumberSearching] = useState(false);
+  const [numberResults, setNumberResults] = useState(null); // null = not searched, [] = searched, no match
+  const [numberNote, setNumberNote] = useState('');
+  const [routeSearching, setRouteSearching] = useState(false);
+  const [routeResults, setRouteResults] = useState(null);
+  const [routeNote, setRouteNote] = useState('');
+  const [showManualFields, setShowManualFields] = useState(false);
 
   // Route/airline suggestion data is ~80KB gzipped — load it lazily so it
   // doesn't bloat the initial bundle for users who never open this screen.
@@ -583,61 +612,87 @@ const AddFlight = ({ session }) => {
     }));
   };
 
-  // Best-effort route auto-fill via OpenSky's real ADS-B track history.
-  // This only has data for flights that have already flown, so it can
-  // only help for today's date or the recent past — not future bookings.
-  const lookupRoute = async () => {
+  // Resolve an AeroDataBox airport (iata/name/city) against our own
+  // AIRPORTS list first, so results match what AirportSearch expects —
+  // falling back to whatever the API returned if it's not one we list.
+  const resolveAirport = (apiAirport) => {
+    if (!apiAirport?.iata) return null;
+    const known = AIRPORTS.find(a => a.code === apiAirport.iata);
+    return known || { code: apiAirport.iata, city: apiAirport.city || apiAirport.iata, name: apiAirport.name || apiAirport.iata };
+  };
+
+  const applyScheduleResult = (flight) => {
+    const from = resolveAirport(flight.from);
+    const to = resolveAirport(flight.to);
+    setForm(prev => ({
+      ...prev,
+      flight_number: flight.flightNumber || prev.flight_number,
+      airline: flight.airline || prev.airline,
+      from_code: from?.code || prev.from_code, from_city: from?.city || prev.from_city,
+      to_code: to?.code || prev.to_code, to_city: to?.city || prev.to_city,
+    }));
+    setSuccessMsg(`✓ ${flight.flightNumber} · ${flight.airline || 'Airline'} — ${from?.city || flight.from?.iata} → ${to?.city || flight.to?.iata}. Please verify and continue.`);
+  };
+
+  // Live schedule search by flight number + date — real scheduled-flight
+  // data (works for future dates, unlike the old ADS-B-only lookup),
+  // proxied through the flight-search edge function.
+  const searchByNumber = async () => {
     if (!form.flight_number.trim()) return;
-    if (!form.flight_date) { setError('Pick a flight date first — needed to look up the route.'); return; }
-    setSearching(true);
-    setError('');
-    setSuccessMsg('');
-
-    const flightDate = new Date(form.flight_date);
-    const now = new Date();
-    const daysDiff = (now - flightDate) / (1000 * 60 * 60 * 24);
-
-    if (daysDiff < 0 || daysDiff > 30) {
-      setError('Route lookup only works for flights today or within the last 30 days — for future flights, pick the route below.');
-      setSearching(false);
-      return;
-    }
+    if (!form.flight_date) { setError('Pick a flight date first.'); return; }
+    if (form.flight_date < today) { setError('Flight date cannot be in the past.'); return; }
+    setNumberSearching(true); setNumberResults(null); setNumberNote('');
+    setError(''); setSuccessMsg('');
 
     try {
-      const begin = Math.floor(new Date(form.flight_date).setHours(0, 0, 0, 0) / 1000);
-      const end = Math.floor(new Date(form.flight_date).setHours(23, 59, 59, 0) / 1000);
-
-      const res = await fetch(
-        `https://opensky-network.org/api/flights/all?begin=${begin}&end=${end}`,
-        { signal: AbortSignal.timeout(8000) }
-      );
-
-      if (res.ok) {
-        const flights = await res.json();
-        const flightCode = form.flight_number.replace(/\s/g, '');
-        const match = flights.find(f => f.callsign?.trim().toUpperCase().startsWith(flightCode));
-
-        if (match) {
-          const depAirport = AIRPORTS.find(a => a.code === match.estDepartureAirport);
-          const arrAirport = AIRPORTS.find(a => a.code === match.estArrivalAirport);
-
-          if (depAirport && arrAirport) {
-            setForm(prev => ({
-              ...prev,
-              from_code: depAirport.code, from_city: depAirport.city,
-              to_code: arrAirport.code, to_city: arrAirport.city,
-            }));
-            setSuccessMsg(`✓ Route found: ${depAirport.city} → ${arrAirport.city}. Please verify and continue.`);
-            setSearching(false);
-            return;
-          }
-        }
+      const result = await searchFlightSchedule('by_number', {
+        flightNumber: form.flight_number, date: form.flight_date,
+      });
+      if (result.unavailable) {
+        setNumberNote("Couldn't reach live flight search — fill in the details below.");
+        setShowManualFields(true);
+      } else if (result.flights.length === 0) {
+        setNumberNote('No scheduled flight found for that number and date. Fill in the details below.');
+        setShowManualFields(true);
+      } else if (result.flights.length === 1) {
+        applyScheduleResult(result.flights[0]);
+      } else {
+        setNumberResults(result.flights);
       }
-      setError('No recent flight track found for this number. Pick the route below.');
     } catch (e) {
-      setError('Route lookup is unavailable right now. Pick the route below.');
+      setNumberNote("Couldn't reach live flight search — fill in the details below.");
+      setShowManualFields(true);
     }
-    setSearching(false);
+    setNumberSearching(false);
+  };
+
+  // Browse every scheduled flight on a route for a given date —
+  // requires both airports to already be picked below.
+  const searchByRoute = async () => {
+    if (!form.from_code || !form.to_code) { setError('Pick departure and arrival airports first.'); return; }
+    if (!form.flight_date) { setError('Pick a flight date first.'); return; }
+    if (form.flight_date < today) { setError('Flight date cannot be in the past.'); return; }
+    setRouteSearching(true); setRouteResults(null); setRouteNote('');
+    setError(''); setSuccessMsg('');
+
+    try {
+      const result = await searchFlightSchedule('by_route', {
+        fromIata: form.from_code, toIata: form.to_code, date: form.flight_date,
+      });
+      if (result.unavailable) {
+        setRouteNote("Couldn't reach live flight search — pick your airline below.");
+        setShowManualFields(true);
+      } else if (result.flights.length === 0) {
+        setRouteNote('No scheduled flights found on this route for that date. Pick your airline below.');
+        setShowManualFields(true);
+      } else {
+        setRouteResults(result.flights);
+      }
+    } catch (e) {
+      setRouteNote("Couldn't reach live flight search — pick your airline below.");
+      setShowManualFields(true);
+    }
+    setRouteSearching(false);
   };
 
   const toggleCategory = (cat) => {
@@ -650,12 +705,12 @@ const AddFlight = ({ session }) => {
   };
 
   const validateStep1 = () => {
-    if (!form.from_code) { setError('Please select departure airport.'); return false; }
-    if (!form.to_code) { setError('Please select arrival airport.'); return false; }
-    if (form.from_code === form.to_code) { setError('Departure and arrival cannot be the same.'); return false; }
     if (!form.flight_date) { setError('Please select a flight date.'); return false; }
     if (form.flight_date < today) { setError('Flight date cannot be in the past.'); return false; }
-    if (!form.airline) { setError('Please select your airline.'); return false; }
+    if (!form.from_code) { setShowManualFields(true); setError('Please select departure airport.'); return false; }
+    if (!form.to_code) { setShowManualFields(true); setError('Please select arrival airport.'); return false; }
+    if (form.from_code === form.to_code) { setShowManualFields(true); setError('Departure and arrival cannot be the same.'); return false; }
+    if (!form.airline) { setShowManualFields(true); setError('Please select your airline.'); return false; }
     return true;
   };
 
@@ -743,7 +798,10 @@ const AddFlight = ({ session }) => {
       handover_location_departure: '', handover_location_arrival: '',
     });
     setLuggageOptions([]);
-    setFlightNumberSearch('');
+    setSearchTab('number');
+    setNumberResults(null); setNumberNote('');
+    setRouteResults(null); setRouteNote('');
+    setShowManualFields(false);
   };
 
   const totalKg = luggageOptions.reduce((s, l) => s + (parseFloat(l.available_kg) || 0), 0);
@@ -826,77 +884,7 @@ const AddFlight = ({ session }) => {
       {/* ── STEP 1: Flight Info ── */}
       {step === 1 && (
         <div className="space-y-4">
-          {/* Flight number — auto-detects the airline as you type, no picking needed */}
-          <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-violet-700 mb-1">Flight Number</p>
-            <p className="text-xs text-gray-500 mb-2">
-              Type it and the airline fills in automatically. Tap Fill to also try
-              auto-filling the route — that only works for today or recent flights.
-            </p>
-            <div className="flex gap-2">
-              <input type="text" placeholder="e.g. EK203, 6E204, QR542..."
-                value={form.flight_number}
-                onChange={e => handleFlightNumberChange(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && lookupRoute()}
-                className="input-field flex-1" />
-              <button type="button" onClick={lookupRoute} disabled={searching || !form.flight_number.trim()}
-                className="btn-primary px-4 gap-2 flex-shrink-0 disabled:opacity-50">
-                <Search size={15} />
-                {searching ? '...' : 'Fill route'}
-              </button>
-            </div>
-            {form.airline && (
-              <p className="text-xs text-emerald-600 font-semibold mt-2">
-                ✓ Airline detected: {form.airline}
-              </p>
-            )}
-          </div>
-
-          <AirlineSearch
-            label="Airline *"
-            value={form.airline}
-            onChange={airline => setForm(prev => ({ ...prev, airline }))}
-            suggestions={suggestedAirlinesForRoute}
-            suggestionsLabel="Airlines flying this route:"
-          />
-
-          {suggestedRoutesForAirline.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-400 mb-1.5">Popular routes for {form.airline}:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestedRoutesForAirline.map(r => (
-                  <button key={`${r.fromCode}-${r.toCode}`} type="button"
-                    onClick={() => setForm(prev => ({
-                      ...prev,
-                      from_code: r.from.code, from_city: r.from.city,
-                      to_code: r.to.code, to_city: r.to.city,
-                    }))}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition">
-                    {r.from.code} → {r.to.code}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <AirportSearch
-            label="Departure Airport *"
-            value={{ city: form.from_city, code: form.from_code }}
-            onChange={airport => setForm(prev => ({
-              ...prev, from_city: airport.city, from_code: airport.code
-            }))}
-            placeholder="Search city, airport or code..."
-          />
-
-          <AirportSearch
-            label="Arrival Airport *"
-            value={{ city: form.to_city, code: form.to_code }}
-            onChange={airport => setForm(prev => ({
-              ...prev, to_city: airport.city, to_code: airport.code
-            }))}
-            placeholder="Search city, airport or code..."
-          />
-
+          {/* Date comes first — both search modes need it, and it can never be in the past */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
               Flight Date * <span className="text-gray-300 font-normal normal-case">(dd/mm/yyyy)</span>
@@ -915,6 +903,166 @@ const AddFlight = ({ session }) => {
               </p>
             )}
           </div>
+
+          {/* Live schedule search — flight number or route + date */}
+          <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Radar size={15} className="text-violet-600" />
+              <p className="text-sm font-semibold text-violet-700">Find your flight</p>
+            </div>
+
+            <div className="flex gap-1 bg-white/70 rounded-xl p-1">
+              <button type="button" onClick={() => setSearchTab('number')}
+                className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
+                  searchTab === 'number' ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white'
+                }`}>
+                By flight number
+              </button>
+              <button type="button" onClick={() => setSearchTab('route')}
+                className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
+                  searchTab === 'route' ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white'
+                }`}>
+                By route
+              </button>
+            </div>
+
+            {searchTab === 'number' && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  Type your flight number — we'll fill in the airline and route automatically.
+                </p>
+                <div className="flex gap-2">
+                  <input type="text" placeholder="e.g. EK203, 6E204, QR542..."
+                    value={form.flight_number}
+                    onChange={e => handleFlightNumberChange(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && searchByNumber()}
+                    className="input-field flex-1" />
+                  <button type="button" onClick={searchByNumber}
+                    disabled={numberSearching || !form.flight_number.trim() || !form.flight_date}
+                    className="btn-primary px-4 gap-2 flex-shrink-0 disabled:opacity-50">
+                    <Search size={15} />
+                    {numberSearching ? '...' : 'Search'}
+                  </button>
+                </div>
+                {!form.flight_date && form.flight_number && (
+                  <p className="text-xs text-amber-600">Pick a flight date above first.</p>
+                )}
+                {form.airline && !numberResults?.length && (
+                  <p className="text-xs text-emerald-600 font-semibold">✓ Airline detected: {form.airline}</p>
+                )}
+                {numberNote && <p className="text-xs text-gray-500">{numberNote}</p>}
+                {numberResults?.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-gray-500">Multiple matches — pick yours:</p>
+                    {numberResults.map((f, i) => (
+                      <button key={i} type="button"
+                        onClick={() => { applyScheduleResult(f); setNumberResults(null); }}
+                        className="w-full text-left bg-white rounded-xl px-3 py-2.5 border border-gray-100 hover:border-violet-300 transition">
+                        <p className="text-sm font-bold text-gray-800">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
+                        <p className="text-xs text-gray-400">
+                          {f.from?.iata || '?'} → {f.to?.iata || '?'}
+                          {f.departureLocal ? ` · dep ${new Date(f.departureLocal).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {searchTab === 'route' && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  Pick your departure and arrival airports below, then browse every scheduled flight for that date.
+                </p>
+                <button type="button" onClick={searchByRoute}
+                  disabled={routeSearching || !form.from_code || !form.to_code || !form.flight_date}
+                  className="btn-primary w-full gap-2 disabled:opacity-50">
+                  <Search size={15} />
+                  {routeSearching ? 'Searching...' : 'Browse flights for this route'}
+                </button>
+                {(!form.from_code || !form.to_code) && (
+                  <p className="text-xs text-amber-600">Pick both airports below first.</p>
+                )}
+                {routeNote && <p className="text-xs text-gray-500">{routeNote}</p>}
+                {routeResults?.length > 0 && (
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    <p className="text-xs font-semibold text-gray-500">{routeResults.length} scheduled flight{routeResults.length === 1 ? '' : 's'} found:</p>
+                    {routeResults.map((f, i) => (
+                      <button key={i} type="button"
+                        onClick={() => { applyScheduleResult(f); setRouteResults(null); }}
+                        className="w-full text-left bg-white rounded-xl px-3 py-2.5 border border-gray-100 hover:border-violet-300 transition">
+                        <p className="text-sm font-bold text-gray-800">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
+                        {f.departureLocal && (
+                          <p className="text-xs text-gray-400">
+                            Departs {new Date(f.departureLocal).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Manual fields — the source of truth for the form; auto-revealed
+              once search fills anything in, or the user opts in directly */}
+          <button type="button" onClick={() => setShowManualFields(v => !v)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700">
+            <PenLine size={13} />
+            {showManualFields ? 'Hide manual entry' : 'Enter or edit details manually'}
+            <ChevronDown size={13} className={`transition-transform ${showManualFields ? 'rotate-180' : ''}`} />
+          </button>
+
+          {(showManualFields || form.from_code || form.to_code || form.airline) && (
+            <div className="space-y-4 animate-fade-in">
+              <AirlineSearch
+                label="Airline *"
+                value={form.airline}
+                onChange={airline => setForm(prev => ({ ...prev, airline }))}
+                suggestions={suggestedAirlinesForRoute}
+                suggestionsLabel="Airlines flying this route:"
+              />
+
+              {suggestedRoutesForAirline.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1.5">Popular routes for {form.airline}:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestedRoutesForAirline.map(r => (
+                      <button key={`${r.fromCode}-${r.toCode}`} type="button"
+                        onClick={() => setForm(prev => ({
+                          ...prev,
+                          from_code: r.from.code, from_city: r.from.city,
+                          to_code: r.to.code, to_city: r.to.city,
+                        }))}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition">
+                        {r.from.code} → {r.to.code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <AirportSearch
+                label="Departure Airport *"
+                value={{ city: form.from_city, code: form.from_code }}
+                onChange={airport => setForm(prev => ({
+                  ...prev, from_city: airport.city, from_code: airport.code
+                }))}
+                placeholder="Search city, airport or code..."
+              />
+
+              <AirportSearch
+                label="Arrival Airport *"
+                value={{ city: form.to_city, code: form.to_code }}
+                onChange={airport => setForm(prev => ({
+                  ...prev, to_city: airport.city, to_code: airport.code
+                }))}
+                placeholder="Search city, airport or code..."
+              />
+            </div>
+          )}
 
           <button onClick={handleNext} className="w-full btn-primary py-3.5">
             Continue to Capacity

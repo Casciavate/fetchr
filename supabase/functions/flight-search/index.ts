@@ -1,244 +1,165 @@
-Deno.serve(async (req) => {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  }
+// @ts-nocheck
+// Live flight-schedule lookup, proxied server-side so the RapidAPI key
+// never reaches the browser. Backed by AeroDataBox's free-tier plan,
+// which is metered — every response is cached in Postgres for a few
+// hours so repeat searches (same flight number/date, same popular
+// route) don't burn quota. If the key isn't configured yet, or the
+// provider errors/hits its quota, this returns `unavailable: true`
+// instead of throwing — the frontend falls back to manual entry.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+const RAPIDAPI_HOST = 'aerodatabox.p.rapidapi.com'
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — schedules don't change minute to minute
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const unavailable = (reason, message) => ({ flights: [], unavailable: true, reason, message })
+
+const normalizeAirport = (a) => a && {
+  iata: a.iata,
+  name: a.shortName || a.name,
+  city: a.municipalityName || a.shortName || a.name,
+}
+
+const normalizeFlight = (f) => ({
+  flightNumber: (f.number || '').replace(/\s/g, ''),
+  airline: f.airline?.name || null,
+  airlineIata: f.airline?.iata || null,
+  aircraft: f.aircraft?.model || null,
+  status: f.status || null,
+  from: normalizeAirport(f.departure?.airport),
+  to: normalizeAirport(f.arrival?.airport),
+  departureLocal: f.departure?.scheduledTime?.local || null,
+  departureUtc: f.departure?.scheduledTime?.utc || null,
+  arrivalLocal: f.arrival?.scheduledTime?.local || null,
+  arrivalUtc: f.arrival?.scheduledTime?.utc || null,
+})
+
+async function getCached(supabase, key) {
+  const { data } = await supabase.from('flight_schedule_cache').select('data, created_at').eq('cache_key', key).maybeSingle()
+  if (!data) return null
+  if (Date.now() - new Date(data.created_at).getTime() > CACHE_TTL_MS) return null
+  return data.data
+}
+
+async function setCached(supabase, key, data) {
+  await supabase.from('flight_schedule_cache').upsert({ cache_key: key, data, created_at: new Date().toISOString() })
+}
+
+async function callAeroDataBox(path, apiKey) {
+  const res = await fetch(`https://${RAPIDAPI_HOST}${path}`, {
+    headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': RAPIDAPI_HOST },
+    signal: AbortSignal.timeout(10000),
+  })
+  if (res.status === 429 || res.status === 403) {
+    const err = new Error('quota_exceeded')
+    err.code = 'quota_exceeded'
+    throw err
   }
+  if (!res.ok) {
+    const err = new Error(`provider_error_${res.status}`)
+    err.code = 'provider_error'
+    throw err
+  }
+  return res.json()
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, serviceRoleKey)
+    const apiKey = Deno.env.get('AERODATABOX_RAPIDAPI_KEY')
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) throw new Error('No auth header')
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    if (userError || !user) throw new Error('Invalid or expired token')
+
     const { action, data } = await req.json()
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
 
-    if (!stripeKey) {
-      return new Response(JSON.stringify({ error: 'Stripe key not configured' }), {
+    if (!apiKey) {
+      return new Response(JSON.stringify(unavailable('not_configured', 'Live flight search is not set up yet.')), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
       })
     }
 
-    // Calculate fees
-    const calculateFees = (subtotalUSD: number) => {
-      const stripeFeePercent = 0.029
-      const stripeFeeFixed = 0.30
-      const fetchrFeePercent = 0.10
+    // ── Flight number + date → the scheduled flight(s) for that number ──
+    if (action === 'by_number') {
+      const { flightNumber, date } = data
+      if (!flightNumber || !date) throw new Error('flightNumber and date required')
+      const clean = flightNumber.replace(/\s/g, '').toUpperCase()
+      const cacheKey = `num:${clean}:${date}`
 
-      const fetchrFee = subtotalUSD * fetchrFeePercent
-      const stripeFee = (subtotalUSD + fetchrFee) * stripeFeePercent + stripeFeeFixed
-      const totalFetchrFee = fetchrFee + stripeFee
-      const totalCharged = subtotalUSD + totalFetchrFee
-      const travelerReceives = subtotalUSD - fetchrFee
-
-      return {
-        subtotal: subtotalUSD,
-        fetchrFee: Math.round(fetchrFee * 100) / 100,
-        stripeFee: Math.round(stripeFee * 100) / 100,
-        totalFetchrFee: Math.round(totalFetchrFee * 100) / 100,
-        totalCharged: Math.round(totalCharged * 100) / 100,
-        travelerReceives: Math.round(travelerReceives * 100) / 100,
-        totalChargedCents: Math.round(totalCharged * 100),
-      }
-    }
-
-    // Get fee breakdown
-    if (action === 'get_fees') {
-      const { subtotal } = data
-      const fees = calculateFees(subtotal)
-      return new Response(JSON.stringify(fees), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // Create Stripe Connect account for traveler
-    if (action === 'create_account') {
-      const { email, userId } = data
-
-      const response = await fetch('https://api.stripe.com/v1/accounts', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          type: 'express',
-          email: email,
-          'capabilities[transfers][requested]': 'true',
-          'capabilities[card_payments][requested]': 'true',
-          'metadata[userId]': userId,
-        }).toString(),
-      })
-
-      const account = await response.json()
-      if (account.error) {
-        return new Response(JSON.stringify({ error: account.error.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
-      }
-
-      return new Response(JSON.stringify({ accountId: account.id }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // Create onboarding link
-    if (action === 'create_onboarding_link') {
-      const { accountId } = data
-
-      const response = await fetch('https://api.stripe.com/v1/account_links', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          account: accountId,
-          refresh_url: 'https://fetchr-zeta.vercel.app',
-          return_url: 'https://fetchr-zeta.vercel.app',
-          type: 'account_onboarding',
-        }).toString(),
-      })
-
-      const link = await response.json()
-      if (link.error) {
-        return new Response(JSON.stringify({ error: link.error.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
-      }
-
-      return new Response(JSON.stringify({ url: link.url }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // Create escrow payment
-    if (action === 'create_escrow_payment') {
-      const { subtotal, matchId, travelerStripeAccountId } = data
-      const fees = calculateFees(subtotal)
-
-      // Create payment method
-      const pmResponse = await fetch('https://api.stripe.com/v1/payment_methods', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          type: 'card',
-          'card[number]': '4242424242424242',
-          'card[exp_month]': '12',
-          'card[exp_year]': '2028',
-          'card[cvc]': '123',
-        }).toString(),
-      })
-
-      const paymentMethod = await pmResponse.json()
-      if (paymentMethod.error) {
-        return new Response(JSON.stringify({ error: paymentMethod.error.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
-      }
-
-      // Build payment intent params
-      const piParams: Record<string, string> = {
-        amount: fees.totalChargedCents.toString(),
-        currency: 'usd',
-        payment_method: paymentMethod.id,
-        'metadata[matchId]': matchId,
-        'metadata[subtotal]': subtotal.toString(),
-        'metadata[fetchrFee]': fees.fetchrFee.toString(),
-        'metadata[stripeFee]': fees.stripeFee.toString(),
-        'metadata[totalFetchrFee]': fees.totalFetchrFee.toString(),
-        'metadata[travelerReceives]': fees.travelerReceives.toString(),
-        'payment_method_types[]': 'card',
-        capture_method: 'manual',
-        confirm: 'true',
-      }
-
-      // Add transfer to traveler if they have Stripe Connect
-      if (travelerStripeAccountId) {
-        piParams['transfer_data[destination]'] = travelerStripeAccountId
-        piParams['transfer_data[amount]'] = Math.round(fees.travelerReceives * 100).toString()
-      }
-
-      const piResponse = await fetch('https://api.stripe.com/v1/payment_intents', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(piParams).toString(),
-      })
-
-      const paymentIntent = await piResponse.json()
-      if (paymentIntent.error) {
-        return new Response(JSON.stringify({ error: paymentIntent.error.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
-      }
-
-      return new Response(JSON.stringify({
-        paymentIntentId: paymentIntent.id,
-        clientSecret: paymentIntent.client_secret,
-        status: paymentIntent.status,
-        success: true,
-        fees,
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // Capture payment — release escrow
-    if (action === 'capture_payment') {
-      const { paymentIntentId } = data
-
-      const response = await fetch(
-        `https://api.stripe.com/v1/payment_intents/${paymentIntentId}/capture`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${stripeKey}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
+      let flights = await getCached(supabase, cacheKey)
+      if (!flights) {
+        try {
+          const raw = await callAeroDataBox(`/flights/number/${clean}/${date}`, apiKey)
+          flights = (Array.isArray(raw) ? raw : []).map(normalizeFlight)
+          await setCached(supabase, cacheKey, flights)
+        } catch (e) {
+          return new Response(JSON.stringify(unavailable(e.code || 'provider_error', e.message)), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
         }
-      )
-
-      const captured = await response.json()
-      if (captured.error) {
-        return new Response(JSON.stringify({ error: captured.error.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
       }
-
-      return new Response(JSON.stringify({
-        success: true,
-        status: captured.status,
-        paymentIntentId: captured.id,
-      }), {
+      return new Response(JSON.stringify({ flights, unavailable: false }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
       })
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    // ── Route + date → every scheduled flight on that route that day ──
+    if (action === 'by_route') {
+      const { fromIata, toIata, date } = data
+      if (!fromIata || !toIata || !date) throw new Error('fromIata, toIata and date required')
+      const cacheKey = `route:${fromIata}:${toIata}:${date}`
+
+      let flights = await getCached(supabase, cacheKey)
+      if (!flights) {
+        try {
+          const windows = [`${date}T00:00/${date}T11:59`, `${date}T12:00/${date}T23:59`]
+          const results = await Promise.all(windows.map(w => {
+            const [from, to] = w.split('/')
+            return callAeroDataBox(
+              `/flights/airports/iata/${fromIata}/${from}/${to}?direction=Departure&withLeg=true&withCancelled=false&withCodeshared=true&withCargo=false&withPrivate=false&withLocation=false`,
+              apiKey
+            )
+          }))
+          const all = results.flatMap(r => r.departures || [])
+          const seen = new Set()
+          flights = all
+            .filter(f => f.arrival?.airport?.iata?.toUpperCase() === toIata.toUpperCase())
+            .map(normalizeFlight)
+            .filter(f => {
+              if (seen.has(f.flightNumber)) return false
+              seen.add(f.flightNumber)
+              return true
+            })
+          await setCached(supabase, cacheKey, flights)
+        } catch (e) {
+          return new Response(JSON.stringify(unavailable(e.code || 'provider_error', e.message)), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
+      return new Response(JSON.stringify({ flights, unavailable: false }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    throw new Error(`Unknown action: ${action}`)
 
   } catch (error) {
+    console.error('Flight search function error:', error)
     return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })
