@@ -40,6 +40,7 @@ const Dashboard = ({ session }) => {
   const [stats, setStats] = useState({
     activeDeals: 0, upcomingFlights: 0,
     completedDeals: 0, walletBalance: 0, totalRequests: 0,
+    completedAsTraveler: 0,
   });
   const [recentMatches, setRecentMatches] = useState([]);
   const [upcomingFlights, setUpcomingFlights] = useState([]);
@@ -52,7 +53,7 @@ const Dashboard = ({ session }) => {
     || 'there';
 
   const getUserRole = () => {
-    const hasFlights = stats.upcomingFlights > 0 || stats.completedDeals > 0;
+    const hasFlights = stats.upcomingFlights > 0 || stats.completedAsTraveler > 0;
     const hasRequests = stats.totalRequests > 0;
     if (hasFlights && hasRequests) return 'Traveler & Shipper';
     if (hasFlights) return 'Traveler';
@@ -83,6 +84,7 @@ const Dashboard = ({ session }) => {
       { count: flightsCount },
       { count: completedCount },
       { count: requestsCount },
+      { count: completedAsTravelerCount },
     ] = await Promise.all([
       supabase.from('matches').select('id', { count: 'exact', head: true })
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
@@ -95,6 +97,8 @@ const Dashboard = ({ session }) => {
         .eq('status', 'completed'),
       supabase.from('shipment_requests').select('id', { count: 'exact', head: true })
         .eq('user_id', userId).eq('status', 'open'),
+      supabase.from('matches').select('id', { count: 'exact', head: true })
+        .eq('traveler_id', userId).eq('status', 'completed'),
     ]);
 
     setStats({
@@ -103,6 +107,7 @@ const Dashboard = ({ session }) => {
       completedDeals: completedCount || 0,
       walletBalance: profileData?.wallet_balance || 0,
       totalRequests: requestsCount || 0,
+      completedAsTraveler: completedAsTravelerCount || 0,
     });
 
 // Generate new matches for this user before fetching
