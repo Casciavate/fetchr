@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { AIRLINES, AIRLINE_CODES } from './shared/airlines';
+import { AIRLINES, AIRLINE_CODES, CODE_TO_AIRLINE } from './shared/airlines';
 import {
   Plane, Search, MapPin, Calendar, DollarSign,
-  CheckCircle, AlertCircle, ChevronDown, ShoppingBag,
+  CheckCircle, AlertCircle, ShoppingBag,
   Briefcase, Package, Plus, X, Weight, AlertTriangle
 } from 'lucide-react';
 
@@ -322,6 +322,92 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
   );
 };
 
+// ── Airline Search Component ──
+const AirlineSearch = ({ label, value, onChange, suggestions = [], suggestionsLabel }) => {
+  const [query, setQuery] = useState(value || '');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  React.useEffect(() => { setQuery(value || ''); }, [value]);
+
+  React.useEffect(() => {
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+        // Freeform fallback — accept a typed name even if it's not in our list
+        setQuery(q => {
+          if (q.trim() && q.trim() !== value) onChange(q.trim());
+          return q;
+        });
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [value, onChange]);
+
+  const handleSearch = (q) => {
+    setQuery(q);
+    if (q.length < 1) { setResults([]); setOpen(false); return; }
+    const lq = q.toLowerCase();
+    const filtered = AIRLINES.filter(name =>
+      name.toLowerCase().includes(lq) || AIRLINE_CODES[name].toLowerCase().startsWith(lq)
+    ).slice(0, 8);
+    setResults(filtered);
+    setOpen(true);
+  };
+
+  const handleSelect = (name) => {
+    setQuery(name);
+    setOpen(false);
+    setResults([]);
+    onChange(name);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+        {label}
+      </label>
+      <div className="relative">
+        <Plane size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        <input type="text" value={query}
+          onChange={e => handleSearch(e.target.value)}
+          onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
+          placeholder="Search airline name or code..."
+          className="input-field pl-9"
+          autoComplete="off" />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+          {results.map(name => (
+            <button key={name} type="button" onClick={() => handleSelect(name)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
+              <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-violet-600">{AIRLINE_CODES[name]}</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-800 flex-1 min-w-0 truncate">{name}</p>
+            </button>
+          ))}
+        </div>
+      )}
+      {!open && !value && suggestions.length > 0 && (
+        <div className="mt-2">
+          <p className="text-xs text-gray-400 mb-1.5">{suggestionsLabel}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions.map(name => (
+              <button key={name} type="button" onClick={() => handleSelect(name)}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-violet-50 text-violet-700 hover:bg-violet-100 transition">
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Luggage Option Card ──
 const getNetEarnings = (kg, ppk) => {
   if (!kg || !ppk) return null;
@@ -437,12 +523,37 @@ const AddFlight = ({ session }) => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [success, setSuccess] = useState(false);
-  const [flightNumberSearch, setFlightNumberSearch] = useState('');
   const [searching, setSearching] = useState(false);
+  const [routeData, setRouteData] = useState(null);
+
+  // Route/airline suggestion data is ~80KB gzipped — load it lazily so it
+  // doesn't bloat the initial bundle for users who never open this screen.
+  React.useEffect(() => { import('./shared/routes').then(setRouteData); }, []);
 
   const today = new Date().toISOString().split('T')[0];
   const hasCarryOn = luggageOptions.some(l => l.type === 'carry_on');
   const hasCheckin = luggageOptions.some(l => l.type === 'checkin');
+
+  // "Popular routes for this airline" — helps fill the route in one tap
+  // once the airline is known (via flight number or manual pick).
+  const suggestedRoutesForAirline = (() => {
+    const code = AIRLINE_CODES[form.airline];
+    if (!routeData || !code || (form.from_code && form.to_code)) return [];
+    return (routeData.AIRLINE_ROUTES[code] || []).slice(0, 6).map(r => {
+      const [fromCode, toCode] = r.split('-');
+      const from = AIRPORTS.find(a => a.code === fromCode);
+      const to = AIRPORTS.find(a => a.code === toCode);
+      return from && to ? { fromCode, toCode, from, to } : null;
+    }).filter(Boolean);
+  })();
+
+  // "Airlines flying this route" — helps fill the airline in one tap
+  // once both airports are known.
+  const suggestedAirlinesForRoute = (() => {
+    if (!routeData || !form.from_code || !form.to_code || form.airline) return [];
+    const codes = routeData.ROUTE_AIRLINES[`${form.from_code}-${form.to_code}`] || [];
+    return codes.map(c => CODE_TO_AIRLINE[c]).filter(Boolean).slice(0, 6);
+  })();
 
   const addLuggageOption = (type) => {
     if (type === 'carry_on' && hasCarryOn) return;
@@ -458,77 +569,73 @@ const AddFlight = ({ session }) => {
     setLuggageOptions(prev => prev.filter((_, i) => i !== index));
   };
 
-  const searchByFlightNumber = async () => {
-    if (!flightNumberSearch.trim()) return;
+  // Live airline detection — runs on every keystroke, no button needed.
+  // IATA flight numbers always start with the airline's 2-character code
+  // (which can be alphanumeric, e.g. "6E" IndiGo, "9W" Jet Airways).
+  const handleFlightNumberChange = (raw) => {
+    const upper = raw.toUpperCase();
+    const prefix = upper.replace(/\s/g, '').slice(0, 2);
+    const detected = CODE_TO_AIRLINE[prefix];
+    setForm(prev => ({
+      ...prev,
+      flight_number: upper,
+      airline: detected || prev.airline,
+    }));
+  };
+
+  // Best-effort route auto-fill via OpenSky's real ADS-B track history.
+  // This only has data for flights that have already flown, so it can
+  // only help for today's date or the recent past — not future bookings.
+  const lookupRoute = async () => {
+    if (!form.flight_number.trim()) return;
+    if (!form.flight_date) { setError('Pick a flight date first — needed to look up the route.'); return; }
     setSearching(true);
     setError('');
     setSuccessMsg('');
 
-    const upper = flightNumberSearch.toUpperCase().trim();
-    const airlineCode = upper.replace(/[0-9\s]/g, '');
-    const found = Object.entries(AIRLINE_CODES).find(([, code]) => code === airlineCode);
-    const detectedAirline = found ? found[0] : null;
+    const flightDate = new Date(form.flight_date);
+    const now = new Date();
+    const daysDiff = (now - flightDate) / (1000 * 60 * 60 * 24);
 
-    if (detectedAirline) {
-      setForm(prev => ({ ...prev, airline: detectedAirline, flight_number: upper }));
-    } else {
-      setForm(prev => ({ ...prev, flight_number: upper }));
+    if (daysDiff < 0 || daysDiff > 30) {
+      setError('Route lookup only works for flights today or within the last 30 days — for future flights, pick the route below.');
+      setSearching(false);
+      return;
     }
 
-    // Try OpenSky for past flights (within 30 days)
-    if (form.flight_date) {
-      try {
-        const flightDate = new Date(form.flight_date);
-        const now = new Date();
-        const daysDiff = (now - flightDate) / (1000 * 60 * 60 * 24);
+    try {
+      const begin = Math.floor(new Date(form.flight_date).setHours(0, 0, 0, 0) / 1000);
+      const end = Math.floor(new Date(form.flight_date).setHours(23, 59, 59, 0) / 1000);
 
-        if (daysDiff >= 0 && daysDiff <= 30) {
-          const begin = Math.floor(new Date(form.flight_date).setHours(0,0,0,0) / 1000);
-          const end = Math.floor(new Date(form.flight_date).setHours(23,59,59,0) / 1000);
+      const res = await fetch(
+        `https://opensky-network.org/api/flights/all?begin=${begin}&end=${end}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
 
-          const res = await fetch(
-            `https://opensky-network.org/api/flights/all?begin=${begin}&end=${end}`,
-            { signal: AbortSignal.timeout(8000) }
-          );
+      if (res.ok) {
+        const flights = await res.json();
+        const flightCode = form.flight_number.replace(/\s/g, '');
+        const match = flights.find(f => f.callsign?.trim().toUpperCase().startsWith(flightCode));
 
-          if (res.ok) {
-            const flights = await res.json();
-            const flightCode = upper.replace(/\s/g, '');
-            const match = flights.find(f =>
-              f.callsign?.trim().toUpperCase().startsWith(flightCode)
-            );
+        if (match) {
+          const depAirport = AIRPORTS.find(a => a.code === match.estDepartureAirport);
+          const arrAirport = AIRPORTS.find(a => a.code === match.estArrivalAirport);
 
-            if (match) {
-              const depAirport = AIRPORTS.find(a => a.code === match.estDepartureAirport);
-              const arrAirport = AIRPORTS.find(a => a.code === match.estArrivalAirport);
-
-              if (depAirport && arrAirport) {
-                setForm(prev => ({
-                  ...prev,
-                  from_code: depAirport.code,
-                  from_city: depAirport.city,
-                  to_code: arrAirport.code,
-                  to_city: arrAirport.city,
-                  airline: detectedAirline || prev.airline,
-                  flight_number: upper,
-                }));
-                setSuccessMsg(`✓ Flight found: ${depAirport.city} → ${arrAirport.city}. Please verify and continue.`);
-                setSearching(false);
-                return;
-              }
-            }
+          if (depAirport && arrAirport) {
+            setForm(prev => ({
+              ...prev,
+              from_code: depAirport.code, from_city: depAirport.city,
+              to_code: arrAirport.code, to_city: arrAirport.city,
+            }));
+            setSuccessMsg(`✓ Route found: ${depAirport.city} → ${arrAirport.city}. Please verify and continue.`);
+            setSearching(false);
+            return;
           }
         }
-      } catch (e) {
-        // OpenSky unavailable — fall through to manual
       }
-    }
-
-    // Fallback message
-    if (detectedAirline) {
-      setSuccessMsg(`Airline detected: ${detectedAirline}. Please select airports and date below.`);
-    } else {
-      setError('Could not detect airline. Please select manually below.');
+      setError('No recent flight track found for this number. Pick the route below.');
+    } catch (e) {
+      setError('Route lookup is unavailable right now. Pick the route below.');
     }
     setSearching(false);
   };
@@ -719,30 +826,58 @@ const AddFlight = ({ session }) => {
       {/* ── STEP 1: Flight Info ── */}
       {step === 1 && (
         <div className="space-y-4">
-          {/* Quick fill */}
+          {/* Flight number — auto-detects the airline as you type, no picking needed */}
           <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-violet-700 mb-1">Quick Fill — Flight Number</p>
+            <p className="text-sm font-semibold text-violet-700 mb-1">Flight Number</p>
             <p className="text-xs text-gray-500 mb-2">
-              Enter your flight number and date first, then tap Fill to auto-detect airline and airports.
+              Type it and the airline fills in automatically. Tap Fill to also try
+              auto-filling the route — that only works for today or recent flights.
             </p>
             <div className="flex gap-2">
-              <input type="text" placeholder="e.g. EK203, QR542..."
-                value={flightNumberSearch}
-                onChange={e => setFlightNumberSearch(e.target.value.toUpperCase())}
-                onKeyDown={e => e.key === 'Enter' && searchByFlightNumber()}
+              <input type="text" placeholder="e.g. EK203, 6E204, QR542..."
+                value={form.flight_number}
+                onChange={e => handleFlightNumberChange(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && lookupRoute()}
                 className="input-field flex-1" />
-              <button type="button" onClick={searchByFlightNumber} disabled={searching}
+              <button type="button" onClick={lookupRoute} disabled={searching || !form.flight_number.trim()}
                 className="btn-primary px-4 gap-2 flex-shrink-0 disabled:opacity-50">
                 <Search size={15} />
-                {searching ? '...' : 'Fill'}
+                {searching ? '...' : 'Fill route'}
               </button>
             </div>
             {form.airline && (
               <p className="text-xs text-emerald-600 font-semibold mt-2">
-                ✓ Airline: {form.airline}
+                ✓ Airline detected: {form.airline}
               </p>
             )}
           </div>
+
+          <AirlineSearch
+            label="Airline *"
+            value={form.airline}
+            onChange={airline => setForm(prev => ({ ...prev, airline }))}
+            suggestions={suggestedAirlinesForRoute}
+            suggestionsLabel="Airlines flying this route:"
+          />
+
+          {suggestedRoutesForAirline.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-400 mb-1.5">Popular routes for {form.airline}:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestedRoutesForAirline.map(r => (
+                  <button key={`${r.fromCode}-${r.toCode}`} type="button"
+                    onClick={() => setForm(prev => ({
+                      ...prev,
+                      from_code: r.from.code, from_city: r.from.city,
+                      to_code: r.to.code, to_city: r.to.city,
+                    }))}
+                    className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition">
+                    {r.from.code} → {r.to.code}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <AirportSearch
             label="Departure Airport *"
@@ -779,32 +914,6 @@ const AddFlight = ({ session }) => {
                 })}
               </p>
             )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Airline *
-            </label>
-            <div className="relative">
-              <Plane size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
-              <select value={form.airline}
-                onChange={e => setForm({ ...form, airline: e.target.value })}
-                className="input-field pl-9 appearance-none">
-                <option value="">Select airline...</option>
-                {AIRLINES.sort().map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <ChevronDown size={15} className="absolute right-3.5 top-3.5 text-gray-400 pointer-events-none" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Flight Number <span className="text-gray-300 font-normal normal-case">(optional)</span>
-            </label>
-            <input type="text" placeholder="e.g. EK203"
-              value={form.flight_number}
-              onChange={e => setForm({ ...form, flight_number: e.target.value.toUpperCase() })}
-              className="input-field" />
           </div>
 
           <button onClick={handleNext} className="w-full btn-primary py-3.5">
