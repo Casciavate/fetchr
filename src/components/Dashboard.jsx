@@ -11,12 +11,13 @@ import Completed from './Completed';
 import Profile from './Profile';
 import Earnings from './Earnings';
 import WalletScreen from './Wallet';
+import AdminDashboard from './AdminDashboard';
 import { AIRLINE_CODES } from './shared/airlines';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, LogOut, CheckCircle, Search,
-  Menu, X, TrendingUp, Zap, ArrowUpRight
+  Menu, X, TrendingUp, Zap, ArrowUpRight, Lock
 } from 'lucide-react';
 
 const AirlineLogo = ({ airline }) => {
@@ -273,6 +274,8 @@ const Dashboard = ({ session }) => {
 
   const navigate = (id) => { setActiveNav(id); setSidebarOpen(false); };
 
+  const isAdmin = !!profile?.is_admin;
+
   const getDealStageLabel = (deal) => {
     const s = deal.deal_stage || deal.status;
     if (s === 'terms_agreed') return { label: 'Terms Agreed', color: 'text-violet-500' };
@@ -294,6 +297,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
       case 'profile': return <Profile session={session} userRole={getUserRole()} />;
       case 'earnings': return <Earnings session={session} />;
       case 'wallet': return <WalletScreen session={session} />;
+      case 'admin': return isAdmin ? <AdminDashboard /> : renderDashboard();
       default: return renderDashboard();
     }
   };
@@ -667,6 +671,24 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               </div>
             </div>
           ))}
+
+          {isAdmin && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 px-3 mb-2 uppercase tracking-widest">
+                Admin
+              </p>
+              <div className="space-y-0.5">
+                <button onClick={() => navigate('admin')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    activeNav === 'admin'
+                      ? 'bg-violet-50 text-violet-700 font-semibold'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}>
+                  <Lock size={15} /> Admin Dashboard
+                </button>
+              </div>
+            </div>
+          )}
         </nav>
 
         <div className="px-3 pb-4 border-t border-gray-100 pt-4">
@@ -699,7 +721,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                  activeNav === 'completed' ? 'Completed' :
                  activeNav === 'profile' ? 'Profile' :
                  activeNav === 'earnings' ? 'Earnings' :
-                 activeNav === 'wallet' ? 'Wallet' : 'Fetchr'}
+                 activeNav === 'wallet' ? 'Wallet' :
+                 activeNav === 'admin' ? 'Admin Dashboard' : 'Fetchr'}
               </p>
               <p className="text-xs text-gray-400">
                 {new Date().toLocaleDateString('en-GB', {
