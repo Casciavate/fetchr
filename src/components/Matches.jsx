@@ -287,23 +287,17 @@ const Matches = ({ session, onNavigate }) => {
 
                 <div className="px-4 py-3 space-y-2.5">
 
-                  {/* State pill */}
+                  {/* State + score pills — docs/BRAND.md §7.13, "match% may
+                      coexist since it's a score not a state" */}
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {!iHaveAccepted && (
-                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-accent-fill text-white font-mono text-overline uppercase">
-                        Your turn
-                      </span>
-                    )}
+                    {!iHaveAccepted && <StatusPill tone="signal">Your turn</StatusPill>}
                     {iHaveAccepted && !otherHasAcceptedFull && (
-                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-ink-100 text-content-muted font-mono text-overline uppercase">
-                        Waiting on {iAmTraveler ? 'sender' : 'traveller'}
-                      </span>
+                      <StatusPill tone="neutral">Waiting on {iAmTraveler ? 'sender' : 'traveller'}</StatusPill>
                     )}
                     {iHaveAccepted && otherHasAcceptedFull && (
-                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-success-tint text-success font-mono text-overline uppercase">
-                        Both accepted
-                      </span>
+                      <StatusPill tone="success">Both accepted</StatusPill>
                     )}
+                    <StatusPill tone="score">{Math.min(match.match_score, 100)}% match</StatusPill>
                   </div>
 
                   {/* Route block */}

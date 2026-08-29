@@ -7,6 +7,9 @@ import {
   Circle, Zap
 } from 'lucide-react';
 import EscrowPayment, { ProofUploadModal, calcFees } from './EscrowPayment';
+import StatusPill from './shared/StatusPill';
+import SkeletonList from './shared/Skeleton';
+import VerificationBadge from './shared/VerificationBadge';
 
 const STAGES = [
   { id: 'matched', label: 'Matched', icon: Zap },
@@ -820,9 +823,7 @@ const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
   const blockedAction = getBlockedAction();
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
-    </div>
+    <div className="max-w-md mx-auto py-6"><SkeletonList count={3} /></div>
   );
 
   if (acceptedMatches.length === 0) return (
@@ -951,9 +952,7 @@ const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="font-display font-semibold text-title-s text-ink-900 truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
-                  {getOtherParty(activeMatch)?.verified && (
-                    <Shield size={13} className="text-success flex-shrink-0" aria-label="Identity verified" />
-                  )}
+                  <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
                 </div>
                 <p className="text-micro text-ink-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
               </div>
@@ -1022,10 +1021,10 @@ const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
                 {(isShipper(activeMatch) ? calcFees(activeMatch).totalShipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
               </p>
             </div>
-            <span className={`badge flex-shrink-0 ${blockedAction ? 'badge-indigo' : activeMatch.status === 'completed' ? 'badge-green' : 'badge-gray'}`}>
+            <StatusPill tone={blockedAction ? 'signal' : activeMatch.status === 'completed' ? 'success' : 'neutral'} className="flex-shrink-0">
               {blockedAction ? `Your turn · ${blockedAction.label.split(' · ')[0]}`
                 : (STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
-            </span>
+            </StatusPill>
           </button>
 
           {/* Safety notice — §7.9 advisory banner */}

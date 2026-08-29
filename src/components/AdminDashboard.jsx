@@ -4,6 +4,7 @@ import {
   DollarSign, Users, Receipt, CreditCard, ShieldCheck,
   TrendingUp, Lock, Wallet, RefreshCw, CheckCircle, XCircle,
 } from 'lucide-react';
+import StatusPill from './shared/StatusPill';
 
 const ADMIN_FN_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/admin-dashboard';
 
@@ -27,20 +28,6 @@ const TABS = [
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'stripe', label: 'Stripe', icon: CreditCard },
 ];
-
-const StatusPill = ({ tone, children }) => {
-  const tones = {
-    success: 'bg-success-tint text-success',
-    warning: 'bg-warning-tint text-warning',
-    danger: 'bg-danger-tint text-danger',
-    neutral: 'bg-ink-100 text-content-muted',
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm text-overline uppercase font-mono ${tones[tone] || tones.neutral}`}>
-      {children}
-    </span>
-  );
-};
 
 const AdminDashboard = () => {
   const [tab, setTab] = useState('overview');
@@ -292,7 +279,7 @@ const AdminDashboard = () => {
                       <td className="px-4 py-3">
                         <StatusPill tone={
                           tx.status === 'completed' ? 'success' :
-                          tx.status === 'pending' ? 'warning' : 'danger'
+                          tx.status === 'pending' ? 'signal' : 'danger'
                         }>
                           {tx.status}
                         </StatusPill>

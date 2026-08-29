@@ -3,9 +3,10 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
 import {
-  Lock, CheckCircle, AlertTriangle,
+  Lock, CheckCircle,
   Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
 } from 'lucide-react';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -193,10 +194,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 bg-danger-tint rounded-md p-3">
-              <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-              <p className="text-body-s text-danger">{error}</p>
-            </div>
+            <AdvisoryBanner tone="error">{error}</AdvisoryBanner>
           )}
 
           <div className="flex gap-2">
@@ -367,60 +365,61 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
 
         <div className="px-4 py-3 space-y-2">
           {/* Transport */}
-          <div className="flex justify-between text-content">
-            <span className="flex items-center gap-1.5 text-num-m">
+          <div className="flex justify-between text-content-muted">
+            <span className="flex items-center gap-1.5 font-mono text-num-m">
               <Plane size={12} className="text-ink-400" />
               {match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg
             </span>
-            <span className="font-mono font-semibold text-num-m">${fees.transportFee.toFixed(2)}</span>
+            <span className="font-mono text-num-m">${fees.transportFee.toFixed(2)}</span>
           </div>
 
           {/* Shop & ship fee */}
           {fees.isPurchase && (
-            <div className="flex justify-between text-content">
-              <span className="flex items-center gap-1.5 text-num-m">
+            <div className="flex justify-between text-content-muted">
+              <span className="flex items-center gap-1.5 font-mono text-num-m">
                 <ShoppingBag size={12} className="text-ink-400" />
                 Shop fee
               </span>
-              <span className="font-mono font-semibold text-num-m">{fees.shopFee > 0 ? `$${fees.shopFee.toFixed(2)}` : 'TBD'}</span>
+              <span className="font-mono text-num-m">{fees.shopFee > 0 ? `$${fees.shopFee.toFixed(2)}` : 'TBD'}</span>
             </div>
           )}
 
           {/* Item purchase */}
           {fees.isPurchase && fees.purchasePrice > 0 && (
-            <div className="flex justify-between text-content">
-              <span className="flex items-center gap-1.5 text-num-m">
+            <div className="flex justify-between text-content-muted">
+              <span className="flex items-center gap-1.5 font-mono text-num-m">
                 <Package size={12} className="text-ink-400" />
                 Item
               </span>
-              <span className="font-mono font-semibold text-num-m">${fees.purchasePrice.toFixed(2)}</span>
+              <span className="font-mono text-num-m">${fees.purchasePrice.toFixed(2)}</span>
             </div>
           )}
 
+          {/* fetchr fee — deduction shown, not netted */}
+          <div className="flex justify-between text-content-muted">
+            <span className="font-mono text-num-m">fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span>
+            <span className="font-mono text-num-m">−${fees.fetchrFee.toFixed(2)}</span>
+          </div>
+
           <div className="border-t border-line pt-2 mt-1">
             <div className="flex justify-between font-mono font-bold text-content text-num-l">
-              <span className="font-sans font-semibold text-num-m">You pay</span>
+              <span className="font-sans font-bold text-num-m">You pay</span>
               <span>${fees.totalShipperPays.toFixed(2)}</span>
             </div>
           </div>
 
-          {/* Fetchr fee note */}
-          <div className="bg-surface-sunken rounded-md p-3 space-y-1.5 mt-1">
-            <p className="text-overline font-mono text-content-muted uppercase tracking-wide">How the money is split</p>
-            <div className="flex justify-between text-content-muted text-num-m">
-              <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on transport{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
-              <span className="font-mono">−${fees.fetchrFee.toFixed(2)}</span>
-            </div>
-            {fees.isPurchase && fees.purchasePrice > 0 && (
-              <div className="flex justify-between text-content-muted text-num-m">
-                <span>Item reimbursement to traveller</span>
-                <span className="font-mono">+${fees.purchasePrice.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-mono font-bold text-success border-t border-line pt-1.5">
-              <span className="font-sans font-semibold">Traveller receives</span>
+          {/* Traveller's side — shown for transparency before payment;
+              still written so the amount is never presented as the reader's own. */}
+          <div className="bg-surface-sunken rounded-md p-3 mt-1">
+            <div className="flex justify-between font-mono font-bold text-success">
+              <span className="font-sans font-bold">Traveller receives</span>
               <span>${fees.travelerReceives.toFixed(2)}</span>
             </div>
+            {fees.isPurchase && fees.purchasePrice > 0 && (
+              <p className="text-micro text-content-subtle mt-1">
+                Includes ${fees.purchasePrice.toFixed(2)} item reimbursement.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -502,12 +501,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
         </div>
       )}
 
-      {error && (
-        <div className="flex items-start gap-2 bg-danger-tint rounded-md p-3">
-          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-          <p className="text-body-s text-danger">{error}</p>
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <button onClick={handlePay}
         disabled={loading || !stripe || ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady)}

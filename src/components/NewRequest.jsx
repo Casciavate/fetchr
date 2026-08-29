@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Package, DollarSign, Calendar,
+  Package, DollarSign,
   CheckCircle, AlertCircle, Camera, X,
   ShoppingBag, MapPin, Link, User, Phone,
   AlertTriangle, Shield, Search, Info
 } from 'lucide-react';
 import RoutePicker from './shared/RoutePicker';
 import WeightInput from './shared/WeightInput';
+import DatePicker from './shared/DatePicker';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -483,15 +484,8 @@ const NewRequest = ({ session }) => {
           </div>
 
           <div>
-            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
-              Needed by <span className="text-ink-300 font-normal normal-case">(optional)</span>
-            </label>
-            <div className="relative">
-              <Calendar size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
-              <input type="date" min={today} value={form.needed_by}
-                onChange={e => setForm({ ...form, needed_by: e.target.value })}
-                className="input-field pl-9" />
-            </div>
+            <DatePicker label="Needed by (optional)" min={today} value={form.needed_by}
+              onChange={v => setForm({ ...form, needed_by: v })} />
             {form.needed_by && (
               <p className="text-body-s text-content-subtle mt-1 ml-1 font-mono">Selected: {formatDateForDisplay(form.needed_by)}</p>
             )}

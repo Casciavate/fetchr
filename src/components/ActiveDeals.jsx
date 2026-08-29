@@ -4,6 +4,10 @@ import {
   Package, Plane, DollarSign, Clock, Lock,
   MessageCircle, ChevronRight, Zap, Check, X
 } from 'lucide-react';
+import StatusPill from './shared/StatusPill';
+import EmptyState from './shared/EmptyState';
+import { TicketSkeleton } from './shared/Skeleton';
+import { calcFees } from './EscrowPayment';
 
 const STEPS = [
   { key: 'matched', label: 'Matched' },
@@ -37,7 +41,8 @@ const Barcode = ({ deal }) => {
   // Deterministic bar widths from the ref, so the pattern is stable per deal
   const bars = Array.from(ref).map(c => (c.charCodeAt(0) % 3) + 1);
   return (
-    <div className="pt-3 mt-3 border-t border-line-perf border-dashed">
+    <div className="pt-4 mt-1">
+      <div className="perf mb-3" />
       <div className="h-[26px] flex items-stretch gap-[2px]" aria-hidden="true">
         {bars.map((w, i) => (
           <div key={i} className="bg-ink-900" style={{ width: `${w * 2}px`, opacity: 0.82 }} />
@@ -177,10 +182,6 @@ const ActiveDeals = ({ session, onNavigate }) => {
     return STAGE_INFO[s] || STAGE_INFO['accepted'];
   };
 
-  const getDealValue = (deal) =>
-    (deal.agreed_price_per_kg || deal.flight?.price_per_kg || 0) *
-    (deal.agreed_weight_kg || deal.request?.weight_kg || 0);
-
   const myActionNeeded = (deal) => {
     const isTrav = isTraveler(deal);
     const status = deal.deal_stage || deal.status;
@@ -197,20 +198,23 @@ const ActiveDeals = ({ session, onNavigate }) => {
     return false;
   };
 
-  // Escrow copy, docs/BRAND.md §9.2 — exact wording, never "funds"/"disbursement"/"guaranteed"
-  const getEscrowSentence = (deal, isTrav, otherName, needsAction, dealValue) => {
+  // Escrow copy, docs/BRAND.md §9.2 — exact wording, never "funds"/"disbursement"/"guaranteed".
+  // Uses the full escrowed amount (transport + shop fee + item price, per
+  // CLAUDE.md's fee formula), not the plain price×weight lump — a deal
+  // with a purchase price previously understated what's actually held.
+  const getEscrowSentence = (deal, isTrav, otherName, needsAction, fees) => {
     const status = deal.deal_stage || deal.status;
     if (status === 'terms_agreed') {
       return !isTrav
-        ? `You'll pay $${dealValue.toFixed(2)} now. We hold it until you both confirm delivery.`
+        ? `You'll pay $${fees.totalShipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
         : `Nothing to do yet — ${otherName} pays into escrow before you fly.`;
     }
     if (status === 'in_escrow') {
-      return `$${dealValue.toFixed(2)} is held by fetchr. Neither side can move it alone.`;
+      return `$${fees.totalShipperPays.toFixed(2)} is held by fetchr. Neither side can move it alone.`;
     }
     if (status === 'proof_uploaded') {
       return needsAction
-        ? `Confirm you received it and we release $${dealValue.toFixed(2)} to ${otherName}.`
+        ? `Confirm you received it and we release $${fees.totalShipperPays.toFixed(2)} to ${otherName}.`
         : `Waiting on ${otherName} to confirm delivery.`;
     }
     return getStage(deal).desc;
@@ -219,19 +223,19 @@ const ActiveDeals = ({ session, onNavigate }) => {
   // Status pill, docs/BRAND.md §7.13 / §9.2
   const getPill = (deal, isTrav, otherName, needsAction) => {
     const status = deal.deal_stage || deal.status;
-    if (status === 'in_escrow') return { label: 'ESCROW SECURED', className: 'bg-success-tint text-success' };
+    if (status === 'in_escrow') return { label: 'Escrow secured', tone: 'success' };
     if (needsAction) {
-      const label = status === 'terms_agreed' ? 'YOUR TURN · PAY ESCROW'
-        : status === 'proof_uploaded' ? 'YOUR TURN · CONFIRM DELIVERY'
-        : 'YOUR TURN';
-      return { label, className: 'bg-accent-fill text-white' };
+      const label = status === 'terms_agreed' ? 'Your turn · Pay escrow'
+        : status === 'proof_uploaded' ? 'Your turn · Confirm delivery'
+        : 'Your turn';
+      return { label, tone: 'signal' };
     }
-    return { label: `WAITING ON ${(otherName || 'other party').toUpperCase()}`, className: 'bg-ink-100 text-content-muted' };
+    return { label: `Waiting on ${otherName || 'other party'}`, tone: 'neutral' };
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-4">
+      {[1, 2].map(i => <TicketSkeleton key={i} />)}
     </div>
   );
 
@@ -244,54 +248,41 @@ const ActiveDeals = ({ session, onNavigate }) => {
             {deals.length} deal{deals.length !== 1 ? 's' : ''} in progress
           </p>
         </div>
-        {deals.length > 0 && (
-          <div className="flex items-center gap-1.5 bg-success-tint text-success px-2.5 py-1 rounded-sm font-mono text-overline uppercase">
-            <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
-            Live
-          </div>
-        )}
+        {deals.length > 0 && <StatusPill tone="success" dot>Live</StatusPill>}
       </div>
 
       {deals.length === 0 ? (
-        <div className="text-center py-24 ticket">
-          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Zap size={32} className="text-ink-300" />
-          </div>
-          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No active deals</h2>
-          <p className="text-body-m text-ink-muted mb-6">Accept a match to start a deal.</p>
-          <button onClick={() => onNavigate('matches')} className="btn-primary">
-            Browse matches
-          </button>
-        </div>
+        <EmptyState icon={Zap} title="No active deals" body="Accept a match to start a deal."
+          action={<button onClick={() => onNavigate('matches')} className="btn-primary">Browse matches</button>} />
       ) : (
         <div className="space-y-4">
           {deals.map(deal => {
             const other = getOtherParty(deal);
             const otherName = other?.full_name || 'the other party';
             const stage = getStage(deal);
-            const dealValue = getDealValue(deal);
+            const fees = calcFees(deal);
             const needsAction = myActionNeeded(deal);
             const isTrav = isTraveler(deal);
             const myRole = isTrav ? 'Traveller' : 'Sender';
             const statusKey = deal.deal_stage || deal.status;
             const isFailed = statusKey === 'cancelled' || statusKey === 'disputed';
             const pill = getPill(deal, isTrav, otherName, needsAction);
-            const escrowSentence = getEscrowSentence(deal, isTrav, otherName, needsAction, dealValue);
+            const escrowSentence = getEscrowSentence(deal, isTrav, otherName, needsAction, fees);
 
             return (
-              <div key={deal.id} className="ticket">
+              <div key={deal.id} className="ticket relative">
+                {isFailed && (
+                  <span className={`stamp ${statusKey === 'disputed' ? 'text-danger' : 'text-ink-400'}`} aria-hidden="true">
+                    {statusKey === 'disputed' ? 'Disputed' : 'Void'}
+                  </span>
+                )}
 
                 {/* Header bar */}
                 <div className="px-4 py-2.5 flex items-center justify-between border-b border-line">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-flex items-center h-[22px] px-2 rounded-sm font-mono text-overline uppercase ${pill.className}`}>
-                      {pill.label}
-                    </span>
-                    {isFailed && (
-                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-danger-tint text-danger font-mono text-overline uppercase">
-                        {stage.label}
-                      </span>
-                    )}
+                    {isFailed
+                      ? <StatusPill tone="danger">{stage.label}</StatusPill>
+                      : <StatusPill tone={pill.tone}>{pill.label}</StatusPill>}
                   </div>
                   <span className="font-mono text-overline uppercase text-ink-muted">
                     {myRole}
@@ -329,10 +320,10 @@ const ActiveDeals = ({ session, onNavigate }) => {
                     </div>
                     <div className="bg-surface-sunken rounded-md p-3 border border-line">
                       <p className="text-overline uppercase text-ink-400 font-mono mb-1 flex items-center gap-1">
-                        <DollarSign size={10} /> Deal value
+                        <DollarSign size={10} /> {isTrav ? 'You receive' : 'You pay'}
                       </p>
                       <p className="font-mono font-semibold text-num-m text-ink-900">
-                        ${dealValue.toFixed(2)}
+                        ${(isTrav ? fees.travelerReceives : fees.totalShipperPays).toFixed(2)}
                       </p>
                       <p className="text-body-s text-ink-muted">
                         ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg

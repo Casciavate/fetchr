@@ -8,6 +8,9 @@ import {
   ChevronRight, Building, Plus
 } from 'lucide-react';
 import BottomSheet from './shared/BottomSheet';
+import Toast from './shared/Toast';
+import EmptyState from './shared/EmptyState';
+import { RowSkeleton } from './shared/Skeleton';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -604,78 +607,20 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
   const totalDebits = transactions.filter(t => isWalletDebit(t) && t.status !== 'refunded').reduce((s, t) => s + (t.amount || 0), 0);
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-5xl mx-auto space-y-3">
+      {[1, 2, 3].map(i => <RowSkeleton key={i} />)}
     </div>
   );
 
   return (
     <Elements stripe={stripePromise}>
-      <div className="max-w-2xl mx-auto animate-fade-in">
+      <div className="max-w-5xl mx-auto animate-fade-in">
         <div className="mb-6">
           <h1 className="font-display font-bold text-title-l text-ink-900">Wallet</h1>
           <p className="text-body-s text-content-muted mt-0.5">Manage your fetchr balance</p>
         </div>
 
-        {success && (
-          <div className="bg-success-tint text-success text-body-s px-4 py-3 rounded-md mb-4 flex items-center gap-2">
-            <CheckCircle size={16} /> {success}
-          </div>
-        )}
-
-        {/* Balance card */}
-        <div className="bg-surface-inverse rounded-lg p-6 mb-4 text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-ink-300 text-body-s">Available balance</p>
-              <p className="font-mono font-bold text-display-l mt-1 text-white">
-                ${(profile?.wallet_balance || 0).toFixed(2)}
-              </p>
-            </div>
-            <div className="w-14 h-14 bg-ink-800 rounded-lg flex items-center justify-center flex-shrink-0">
-              <WalletCards size={26} className="text-white" />
-            </div>
-          </div>
-          <p className="text-micro text-ink-300 flex items-center gap-1">
-            <Lock size={11} /> Secured by Stripe · funds held in a segregated account
-          </p>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {[
-            { label: 'Total received', value: `$${totalCredits.toFixed(2)}`, icon: ArrowDownCircle, text: 'text-success', bg: 'bg-success-tint' },
-            { label: 'Total withdrawn', value: `$${totalDebits.toFixed(2)}`, icon: ArrowUpCircle, text: 'text-danger', bg: 'bg-danger-tint' },
-          ].map((s, i) => (
-            <div key={i} className="card p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 ${s.bg} rounded-md flex items-center justify-center flex-shrink-0`}>
-                <s.icon size={18} className={s.text} />
-              </div>
-              <div>
-                <p className="text-micro text-content-subtle">{s.label}</p>
-                <p className="font-mono font-bold text-title-s text-ink-900">{s.value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Action buttons — Top Up and Withdraw only */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <button
-            onClick={() => setActivePanel(activePanel === 'topup' ? null : 'topup')}
-            className={activePanel === 'topup'
-              ? 'flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-surface-sunken text-ink-900 border border-line-strong'
-              : 'btn-primary'}>
-            <ArrowDownCircle size={16} /> Top up
-          </button>
-          <button
-            onClick={() => setActivePanel(activePanel === 'withdraw' ? null : 'withdraw')}
-            className={activePanel === 'withdraw'
-              ? 'flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-surface-sunken text-ink-900 border border-line-strong'
-              : 'btn-secondary'}>
-            <ArrowUpCircle size={16} /> Withdraw
-          </button>
-        </div>
+        <Toast message={success} tone="success" />
 
         {/* Top up sheet */}
         {activePanel === 'topup' && (
@@ -710,14 +655,59 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </BottomSheet>
         )}
 
-        {/* Transaction history */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,1fr)_1fr] gap-6 items-start">
+          {/* Left column — balance, actions, stats */}
+          <div className="space-y-4">
+            <div className="bg-surface-inverse rounded-lg p-6 text-white">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-ink-300 text-body-s">Available balance</p>
+                  <p className="font-mono font-bold text-display-m mt-1.5 text-white">
+                    ${(profile?.wallet_balance || 0).toFixed(2)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-ink-800 rounded-md flex items-center justify-center flex-shrink-0">
+                  <WalletCards size={22} className="text-white" />
+                </div>
+              </div>
+              <p className="text-micro text-ink-300 flex items-center gap-1 mb-4">
+                <Lock size={11} /> Secured by Stripe · funds held in a segregated account
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActivePanel(activePanel === 'topup' ? null : 'topup')}
+                  className="flex-1 flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-ink-800 text-white border border-ink-700 hover:bg-ink-700 transition">
+                  <ArrowDownCircle size={16} /> Top up
+                </button>
+                <button
+                  onClick={() => setActivePanel(activePanel === 'withdraw' ? null : 'withdraw')}
+                  className="flex-1 flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-white text-ink-900 hover:bg-paper-100 transition">
+                  <ArrowUpCircle size={16} /> Withdraw
+                </button>
+              </div>
+            </div>
+
+            {[
+              { label: 'Total received', value: `$${totalCredits.toFixed(2)}`, icon: ArrowDownCircle, text: 'text-success', bg: 'bg-success-tint' },
+              { label: 'Total withdrawn', value: `$${totalDebits.toFixed(2)}`, icon: ArrowUpCircle, text: 'text-danger', bg: 'bg-danger-tint' },
+            ].map((s, i) => (
+              <div key={i} className="card p-4 flex items-center gap-3">
+                <div className={`w-9 h-9 ${s.bg} rounded-md flex items-center justify-center flex-shrink-0`}>
+                  <s.icon size={16} className={s.text} />
+                </div>
+                <div>
+                  <p className="text-micro text-content-subtle">{s.label}</p>
+                  <p className="font-mono font-bold text-title-s text-ink-900">{s.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+        {/* Right column — transaction history */}
         <div className="card p-5">
           <h3 className="font-display font-bold text-title-s text-ink-900 mb-4">Transaction history</h3>
           {transactions.length === 0 ? (
-            <div className="text-center py-10 bg-surface-sunken rounded-md">
-              <WalletCards size={24} className="text-ink-300 mx-auto mb-2" />
-              <p className="text-body-s text-content-subtle">No transactions yet</p>
-            </div>
+            <EmptyState icon={WalletCards} title="No transactions yet" compact />
           ) : (
             <div className="space-y-1">
               {transactions.map((txn, i) => {
@@ -758,6 +748,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
               })}
             </div>
           )}
+        </div>
         </div>
 
         {/* Transaction detail sheet */}

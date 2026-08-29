@@ -4,6 +4,10 @@ import {
   CheckCircle, Star, Package, Plane, ChevronDown,
   ChevronUp, Award, TrendingUp
 } from 'lucide-react';
+import RatingDisplay from './shared/RatingDisplay';
+import StatusPill from './shared/StatusPill';
+import EmptyState from './shared/EmptyState';
+import { TicketSkeleton } from './shared/Skeleton';
 
 // Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — same
 // treatment as the active-deal ticket, carried through to the completed
@@ -16,7 +20,8 @@ const Barcode = ({ deal }) => {
     : '------';
   const bars = Array.from(ref).map(c => (c.charCodeAt(0) % 3) + 1);
   return (
-    <div className="pt-3 border-t border-line-perf border-dashed">
+    <div className="pt-4">
+      <div className="perf mb-3" />
       <div className="h-[26px] flex items-stretch gap-[2px]" aria-hidden="true">
         {bars.map((w, i) => (
           <div key={i} className="bg-ink-900" style={{ width: `${w * 2}px`, opacity: 0.82 }} />
@@ -26,23 +31,6 @@ const Barcode = ({ deal }) => {
         {ref}·{route}·{ddmmyy}
       </p>
     </div>
-  );
-};
-
-const RatingDisplay = ({ rating, totalReviews }) => {
-  if (!rating || rating <= 0) {
-    return <span className="text-micro text-ink-subtle">No ratings yet</span>;
-  }
-  const lowRep = (totalReviews || 0) < 3;
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Star size={14} className="text-ink-900 fill-ink-900" />
-      <span className={`font-mono text-num-m font-semibold ${rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
-        {rating.toFixed(1)}
-      </span>
-      <span className="text-micro text-ink-subtle">({totalReviews || 0})</span>
-      {lowRep && <span className="text-micro text-ink-muted">· New traveller</span>}
-    </span>
   );
 };
 
@@ -143,8 +131,8 @@ const Completed = ({ session }) => {
     .reduce((sum, d) => sum + getDealValue(d), 0);
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-3">
+      {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
     </div>
   );
 
@@ -177,13 +165,8 @@ const Completed = ({ session }) => {
       </div>
 
       {deals.length === 0 ? (
-        <div className="text-center py-24 ticket">
-          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <CheckCircle size={32} className="text-ink-300" />
-          </div>
-          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No completed deals yet</h2>
-          <p className="text-body-m text-content-muted">Your completed deliveries will appear here</p>
-        </div>
+        <EmptyState icon={CheckCircle} title="No completed deals yet"
+          body="Your completed deliveries will appear here." />
       ) : (
         <div className="space-y-3">
           {deals.map(deal => {
@@ -333,9 +316,7 @@ const Completed = ({ session }) => {
                           <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} />
                         </div>
                       </div>
-                      <span className="badge-green">
-                        <CheckCircle size={9} /> Completed
-                      </span>
+                      <StatusPill tone="success" icon={CheckCircle}>Completed</StatusPill>
                     </div>
 
                     {/* Rating */}

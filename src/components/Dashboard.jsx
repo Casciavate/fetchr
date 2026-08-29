@@ -14,11 +14,13 @@ import WalletScreen from './Wallet';
 import AdminDashboard from './AdminDashboard';
 import { AIRLINE_CODES } from './shared/airlines';
 import { calcFees } from './EscrowPayment';
+import StatusPill from './shared/StatusPill';
+import { RowSkeleton } from './shared/Skeleton';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, LogOut, CheckCircle, Search,
-  TrendingUp, Zap, ArrowUpRight, Lock, Camera
+  Zap, ArrowUpRight, Lock, Camera
 } from 'lucide-react';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the sidebar lockup and
@@ -44,6 +46,35 @@ const AirlineLogo = ({ airline }) => {
     />
   );
 };
+
+// Post chooser, fetchr_design/ui_kits/fetchr-app/Post.jsx — the single
+// "Post" nav entry that replaced separate Add Flight / New Request items.
+const PostChooser = ({ onNavigate }) => (
+  <div className="max-w-xl mx-auto mt-6 animate-fade-in">
+    <h1 className="font-display font-bold text-title-l text-ink-900">What do you want to do?</h1>
+    <p className="text-body-s text-ink-muted mt-1 mb-6">
+      Add space you have, or find someone already flying.
+    </p>
+    <div className="space-y-3">
+      {[
+        { icon: Plane, title: 'Add a flight', sub: 'Earn on space you already have', id: 'add-flight' },
+        { icon: Package, title: 'Post a request', sub: 'Find someone already flying', id: 'new-request' },
+      ].map(opt => (
+        <button key={opt.id} onClick={() => onNavigate(opt.id)}
+          className="w-full flex items-center gap-4 text-left min-h-24 card p-5 hover:border-line-strong transition">
+          <span className="w-[52px] h-[52px] rounded-md bg-surface-sunken flex items-center justify-center flex-shrink-0 text-ink-700">
+            <opt.icon size={26} />
+          </span>
+          <span className="flex-1">
+            <p className="font-display font-semibold text-title-s text-ink-900">{opt.title}</p>
+            <p className="text-body-s text-ink-muted mt-0.5">{opt.sub}</p>
+          </span>
+          <ChevronRight size={22} className="text-ink-400 flex-shrink-0" />
+        </button>
+      ))}
+    </div>
+  </div>
+);
 
 const Dashboard = ({ session }) => {
   const [activeNav, setActiveNav] = useState('dashboard');
@@ -227,36 +258,33 @@ const Dashboard = ({ session }) => {
     };
   }, [fetchDashboardData]);
 
+  // Flatter grouping matching fetchr_design/ui_kits/fetchr-app/AppShell.jsx —
+  // Add Flight/New Request consolidate into one "Post" destination (a
+  // chooser screen, like the kit's Post.jsx); My Flights/My Requests/
+  // Earnings stay reachable from Profile's stat tiles and quick links
+  // rather than as separate sidebar entries. Completed stays in Deals
+  // (unlike the kit) since it's real functionality with no other path.
   const navGroups = [
-    {
-      label: 'Account',
-      items: [
-        { id: 'profile', icon: User, label: 'Profile' },
-        { id: 'earnings', icon: TrendingUp, label: 'Earnings' },
-        { id: 'wallet', icon: Wallet, label: 'Wallet' },
-      ]
-    },
-    {
-      label: 'Traveller',
-      items: [
-        { id: 'flights', icon: Plane, label: 'My Flights' },
-        { id: 'add-flight', icon: PlusCircle, label: 'Add Flight' },
-      ]
-    },
-    {
-      label: 'Sender',
-      items: [
-        { id: 'new-request', icon: PlusCircle, label: 'New Request' },
-        { id: 'my-requests', icon: Package, label: 'My Requests' },
-      ]
-    },
     {
       label: 'Deals',
       items: [
         { id: 'matches', icon: Search, label: 'Matches' },
-        { id: 'active-deals', icon: Zap, label: 'Active Deals' },
+        { id: 'active-deals', icon: Zap, label: 'Active deals' },
         { id: 'completed', icon: CheckCircle, label: 'Completed' },
-        { id: 'messages', icon: MessageCircle, label: 'Messages', badge: true },
+        { id: 'messages', icon: MessageCircle, label: 'Chat', badge: true },
+      ]
+    },
+    {
+      label: 'Post',
+      items: [
+        { id: 'post', icon: PlusCircle, label: 'Post' },
+      ]
+    },
+    {
+      label: 'Account',
+      items: [
+        { id: 'wallet', icon: Wallet, label: 'Wallet' },
+        { id: 'profile', icon: User, label: 'Profile' },
       ]
     },
   ];
@@ -330,6 +358,7 @@ const Dashboard = ({ session }) => {
 
   const renderMain = () => {
     switch (activeNav) {
+      case 'post': return <PostChooser onNavigate={navigate} />;
       case 'add-flight': return <AddFlight session={session} />;
       case 'flights': return <MyFlights session={session} onAddFlight={() => navigate('add-flight')} />;
       case 'new-request': return <NewRequest session={session} />;
@@ -480,10 +509,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               <p className="text-label text-ink-subtle mt-0.5">Based on your flights & requests</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-success-tint text-success px-2 py-1 rounded-sm font-mono text-overline uppercase">
-                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse inline-block" />
-                Live
-              </span>
+              <StatusPill tone="success" dot>Live</StatusPill>
               <button onClick={() => navigate('matches')}
                 className="flex items-center gap-1 text-label text-ink-700 font-semibold hover:text-ink-900">
                 View all <ChevronRight size={14} />
@@ -493,7 +519,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           {loading ? (
             <div className="space-y-3">
-              {[1,2,3].map(i => <div key={i} className="h-14 bg-surface-sunken rounded-md animate-pulse" />)}
+              <RowSkeleton /><RowSkeleton /><RowSkeleton />
             </div>
           ) : recentMatches.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
@@ -548,10 +574,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               <p className="text-label text-ink-subtle mt-0.5">Deals currently in progress</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-success-tint text-success px-2 py-1 rounded-sm font-mono text-overline uppercase">
-                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse inline-block" />
-                Live
-              </span>
+              <StatusPill tone="success" dot>Live</StatusPill>
               <button onClick={() => navigate('active-deals')}
                 className="flex items-center gap-1 text-label text-ink-700 font-semibold hover:text-ink-900">
                 View all <ChevronRight size={14} />
@@ -561,7 +584,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           {loading ? (
             <div className="space-y-3">
-              {[1,2].map(i => <div key={i} className="h-14 bg-surface-sunken rounded-md animate-pulse" />)}
+              <RowSkeleton /><RowSkeleton />
             </div>
           ) : activeDeals.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
@@ -621,10 +644,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               <p className="text-label text-ink-subtle mt-0.5">Your listed flights</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-success-tint text-success px-2 py-1 rounded-sm font-mono text-overline uppercase">
-                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse inline-block" />
-                Live
-              </span>
+              <StatusPill tone="success" dot>Live</StatusPill>
               <button onClick={() => navigate('flights')}
                 className="flex items-center gap-1 text-label text-ink-700 font-semibold hover:text-ink-900">
                 View all <ChevronRight size={14} />
@@ -634,7 +654,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           {loading ? (
             <div className="space-y-3">
-              {[1,2].map(i => <div key={i} className="h-14 bg-surface-sunken rounded-md animate-pulse" />)}
+              <RowSkeleton /><RowSkeleton />
             </div>
           ) : upcomingFlights.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
@@ -681,10 +701,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               <p className="text-label text-ink-subtle mt-0.5">Your open shipment requests</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-success-tint text-success px-2 py-1 rounded-sm font-mono text-overline uppercase">
-                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse inline-block" />
-                Live
-              </span>
+              <StatusPill tone="success" dot>Live</StatusPill>
               <button onClick={() => navigate('my-requests')}
                 className="flex items-center gap-1 text-label text-ink-700 font-semibold hover:text-ink-900">
                 View all <ChevronRight size={14} />
@@ -694,7 +711,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           {loading ? (
             <div className="space-y-3">
-              {[1,2].map(i => <div key={i} className="h-14 bg-surface-sunken rounded-md animate-pulse" />)}
+              <RowSkeleton /><RowSkeleton />
             </div>
           ) : ongoingRequests.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
@@ -827,6 +844,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
             <div className="hidden md:block">
               <p className="font-display font-semibold text-title-s text-ink-900">
                 {activeNav === 'dashboard' ? 'Dashboard' :
+                 activeNav === 'post' ? 'Post' :
                  activeNav === 'add-flight' ? 'Add flight' :
                  activeNav === 'flights' ? 'My flights' :
                  activeNav === 'new-request' ? 'New request' :
@@ -849,6 +867,15 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           </div>
 
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('post')}
+              className="hidden md:inline-flex items-center gap-1.5 h-9 px-3.5 rounded-md bg-brand text-white hover:bg-brand-hover transition font-display font-semibold text-body-s">
+              <PlusCircle size={16} /> Post
+            </button>
+            <button onClick={() => navigate('wallet')}
+              className="hidden md:flex items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition">
+              <Wallet size={15} />
+              <span className="font-mono text-num-m font-semibold">${stats.walletBalance.toFixed(2)}</span>
+            </button>
             <button onClick={() => navigate('wallet')}
               className="md:hidden flex items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition">
               <Wallet size={15} />

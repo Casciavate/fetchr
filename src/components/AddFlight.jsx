@@ -4,8 +4,9 @@ import { AIRLINES, AIRLINE_CODES, CODE_TO_AIRLINE } from './shared/airlines';
 import { AIRPORTS } from './shared/airports';
 import ImportFlights from './ImportFlights';
 import RoutePicker from './shared/RoutePicker';
+import DatePicker from './shared/DatePicker';
 import {
-  Plane, Search, MapPin, Calendar, DollarSign,
+  Plane, Search, MapPin, DollarSign,
   CheckCircle, AlertCircle, ShoppingBag,
   Briefcase, Package, Plus, X, Weight, AlertTriangle,
   Radar, ChevronDown, PenLine, Handshake
@@ -597,15 +598,8 @@ const AddFlight = ({ session }) => {
         <div className="space-y-4">
           {/* Date comes first — both search modes need it, and it can never be in the past */}
           <div>
-            <label className="block text-label text-content-muted mb-1.5 uppercase">
-              Flight date (required) <span className="text-content-subtle font-normal normal-case">(dd/mm/yyyy)</span>
-            </label>
-            <div className="relative">
-              <Calendar size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
-              <input type="date" min={today} value={form.flight_date}
-                onChange={e => setForm({ ...form, flight_date: e.target.value })}
-                className="input-field pl-9" />
-            </div>
+            <DatePicker label="Flight date (required)" min={today} value={form.flight_date}
+              onChange={v => setForm({ ...form, flight_date: v })} />
             {form.flight_date && (
               <p className="text-body-s font-mono text-content-subtle mt-1 ml-1">
                 {new Date(form.flight_date).toLocaleDateString('en-GB', {

@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   TrendingUp, Plane, Package, ChevronDown, ChevronUp,
-  Award, X, Shield, Star, CheckCircle, DollarSign
+  Award, X, Shield, CheckCircle, DollarSign
 } from 'lucide-react';
+import RatingDisplay from './shared/RatingDisplay';
+import StatusPill from './shared/StatusPill';
+import { RowSkeleton } from './shared/Skeleton';
 
 const Earnings = ({ session }) => {
   const [loading, setLoading] = useState(true);
@@ -118,8 +121,8 @@ const Earnings = ({ session }) => {
   const maxAmount = Math.max(...chartData.map(d => d.amount), 1);
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-3">
+      {[1, 2, 3].map(i => <RowSkeleton key={i} />)}
     </div>
   );
 
@@ -350,21 +353,11 @@ const Earnings = ({ session }) => {
                           <div className="flex-1">
                             <p className="text-body-m font-semibold text-ink-900">{shipper.full_name}</p>
                             <p className="text-micro text-content-subtle">Sender</p>
-                            {shipper.rating > 0 ? (
-                              <span className="inline-flex items-center gap-1 mt-0.5">
-                                <Star size={11} className="text-ink-900 fill-ink-900" />
-                                <span className={`font-mono text-micro font-semibold ${shipper.rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
-                                  {shipper.rating.toFixed(1)}
-                                </span>
-                                {shipper.total_reviews != null && (
-                                  <span className="text-micro text-content-subtle">({shipper.total_reviews})</span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-micro text-content-subtle">No ratings yet</span>
-                            )}
+                            <div className="mt-0.5">
+                              <RatingDisplay rating={shipper.rating} totalReviews={shipper.total_reviews} size={11} />
+                            </div>
                           </div>
-                          <span className="badge-green"><CheckCircle size={9} /> Completed</span>
+                          <StatusPill tone="success" icon={CheckCircle}>Completed</StatusPill>
                         </div>
                       )}
 

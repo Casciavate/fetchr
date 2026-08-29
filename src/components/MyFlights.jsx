@@ -6,6 +6,10 @@ import {
   CheckCircle, DollarSign, X, Save,
   MapPin, ShoppingBag, Briefcase, Package, Weight, Handshake
 } from 'lucide-react';
+import Toast from './shared/Toast';
+import EmptyState from './shared/EmptyState';
+import AdvisoryBanner from './shared/AdvisoryBanner';
+import { TicketSkeleton } from './shared/Skeleton';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -303,8 +307,8 @@ const MyFlights = ({ session, onAddFlight }) => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-4">
+      {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
     </div>
   );
 
@@ -322,21 +326,12 @@ const MyFlights = ({ session, onAddFlight }) => {
         </button>
       </div>
 
-      {success && (
-        <div className="bg-success-tint text-success text-body-s px-4 py-3 rounded-md mb-4 flex items-center gap-2">
-          <CheckCircle size={16} /> {success}
-        </div>
-      )}
+      <Toast message={success} tone="success" />
 
       {flights.length === 0 ? (
-        <div className="text-center py-24 ticket">
-          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Plane size={32} className="text-ink-300" />
-          </div>
-          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No flights listed</h2>
-          <p className="text-body-m text-ink-muted mb-6">Add a trip you're already taking and start earning on the luggage space you're not using.</p>
-          <button onClick={onAddFlight} className="btn-primary">Add a flight</button>
-        </div>
+        <EmptyState icon={Plane} title="No flights listed"
+          body="Add a trip you're already taking and start earning on the luggage space you're not using."
+          action={<button onClick={onAddFlight} className="btn-primary">Add a flight</button>} />
       ) : (
         <div className="space-y-4">
           {flights.map(flight => {
@@ -497,11 +492,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                         </button>
                       </div>
 
-                      {error && (
-                        <div className="flex items-center gap-2 bg-danger-tint text-danger text-body-s p-3 rounded-md">
-                          <AlertTriangle size={13} /> {error}
-                        </div>
-                      )}
+                      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
                       <div>
                         <p className="text-label text-ink-muted mb-2">Luggage options</p>

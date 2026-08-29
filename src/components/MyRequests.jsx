@@ -4,8 +4,12 @@ import {
   Package, Trash2, Plus, AlertTriangle, CheckCircle,
   MapPin, Weight, DollarSign, Calendar, ShoppingBag,
   Link, ChevronDown, ChevronUp, User, Phone, Shield,
-  Plane, Star, Clock, X
+  Plane, Clock, X
 } from 'lucide-react';
+import RatingDisplay from './shared/RatingDisplay';
+import AdvisoryBanner from './shared/AdvisoryBanner';
+import EmptyState from './shared/EmptyState';
+import { TicketSkeleton } from './shared/Skeleton';
 
 // Bare glyph, docs/BRAND.md §2.6 — ticket header bar
 const BareGlyph = ({ size = 14 }) => (
@@ -16,20 +20,6 @@ const BareGlyph = ({ size = 14 }) => (
     <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
   </svg>
 );
-
-// Rating display, docs/BRAND.md §7.11 — one star, never five, red below 3.0
-const RatingDisplay = ({ profile }) => {
-  if (!profile?.rating) return <span className="text-micro text-ink-subtle">No ratings yet</span>;
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Star size={12} className="text-ink-900 fill-ink-900" />
-      <span className={`font-mono text-body-s font-semibold ${profile.rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
-        {profile.rating.toFixed(1)}
-      </span>
-      <span className="text-micro text-ink-subtle">({profile.total_reviews})</span>
-    </span>
-  );
-};
 
 const MyRequests = ({ session, onNewRequest }) => {
   const [requests, setRequests] = useState([]);
@@ -129,8 +119,8 @@ const MyRequests = ({ session, onNewRequest }) => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-4">
+      {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
     </div>
   );
 
@@ -148,26 +138,15 @@ const MyRequests = ({ session, onNewRequest }) => {
         </button>
       </div>
 
-      {/* Platform liability notice — §7.9 advisory (info variant) */}
-      <div className="bg-warning-tint rounded-r px-4 py-3 mb-6 flex items-start gap-3 border-l-[3px] border-warn-400">
-        <Shield size={16} className="text-warning flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-body-s font-semibold text-warning mb-0.5">Platform liability notice</p>
-          <p className="text-body-s text-warning leading-relaxed">
-            fetchr is a matchmaking and secure payment platform only. All transactions, item legality, and delivery arrangements are solely between the traveller and sender. fetchr bears no liability for items transported, customs issues, or delivery disputes. Users accept full legal responsibility for their shipments.
-          </p>
-        </div>
-      </div>
+      {/* Platform liability notice — §7.9 advisory, info tone */}
+      <AdvisoryBanner tone="info" title="Platform liability notice" className="mb-6">
+        fetchr is a matchmaking and secure payment platform only. All transactions, item legality, and delivery arrangements are solely between the traveller and sender. fetchr bears no liability for items transported, customs issues, or delivery disputes. Users accept full legal responsibility for their shipments.
+      </AdvisoryBanner>
 
       {requests.length === 0 ? (
-        <div className="text-center py-24 ticket">
-          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Package size={32} className="text-ink-300" />
-          </div>
-          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No requests yet</h2>
-          <p className="text-body-m text-ink-muted mb-6">Post what you need and travellers on your route will offer to carry it.</p>
-          <button onClick={onNewRequest} className="btn-primary">Post a request</button>
-        </div>
+        <EmptyState icon={Package} title="No requests yet"
+          body="Post what you need and travellers on your route will offer to carry it."
+          action={<button onClick={onNewRequest} className="btn-primary">Post a request</button>} />
       ) : (
         <div className="space-y-4">
           {requests.map(req => {
@@ -439,7 +418,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                                   <div className="flex-1">
                                     <p className="text-body-s font-semibold text-ink-900">{deal.traveler.full_name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                      <RatingDisplay profile={deal.traveler} />
+                                      <RatingDisplay rating={deal.traveler?.rating} totalReviews={deal.traveler?.total_reviews} qualifier="New traveller" />
                                       {deal.traveler.verified && (
                                         <span className="badge badge-green"><Shield size={9} /> ID verified</span>
                                       )}

@@ -4,7 +4,7 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { supabase } from '../supabaseClient';
 import {
   User, Mail, Phone, Globe, Star, Edit2,
-  Check, X, Award, Package, Plane, DollarSign, Camera,
+  Check, Award, Package, Plane, DollarSign, Camera,
   CreditCard, CheckCircle, Trash2, AlertTriangle,
   ChevronDown, ChevronUp, ChevronRight, Building, Lock,
   Info, LogOut, TrendingUp, PlusCircle, Shield
@@ -13,6 +13,8 @@ import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
 import AdvisoryBanner from './shared/AdvisoryBanner';
 import Toast from './shared/Toast';
+import BottomSheet from './shared/BottomSheet';
+import { RowSkeleton } from './shared/Skeleton';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -264,6 +266,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const [receivedReviews, setReceivedReviews] = useState([]);
   const [showReceivedReviews, setShowReceivedReviews] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [showIdentity, setShowIdentity] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [form, setForm] = useState({
@@ -462,8 +465,8 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const canDelete = stats.dealsOngoing === 0 && (profile?.wallet_balance || 0) <= 0;
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
+    <div className="max-w-3xl mx-auto space-y-3">
+      <RowSkeleton /><RowSkeleton /><RowSkeleton />
     </div>
   );
 
@@ -502,7 +505,13 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="font-display font-bold text-title-m text-ink-900">{profile?.full_name || 'Your name'}</h2>
-                  <VerificationBadge verified={profile?.verified} />
+                  {profile?.verified ? (
+                    <button onClick={() => setShowIdentity(true)}>
+                      <VerificationBadge verified />
+                    </button>
+                  ) : (
+                    <VerificationBadge verified={false} />
+                  )}
                 </div>
                 <p className="text-body-s text-content-subtle mt-0.5">{session.user.email}</p>
                 {/* Trust hierarchy, §9.1: verification (above) → completed deliveries → rating → member since */}
@@ -523,12 +532,12 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
               </div>
             </div>
             <button
-              onClick={() => { setEditing(!editing); setError(''); setSuccess(''); }}
-              className={editing ? 'btn-secondary' : 'btn-primary'}>
-              {editing ? <><X size={14} /> Cancel</> : <><Edit2 size={14} /> Edit</>}
+              onClick={() => { setEditing(true); setError(''); setSuccess(''); }}
+              className="btn-primary">
+              <Edit2 size={14} /> Edit
             </button>
           </div>
-          {!editing && profile?.bio && (
+          {profile?.bio && (
             <div className="mt-4 pt-4 border-t border-line">
               <p className="text-body-s text-content-muted leading-relaxed italic">"{profile.bio}"</p>
             </div>
@@ -692,8 +701,11 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
 
         {/* ── Edit Form ── */}
         {editing && (
-          <div className="card p-6 space-y-4">
-            <h3 className="font-display font-semibold text-title-s text-ink-900">Edit information</h3>
+          <BottomSheet title="Edit information" onClose={() => { setEditing(false); setError(''); setSuccess(''); }}
+            footer={<button onClick={saveProfile} disabled={saving} className="w-full btn-primary disabled:opacity-50">
+              <Check size={15} /> {saving ? 'Saving' : 'Save changes'}
+            </button>}>
+          <div className="p-5 space-y-4">
             <div>
               <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">Full name (required)</label>
               <div className="relative">
@@ -744,15 +756,12 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 ))}
               </div>
             </div>
-            <button onClick={saveProfile} disabled={saving} className="w-full btn-primary disabled:opacity-50">
-              <Check size={15} /> {saving ? 'Saving' : 'Save changes'}
-            </button>
           </div>
+          </BottomSheet>
         )}
 
         {/* ── Personal Info Display ── */}
-        {!editing && (
-          <div className="card p-6">
+        <div className="card p-6">
             <h3 className="font-display font-semibold text-title-s text-ink-900 mb-4">Personal information</h3>
             <div className="grid grid-cols-2 gap-3 mb-4">
               {[
@@ -778,8 +787,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </div>
 
         {/* ── Stored Credit Card ── */}
         <div className="card p-6">
@@ -814,31 +822,40 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   <Trash2 size={15} className="text-danger" />
                 </button>
               </div>
-              <button onClick={() => setShowCardForm(!showCardForm)}
+              <button onClick={() => setShowCardForm(true)}
                 className="text-body-s text-content font-semibold hover:text-ink-700 underline underline-offset-2">
-                {showCardForm ? 'Cancel' : 'Replace card'}
+                Replace card
               </button>
             </div>
           ) : (
-            <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
-              <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-              <p className="text-body-s text-info-500">
-                No card saved. Add one to enable top ups and payments.
-              </p>
-            </div>
+            <>
+              <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
+                <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
+                <p className="text-body-s text-info-500">
+                  No card saved. Add one to enable top ups and payments.
+                </p>
+              </div>
+              <button onClick={() => setShowCardForm(true)} className="btn-secondary">
+                <CreditCard size={14} /> Add card
+              </button>
+            </>
           )}
 
-          {(!profile?.payout_card_last4 || showCardForm) && (
-            <SaveCardForm
-              session={session}
-              onSuccess={(result) => {
-                setShowCardForm(false);
-                fetchProfile();
-                setSuccess(`Card ****${result.last4} saved.`);
-                setTimeout(() => setSuccess(''), 4000);
-              }}
-              onCancel={() => setShowCardForm(false)}
-            />
+          {showCardForm && (
+            <BottomSheet title="Payment card" onClose={() => setShowCardForm(false)}>
+              <div className="p-5">
+                <SaveCardForm
+                  session={session}
+                  onSuccess={(result) => {
+                    setShowCardForm(false);
+                    fetchProfile();
+                    setSuccess(`Card ****${result.last4} saved.`);
+                    setTimeout(() => setSuccess(''), 4000);
+                  }}
+                  onCancel={() => setShowCardForm(false)}
+                />
+              </div>
+            </BottomSheet>
           )}
         </div>
 
@@ -876,31 +893,40 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   <Trash2 size={15} className="text-danger" />
                 </button>
               </div>
-              <button onClick={() => setShowBankForm(!showBankForm)}
+              <button onClick={() => setShowBankForm(true)}
                 className="text-body-s text-content font-semibold hover:text-ink-700 underline underline-offset-2">
-                {showBankForm ? 'Cancel' : 'Replace bank account'}
+                Replace bank account
               </button>
             </div>
           ) : (
-            <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
-              <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-              <p className="text-body-s text-info-500">
-                No bank account saved. Add one to enable withdrawals.
-              </p>
-            </div>
+            <>
+              <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
+                <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
+                <p className="text-body-s text-info-500">
+                  No bank account saved. Add one to enable withdrawals.
+                </p>
+              </div>
+              <button onClick={() => setShowBankForm(true)} className="btn-secondary">
+                <Building size={14} /> Add bank account
+              </button>
+            </>
           )}
 
-          {(!profile?.bank_account_last4 || showBankForm) && (
-            <SaveBankForm
-              profile={profile}
-              onSuccess={(result) => {
-                setShowBankForm(false);
-                fetchProfile();
-                setSuccess(`Bank account ****${result.last4} saved.`);
-                setTimeout(() => setSuccess(''), 4000);
-              }}
-              onCancel={() => setShowBankForm(false)}
-            />
+          {showBankForm && (
+            <BottomSheet title="Bank account" onClose={() => setShowBankForm(false)}>
+              <div className="p-5">
+                <SaveBankForm
+                  profile={profile}
+                  onSuccess={(result) => {
+                    setShowBankForm(false);
+                    fetchProfile();
+                    setSuccess(`Bank account ****${result.last4} saved.`);
+                    setTimeout(() => setSuccess(''), 4000);
+                  }}
+                  onCancel={() => setShowBankForm(false)}
+                />
+              </div>
+            </BottomSheet>
           )}
         </div>
 
@@ -939,14 +965,34 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 {(profile?.wallet_balance || 0) > 0 && `Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`}
               </p>
             </div>
-          ) : !showDeleteAccount ? (
+          ) : (
             <button onClick={() => { setShowDeleteAccount(true); setError(''); }}
               className="flex items-center gap-2 border border-void-200 text-danger rounded-md px-4 py-2.5 text-body-s font-semibold hover:bg-danger-tint transition-colors">
               <Trash2 size={15} /> Delete my account
             </button>
-          ) : (
-            <div className="bg-danger-tint rounded-md p-4 space-y-3">
-              <p className="text-body-s font-semibold text-danger">This will immediately and permanently delete everything.</p>
+          )}
+        </div>
+
+        {showDeleteAccount && (
+          <BottomSheet title="Delete account"
+            onClose={() => { setShowDeleteAccount(false); setDeleteConfirmText(''); setError(''); }}
+            footer={
+              <div className="flex flex-col gap-2">
+                <button onClick={() => { setShowDeleteAccount(false); setDeleteConfirmText(''); setError(''); }}
+                  className="w-full btn-secondary">Keep my account</button>
+                <button onClick={handleDeleteAccount}
+                  disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
+                  className="w-full btn-danger disabled:opacity-50">
+                  {deletingAccount
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting</>
+                    : <><Trash2 size={14} /> Delete account permanently</>}
+                </button>
+              </div>
+            }>
+            <div className="p-5 space-y-4">
+              <AdvisoryBanner tone="error" title="This cannot be undone">
+                Your profile, flights, requests and message history are removed permanently.
+              </AdvisoryBanner>
               <div>
                 <label className="block text-label text-content-muted mb-1.5">
                   Type <strong className="text-danger">DELETE</strong> to confirm
@@ -956,20 +1002,22 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   onChange={e => setDeleteConfirmText(e.target.value)}
                   className="input-field" autoComplete="off" />
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setShowDeleteAccount(false); setDeleteConfirmText(''); setError(''); }}
-                  className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>
-                <button onClick={handleDeleteAccount}
-                  disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
-                  className="flex-1 btn-danger py-2.5 text-sm disabled:opacity-50">
-                  {deletingAccount
-                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting</>
-                    : <><Trash2 size={14} /> Delete account permanently</>}
-                </button>
-              </div>
             </div>
-          )}
-        </div>
+          </BottomSheet>
+        )}
+
+        {showIdentity && (
+          <BottomSheet title="Identity" onClose={() => setShowIdentity(false)}
+            footer={<button onClick={() => setShowIdentity(false)} className="w-full btn-secondary">Close</button>}>
+            <div className="p-5 space-y-3">
+              <VerificationBadge verified />
+              <p className="text-body-m text-content-muted leading-relaxed">
+                We checked a government ID against a selfie. Senders and travellers see the green badge
+                beside your name. Your document is not shown to anyone.
+              </p>
+            </div>
+          </BottomSheet>
+        )}
 
       </div>
     </Elements>
