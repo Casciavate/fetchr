@@ -3,8 +3,8 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
 import {
-  Shield, CheckCircle, AlertTriangle, Lock,
-  DollarSign, Package, Plane, ShoppingBag, Camera, X, Upload
+  Lock, CheckCircle, AlertTriangle,
+  Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
 } from 'lucide-react';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
@@ -13,12 +13,12 @@ const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
       fontSize: '14px',
-      fontFamily: 'Inter, sans-serif',
-      color: '#1f2937',
-      '::placeholder': { color: '#9ca3af' },
-      iconColor: '#7c3aed',
+      fontFamily: '"IBM Plex Mono", monospace',
+      color: '#14181F',
+      '::placeholder': { color: '#7F8794' },
+      iconColor: '#14181F',
     },
-    invalid: { color: '#ef4444', iconColor: '#ef4444' },
+    invalid: { color: '#B0301C', iconColor: '#B0301C' },
   },
   hidePostalCode: true,
 };
@@ -89,7 +89,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
   };
 
   const handleUpload = async () => {
-    if (files.length === 0) { setError('Please select at least one photo.'); return; }
+    if (files.length === 0) { setError('Add at least one photo.'); return; }
     setUploading(true); setError('');
     try {
       const uploadedUrls = [];
@@ -112,7 +112,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
       }).eq('id', match.id);
 
       const lines = [
-        '📸 PROOF UPLOADED:',
+        'PROOF UPLOADED:',
         ...uploadedUrls.map((url, i) => `PROOF_IMAGE_${i + 1}:${url}`),
         notes ? `Notes: ${notes}` : null,
       ].filter(Boolean);
@@ -126,86 +126,86 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
 
       onUploaded(uploadedUrls[0]);
     } catch (e) {
-      setError(e.message || 'Upload failed. Please try again.');
+      setError(e.message || 'The upload failed. Try again.');
     }
     setUploading(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900">Upload Delivery Proof</h3>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-            <X size={18} className="text-gray-500" />
+    <div className="fixed inset-0 z-modal flex items-end md:items-center justify-center p-4" style={{ background: 'var(--scrim)' }}>
+      <div className="bg-surface-raised rounded-xl w-full max-w-md shadow-elev-3">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <h3 className="font-display font-bold text-title-s text-content">Upload delivery proof</h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
+            <X size={18} className="text-content-muted" />
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-            <p className="text-xs font-bold text-blue-700 mb-1">What to upload</p>
-            <ul className="text-xs text-blue-600 space-y-0.5">
-              <li>📦 Photo of the item</li>
-              {isPurchase && <li>🧾 Purchase receipt from the store</li>}
-              {isPurchase && <li>📸 Photo of the purchased item</li>}
-              <li>✅ Any other delivery confirmation</li>
+          <div className="bg-info-50 rounded-md p-3">
+            <p className="text-label font-semibold text-info-500 mb-1 uppercase tracking-wide">What to upload</p>
+            <ul className="text-body-s text-info-500 space-y-0.5">
+              <li>Photo of the item</li>
+              {isPurchase && <li>Purchase receipt from the store</li>}
+              {isPurchase && <li>Photo of the purchased item</li>}
+              <li>Any other delivery confirmation</li>
             </ul>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Photos (up to 5)</label>
+            <label className="block text-label font-semibold text-content-muted mb-2 uppercase tracking-wide">Photos (up to 5)</label>
             {previews.length > 0 ? (
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {previews.map((url, i) => (
-                  <div key={i} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square">
+                  <div key={i} className="relative rounded-md overflow-hidden border border-line aspect-square">
                     <img src={url} alt="" className="w-full h-full object-cover" />
                     <button onClick={() => removeFile(i)}
-                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      className="absolute top-1 right-1 w-5 h-5 bg-danger-fill rounded-full flex items-center justify-center">
                       <X size={10} className="text-white" />
                     </button>
                   </div>
                 ))}
                 {previews.length < 5 && (
                   <button onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-200 rounded-xl aspect-square flex items-center justify-center hover:border-violet-300 hover:bg-violet-50 transition">
-                    <Camera size={20} className="text-gray-300" />
+                    className="border-2 border-dashed border-line-strong rounded-md aspect-square flex items-center justify-center hover:border-paper-600 hover:bg-surface-sunken transition">
+                    <Camera size={20} className="text-ink-300" />
                   </button>
                 )}
               </div>
             ) : (
               <button onClick={() => fileInputRef.current?.click()}
-                className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 hover:border-violet-300 hover:bg-violet-50 transition">
-                <Upload size={24} className="text-gray-300" />
-                <p className="text-sm text-gray-400 font-medium">Tap to select photos</p>
-                <p className="text-xs text-gray-300">JPG, PNG · Max 10MB each</p>
+                className="w-full border-2 border-dashed border-line-strong rounded-md p-8 flex flex-col items-center gap-2 hover:border-paper-600 hover:bg-surface-sunken transition">
+                <Upload size={24} className="text-ink-300" />
+                <p className="text-body-s text-content-muted font-medium">Tap to select photos</p>
+                <p className="text-micro text-ink-300">JPG, PNG · max 10MB each</p>
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            <label className="block text-label font-semibold text-content-muted mb-1.5 uppercase tracking-wide">
+              Notes <span className="text-ink-300 font-normal normal-case">(optional)</span>
             </label>
             <textarea
               placeholder={isPurchase ? "e.g. Purchased from Apple Store, receipt attached..." : "e.g. Item delivered in perfect condition..."}
               value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              className="input-field resize-none text-sm" />
+              className="input-field resize-none text-body-s" />
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
-              <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-red-600">{error}</p>
+            <div className="flex items-start gap-2 bg-danger-tint rounded-md p-3">
+              <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+              <p className="text-body-s text-danger">{error}</p>
             </div>
           )}
 
           <div className="flex gap-2">
-            <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
+            <button onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
             <button onClick={handleUpload} disabled={uploading || files.length === 0}
-              className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+              className="flex-[2] btn-primary disabled:opacity-50">
               {uploading
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</>
-                : <><Upload size={15} /> Submit Proof</>}
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading</>
+                : <><Upload size={15} /> Upload proof</>}
             </button>
           </div>
         </div>
@@ -254,7 +254,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
   const handlePay = async () => {
     if (!stripe || !elements) return;
     if ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady) {
-      setError('Card form not ready.'); return;
+      setError('The card form is not ready yet.'); return;
     }
     setLoading(true); setError('');
 
@@ -318,32 +318,32 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       setTimeout(() => onPaymentComplete?.(), 1500);
 
     } catch (e) {
-      setError(e.message || 'Payment failed. Please try again.');
+      setError(e.message || 'The payment failed. Try again.');
     }
     setLoading(false);
   };
 
   if (match.status === 'in_escrow') return (
     <div className="p-6 text-center">
-      <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <Lock size={28} className="text-blue-600" />
+      <div className="w-16 h-16 bg-info-50 rounded-lg flex items-center justify-center mx-auto mb-3">
+        <Lock size={28} className="text-info-500" />
       </div>
-      <p className="text-base font-bold text-gray-900 mb-1">Escrow Active</p>
-      <p className="text-sm text-gray-500 mb-3">${fees.totalShipperPays.toFixed(2)} secured.</p>
-      <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700 border border-blue-100">
-        Traveler receives ${fees.travelerReceives.toFixed(2)} upon confirmed delivery.
+      <p className="font-display font-bold text-title-s text-content mb-1">Escrow secured</p>
+      <p className="text-body-s text-content-muted mb-3 font-mono">${fees.totalShipperPays.toFixed(2)} is held by fetchr.</p>
+      <div className="bg-info-50 rounded-md p-3 text-body-s text-info-500">
+        Neither side can move it alone. The traveller receives <span className="font-mono">${fees.travelerReceives.toFixed(2)}</span> once delivery is confirmed.
       </div>
     </div>
   );
 
   if (success) return (
     <div className="p-6 text-center">
-      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <CheckCircle size={32} className="text-emerald-500" />
+      <div className="w-16 h-16 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-3">
+        <CheckCircle size={32} className="text-success" />
       </div>
-      <p className="text-lg font-bold text-gray-900 mb-1">Escrow Secured!</p>
-      <p className="text-sm text-gray-500">
-        ${fees.totalShipperPays.toFixed(2)} held securely. Traveler receives ${fees.travelerReceives.toFixed(2)} upon delivery.
+      <p className="font-display font-bold text-title-m text-content mb-1">Escrow secured</p>
+      <p className="text-body-s text-content-muted">
+        <span className="font-mono">${fees.totalShipperPays.toFixed(2)}</span> is held by fetchr. The traveller receives <span className="font-mono">${fees.travelerReceives.toFixed(2)}</span> once delivery is confirmed.
       </p>
     </div>
   );
@@ -351,74 +351,74 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
   return (
     <div className="p-5 space-y-4">
       <div className="flex items-center gap-2">
-        <Shield size={18} className="text-violet-600" />
-        <h3 className="font-bold text-gray-900">Secure Escrow Payment</h3>
+        <Lock size={18} className="text-ink-900" />
+        <h3 className="font-display font-bold text-title-s text-content">Pay escrow</h3>
       </div>
 
-      <div className="text-xs text-gray-500 bg-violet-50 rounded-xl p-3 border border-violet-100">
-        Payment held securely by Fetchr. Released to traveler only after both confirm delivery.
+      <div className="text-body-s text-info-500 bg-info-50 rounded-md p-3">
+        You'll pay <span className="font-mono font-semibold">${fees.totalShipperPays.toFixed(2)}</span> now. We hold it until you both confirm delivery.
       </div>
 
       {/* Payment breakdown */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
-          <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Payment Breakdown</p>
+      <div className="ticket">
+        <div className="bg-surface-sunken px-4 py-2.5 border-b border-line">
+          <p className="text-overline font-mono text-content-muted uppercase tracking-wide">Payment breakdown</p>
         </div>
 
-        <div className="px-4 py-3 space-y-2 text-sm">
+        <div className="px-4 py-3 space-y-2">
           {/* Transport */}
-          <div className="flex justify-between text-gray-700">
-            <span className="flex items-center gap-1.5">
-              <Plane size={12} className="text-violet-400" />
-              {match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg
+          <div className="flex justify-between text-content">
+            <span className="flex items-center gap-1.5 text-num-m">
+              <Plane size={12} className="text-ink-400" />
+              {match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg
             </span>
-            <span className="font-semibold">${fees.transportFee.toFixed(2)}</span>
+            <span className="font-mono font-semibold text-num-m">${fees.transportFee.toFixed(2)}</span>
           </div>
 
           {/* Shop & ship fee */}
           {fees.isPurchase && (
-            <div className="flex justify-between text-gray-700">
-              <span className="flex items-center gap-1.5">
-                <ShoppingBag size={12} className="text-blue-400" />
-                Shop & ship service fee
+            <div className="flex justify-between text-content">
+              <span className="flex items-center gap-1.5 text-num-m">
+                <ShoppingBag size={12} className="text-ink-400" />
+                Shop fee
               </span>
-              <span className="font-semibold">${fees.shopFee > 0 ? fees.shopFee.toFixed(2) : 'TBD'}</span>
+              <span className="font-mono font-semibold text-num-m">{fees.shopFee > 0 ? `$${fees.shopFee.toFixed(2)}` : 'TBD'}</span>
             </div>
           )}
 
           {/* Item purchase */}
           {fees.isPurchase && fees.purchasePrice > 0 && (
-            <div className="flex justify-between text-gray-700">
-              <span className="flex items-center gap-1.5">
-                <Package size={12} className="text-blue-400" />
-                Item purchase price
+            <div className="flex justify-between text-content">
+              <span className="flex items-center gap-1.5 text-num-m">
+                <Package size={12} className="text-ink-400" />
+                Item
               </span>
-              <span className="font-semibold">${fees.purchasePrice.toFixed(2)}</span>
+              <span className="font-mono font-semibold text-num-m">${fees.purchasePrice.toFixed(2)}</span>
             </div>
           )}
 
-          <div className="border-t border-gray-100 pt-2 mt-1">
-            <div className="flex justify-between font-bold text-gray-900 text-base">
-              <span>Shipper pays total</span>
+          <div className="border-t border-line pt-2 mt-1">
+            <div className="flex justify-between font-mono font-bold text-content text-num-l">
+              <span className="font-sans font-semibold text-num-m">You pay</span>
               <span>${fees.totalShipperPays.toFixed(2)}</span>
             </div>
           </div>
 
           {/* Fetchr fee note */}
-          <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-xs mt-1">
-            <p className="font-semibold text-gray-500 uppercase tracking-wide">How funds are distributed</p>
-            <div className="flex justify-between text-red-400">
-              <span>Fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on transport{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
-              <span>−${fees.fetchrFee.toFixed(2)}</span>
+          <div className="bg-surface-sunken rounded-md p-3 space-y-1.5 mt-1">
+            <p className="text-overline font-mono text-content-muted uppercase tracking-wide">How the money is split</p>
+            <div className="flex justify-between text-content-muted text-num-m">
+              <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%) on transport{fees.isPurchase && fees.shopFee > 0 ? ' + shop fee' : ''}</span>
+              <span className="font-mono">−${fees.fetchrFee.toFixed(2)}</span>
             </div>
             {fees.isPurchase && fees.purchasePrice > 0 && (
-              <div className="flex justify-between text-gray-500">
-                <span>Item purchase reimbursement to traveler</span>
-                <span>+${fees.purchasePrice.toFixed(2)}</span>
+              <div className="flex justify-between text-content-muted text-num-m">
+                <span>Item reimbursement to traveller</span>
+                <span className="font-mono">+${fees.purchasePrice.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">
-              <span>Traveler receives</span>
+            <div className="flex justify-between font-mono font-bold text-success border-t border-line pt-1.5">
+              <span className="font-sans font-semibold">Traveller receives</span>
               <span>${fees.travelerReceives.toFixed(2)}</span>
             </div>
           </div>
@@ -427,42 +427,42 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
 
       {/* Payment method selector */}
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Payment Method</label>
+        <label className="block text-label font-semibold text-content-muted mb-2 uppercase tracking-wide">Payment method</label>
         <div className="space-y-2">
           {/* Card */}
           <button type="button" onClick={() => setPaymentMethod('card')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'card' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
-            <span className="text-xl">💳</span>
+            className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${paymentMethod === 'card' ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'}`}>
+            <CreditCard size={20} className="text-ink-600 flex-shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-bold text-gray-800">Credit / Debit Card</p>
-              <p className="text-xs text-gray-400">Pay full amount by card</p>
+              <p className="text-body-s font-bold text-content">Credit / debit card</p>
+              <p className="text-micro text-content-subtle">Pay the full amount by card</p>
             </div>
-            {paymentMethod === 'card' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+            {paymentMethod === 'card' && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
           </button>
 
           {/* Wallet full */}
           {canPayFullWithWallet && (
             <button type="button" onClick={() => setPaymentMethod('wallet')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'wallet' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
-              <span className="text-xl">💰</span>
+              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${paymentMethod === 'wallet' ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'}`}>
+              <Wallet size={20} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">Wallet (${walletBalance.toFixed(2)} available)</p>
-                <p className="text-xs text-gray-400">Pay full amount from wallet balance</p>
+                <p className="text-body-s font-bold text-content font-mono">Wallet (${walletBalance.toFixed(2)} available)</p>
+                <p className="text-micro text-content-subtle">Pay the full amount from your wallet</p>
               </div>
-              {paymentMethod === 'wallet' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+              {paymentMethod === 'wallet' && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
             </button>
           )}
 
           {/* Split */}
           {walletBalance > 0 && !canPayFullWithWallet && (
             <button type="button" onClick={() => { setPaymentMethod('split'); setSplitWalletAmount(walletBalance.toFixed(2)); }}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${paymentMethod === 'split' ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
-              <span className="text-xl">⚡</span>
+              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${paymentMethod === 'split' ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'}`}>
+              <Zap size={20} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">Wallet + Card</p>
-                <p className="text-xs text-gray-400">Use ${walletBalance.toFixed(2)} wallet + card for remainder ${(fees.totalShipperPays - walletBalance).toFixed(2)}</p>
+                <p className="text-body-s font-bold text-content">Wallet + card</p>
+                <p className="text-micro text-content-subtle font-mono">${walletBalance.toFixed(2)} wallet + ${(fees.totalShipperPays - walletBalance).toFixed(2)} card</p>
               </div>
-              {paymentMethod === 'split' && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+              {paymentMethod === 'split' && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
             </button>
           )}
         </div>
@@ -472,17 +472,17 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       {(paymentMethod === 'card' || paymentMethod === 'split') && hasSavedCard && (
         <div className="space-y-2">
           {[
-            { val: false, label: `${profile?.payout_card_brand ? profile.payout_card_brand.charAt(0).toUpperCase() + profile.payout_card_brand.slice(1) : 'Card'} ****${profile?.payout_card_last4}`, sub: 'Saved card', icon: '💳' },
-            { val: true, label: 'Use a different card', sub: 'Enter new details', icon: '➕' },
+            { val: false, label: `${profile?.payout_card_brand ? profile.payout_card_brand.charAt(0).toUpperCase() + profile.payout_card_brand.slice(1) : 'Card'} ****${profile?.payout_card_last4}`, sub: 'Saved card', icon: CreditCard },
+            { val: true, label: 'Use a different card', sub: 'Enter new details', icon: Plus },
           ].map(opt => (
             <button key={String(opt.val)} type="button" onClick={() => { setUseNewCard(opt.val); setError(''); }}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${useNewCard === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'}`}>
-              <span className="text-lg">{opt.icon}</span>
+              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${useNewCard === opt.val ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'}`}>
+              <opt.icon size={18} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">{opt.label}</p>
-                <p className="text-xs text-gray-400">{opt.sub}</p>
+                <p className="text-body-s font-bold text-content font-mono">{opt.label}</p>
+                <p className="text-micro text-content-subtle">{opt.sub}</p>
               </div>
-              {useNewCard === opt.val && <CheckCircle size={14} className="text-violet-600" />}
+              {useNewCard === opt.val && <CheckCircle size={14} className="text-ink-900" />}
             </button>
           ))}
         </div>
@@ -491,35 +491,35 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       {/* Card form */}
       {(paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && (
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Card Details</label>
-          <div className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white">
+          <label className="block text-label font-semibold text-content-muted mb-1.5 uppercase tracking-wide">Card details</label>
+          <div className="border-2 border-line-strong rounded-md px-4 py-3.5 focus-within:border-accent transition-all bg-surface">
             <CardElement options={{ ...CARD_ELEMENT_OPTIONS, wallets: { link: 'never' } }} onReady={() => setCardReady(true)} />
           </div>
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
-            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-            <p className="text-xs text-amber-600 mt-0.5">Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC</p>
+          <div className="bg-warning-tint border-l-[3px] border-warn-400 rounded-r p-3 mt-2">
+            <p className="text-body-s text-warning font-bold">Test mode</p>
+            <p className="text-body-s text-warning mt-0.5 font-mono">4242 4242 4242 4242 · any future date · any CVC</p>
           </div>
         </div>
       )}
 
       {error && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
-          <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-red-600">{error}</p>
+        <div className="flex items-start gap-2 bg-danger-tint rounded-md p-3">
+          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+          <p className="text-body-s text-danger">{error}</p>
         </div>
       )}
 
       <button onClick={handlePay}
         disabled={loading || !stripe || ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady)}
-        className="w-full btn-primary py-3.5 disabled:opacity-50 flex items-center justify-center gap-2">
+        className="w-full btn-signal disabled:opacity-50">
         {loading
-          ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
-          : <><Lock size={15} /> Pay ${fees.totalShipperPays.toFixed(2)} into Escrow</>
+          ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>
+          : <><Lock size={15} /> Pay ${fees.totalShipperPays.toFixed(2)} escrow</>
         }
       </button>
 
-      <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
-        <Shield size={11} /> Fetchr Secure Escrow · Powered by Stripe
+      <p className="text-micro text-content-subtle text-center flex items-center justify-center gap-1">
+        <Lock size={11} /> fetchr secure escrow · powered by Stripe
       </p>
     </div>
   );

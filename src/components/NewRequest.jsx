@@ -235,14 +235,14 @@ const StoreSearch = ({ value, onChange }) => {
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-        Store Name & Location *
+      <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+        Store name &amp; location *
       </label>
       <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        <Search size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
         {searching && (
           <div className="absolute right-3.5 top-3.5">
-            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-ink-300 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
         <input type="text" value={query} onChange={e => handleChange(e.target.value)}
@@ -250,31 +250,31 @@ const StoreSearch = ({ value, onChange }) => {
           className="input-field pl-9 pr-10" />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+        <div className="absolute z-tooltip w-full mt-1 bg-surface border border-line rounded-lg shadow-elev-2 overflow-hidden max-h-64 overflow-y-auto">
           {results.map((place, i) => (
             <button key={i} type="button" onClick={() => handleSelect(place)}
-              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
-              <MapPin size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
+              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-sunken text-left transition border-b border-line last:border-0">
+              <MapPin size={16} className="text-ink-400 flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{place.name}</p>
-                <p className="text-xs text-gray-400 truncate">{place.address}</p>
+                <p className="text-body-m font-semibold text-content truncate">{place.name}</p>
+                <p className="text-body-s text-content-subtle truncate">{place.address}</p>
               </div>
             </button>
           ))}
         </div>
       )}
       {open && !searching && results.length === 0 && query.length >= 3 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl px-4 py-3">
-          <p className="text-sm text-gray-500">No location found for "{query}".</p>
-          <p className="text-xs text-gray-400 mt-1">
+        <div className="absolute z-tooltip w-full mt-1 bg-surface border border-line rounded-lg shadow-elev-2 px-4 py-3">
+          <p className="text-body-m text-content-muted">No location found for "{query}".</p>
+          <p className="text-body-s text-content-subtle mt-1">
             Try just the mall or building name (e.g. "Dubai Mall") instead of the store brand.
           </p>
         </div>
       )}
       {value?.address && (
-        <div className="mt-2 bg-emerald-50 rounded-xl px-3 py-2 flex items-start gap-2 border border-emerald-100">
-          <MapPin size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-emerald-700 leading-relaxed">{value.address}</p>
+        <div className="mt-2 bg-success-tint rounded-md px-3 py-2 flex items-start gap-2">
+          <MapPin size={13} className="text-success flex-shrink-0 mt-0.5" />
+          <p className="text-body-s text-success leading-relaxed">{value.address}</p>
         </div>
       )}
     </div>
@@ -336,24 +336,24 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</label>
+      <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">{label}</label>
       <div className="relative">
-        <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        <MapPin size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
         <input type="text" value={query} onChange={e => handleSearch(e.target.value)}
           onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
           placeholder={placeholder} className="input-field pl-9" />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+        <div className="absolute z-tooltip w-full mt-1 bg-surface border border-line rounded-lg shadow-elev-2 overflow-hidden max-h-64 overflow-y-auto">
           {results.map(airport => (
             <button key={airport.code} type="button" onClick={() => handleSelect(airport)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
-              <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-violet-600">{airport.code}</span>
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-sunken text-left transition border-b border-line last:border-0">
+              <div className="w-16 flex-shrink-0 flex items-center justify-center">
+                <span className="text-code-l font-mono font-semibold text-content">{airport.code}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{airport.city}</p>
-                <p className="text-xs text-gray-400 truncate">
+                <p className="text-body-m font-semibold text-content">{airport.city}</p>
+                <p className="text-body-s text-content-subtle truncate">
                   {airport.name}{airport.country ? ` · ${airport.country}` : ''}
                 </p>
               </div>
@@ -362,15 +362,15 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
         </div>
       )}
       {showManual && (
-        <div className="mt-2 bg-gray-50 rounded-xl p-3 border border-gray-200 space-y-2">
-          <p className="text-xs font-semibold text-gray-600">Enter airport manually</p>
+        <div className="mt-2 bg-ink-100 rounded-md p-3 space-y-2">
+          <p className="text-body-s font-semibold text-content-muted">Enter airport manually</p>
           <input type="text" placeholder="Airport code (e.g. XYZ)" value={manualCode}
             onChange={e => setManualCode(e.target.value.toUpperCase())} maxLength={3}
-            className="input-field py-2 text-sm uppercase" />
+            className="input-field py-2 text-body-m uppercase font-mono" />
           <input type="text" placeholder="City name" value={manualCity}
-            onChange={e => setManualCity(e.target.value)} className="input-field py-2 text-sm" />
-          <button onClick={handleManualSave} className="w-full btn-primary py-2 text-xs">
-            Confirm Airport
+            onChange={e => setManualCity(e.target.value)} className="input-field py-2 text-body-m" />
+          <button onClick={handleManualSave} className="btn-primary w-full py-2 text-label">
+            Confirm airport
           </button>
         </div>
       )}
@@ -551,66 +551,66 @@ const NewRequest = ({ session }) => {
 
   if (success) return (
     <div className="max-w-xl mx-auto py-16 px-6 text-center animate-fade-in">
-      <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={40} className="text-emerald-500" />
+      <div className="w-20 h-20 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={40} className="text-success" />
       </div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Posted!</h2>
-      <p className="text-gray-500 mb-6">
-        Your request for <strong>{form.item_name}</strong> is live. We'll notify you when a traveler matches.
+      <h2 className="font-display font-bold text-title-l text-ink-900 mb-2">Request posted</h2>
+      <p className="text-body-m text-content-muted mb-6">
+        Your request for <strong className="text-content">{form.item_name}</strong> is live. We'll notify you when a traveller matches.
       </p>
-      <div className="bg-gray-50 rounded-2xl p-5 mb-6 text-left space-y-2.5 border border-gray-100">
+      <div className="card p-5 mb-6 text-left space-y-2.5">
         {[
           { label: 'Item', value: form.item_name },
           { label: 'Category', value: form.category },
           { label: 'Route', value: `${form.from_city || form.from_code} → ${form.to_city || form.to_code}` },
-          { label: 'Weight', value: `${form.weight_kg}kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
-          { label: 'Delivery', value: form.delivery_mode === 'purchase' ? '🛍️ Shop & Ship' : form.handover_type === 'trusted_person' ? '🤝 Via trusted person' : '🙋 Self handover' },
-          form.max_budget && { label: 'Max budget', value: `$${form.max_budget} USD` },
+          { label: 'Weight', value: `${form.weight_kg} kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
+          { label: 'Delivery', value: form.delivery_mode === 'purchase' ? 'Shop & Ship' : form.handover_type === 'trusted_person' ? 'Via trusted person' : 'Self handover' },
+          form.max_budget && { label: 'Max budget', value: `$${parseFloat(form.max_budget).toFixed(2)}` },
           form.needed_by && { label: 'Needed by', value: formatDateForDisplay(form.needed_by) },
         ].filter(Boolean).map((row, i) => (
-          <div key={i} className="flex justify-between text-sm">
-            <span className="text-gray-500">{row.label}</span>
-            <span className="font-semibold text-gray-900">{row.value}</span>
+          <div key={i} className="flex justify-between text-body-m">
+            <span className="text-content-muted">{row.label}</span>
+            <span className="font-mono font-semibold text-content">{row.value}</span>
           </div>
         ))}
       </div>
-      <button onClick={resetForm} className="w-full btn-primary py-3">Post Another Request</button>
+      <button onClick={resetForm} className="btn-primary w-full py-3">Post another request</button>
     </div>
   );
 
   return (
     <div className="max-w-xl mx-auto animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">New Shipment Request</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Find a traveler to bring your item</p>
+        <h1 className="font-display font-bold text-title-l text-ink-900">New shipment request</h1>
+        <p className="text-body-s text-content-muted mt-0.5">Find a traveller to bring your item</p>
       </div>
 
       {/* Progress */}
       <div className="flex items-center gap-2 mb-8">
         {[
-          { n: 1, label: 'Item Details' },
-          { n: 2, label: 'Route & Size' },
-          { n: 3, label: 'Delivery & Safety' },
+          { n: 1, label: 'Item details' },
+          { n: 2, label: 'Route & size' },
+          { n: 3, label: 'Delivery & safety' },
         ].map((s, i) => (
           <React.Fragment key={s.n}>
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold transition-all ${
-                step > s.n ? 'bg-emerald-500 text-white' :
-                step === s.n ? 'bg-violet-600 text-white shadow-button' : 'bg-gray-100 text-gray-400'
+              <div className={`w-8 h-8 rounded-md flex items-center justify-center font-display text-body-m font-bold transition-all ${
+                step > s.n ? 'bg-success text-white' :
+                step === s.n ? 'bg-brand text-white' : 'bg-ink-100 text-ink-400'
               }`}>
                 {step > s.n ? <CheckCircle size={16} /> : s.n}
               </div>
-              <span className={`text-xs font-semibold hidden sm:block ${step === s.n ? 'text-violet-600' : 'text-gray-400'}`}>
+              <span className={`text-label font-semibold hidden sm:block ${step === s.n ? 'text-ink-900' : 'text-ink-400'}`}>
                 {s.label}
               </span>
             </div>
-            {i < 2 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > s.n ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+            {i < 2 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > s.n ? 'bg-success' : 'bg-ink-200'}`} />}
           </React.Fragment>
         ))}
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-xl mb-4">
+        <div className="flex items-center gap-2 bg-danger-tint text-danger text-body-m px-4 py-3 rounded-md mb-4">
           <AlertCircle size={16} className="flex-shrink-0" /> {error}
         </div>
       )}
@@ -619,9 +619,9 @@ const NewRequest = ({ session }) => {
       {step === 1 && (
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Item Name *</label>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">Item name *</label>
             <div className="relative">
-              <Package size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <Package size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
               <input type="text" placeholder="e.g. iPhone 15 Pro, Nike Air Max..."
                 value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })}
                 className="input-field pl-9" />
@@ -629,14 +629,14 @@ const NewRequest = ({ session }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Category *</label>
+            <label className="block text-label text-content-muted mb-2 uppercase tracking-wide">Category *</label>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(cat => (
                 <button key={cat} type="button" onClick={() => setForm({ ...form, category: cat })}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  className={`px-3 py-1.5 rounded-md text-label font-semibold border transition-all ${
                     form.category === cat
-                      ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
+                      ? 'bg-brand text-white border-brand'
+                      : 'bg-surface text-content border-line-strong hover:border-ink-400'
                   }`}>
                   {cat}
                 </button>
@@ -645,57 +645,57 @@ const NewRequest = ({ session }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Description *</label>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">Description *</label>
             <textarea placeholder="Describe the item — brand, model, color, size, condition..."
               value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
               rows={3} className="input-field resize-none" />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Item Photo <span className="text-gray-300 font-normal normal-case">(optional but recommended)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+              Item photo <span className="text-ink-300 font-normal normal-case">(optional but recommended)</span>
             </label>
             {photoPreview ? (
-              <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50" style={{ height: '176px' }}>
+              <div className="relative rounded-lg overflow-hidden border border-line bg-surface-sunken" style={{ height: '176px' }}>
                 <img src={photoPreview} alt="Preview" className="w-full h-full object-contain" />
                 <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
-                  className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-lg flex items-center justify-center hover:bg-red-600 shadow-sm">
+                  className="absolute top-2 right-2 w-7 h-7 bg-danger-fill text-white rounded-md flex items-center justify-center hover:bg-void-700">
                   <X size={14} />
                 </button>
               </div>
             ) : (
               <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center gap-2 hover:border-violet-300 hover:bg-violet-50/30 transition-all group">
-                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-violet-100 transition">
-                  <Camera size={20} className="text-gray-400 group-hover:text-violet-500 transition" />
+                className="w-full border-2 border-dashed border-line-strong rounded-lg p-8 flex flex-col items-center gap-2 hover:border-ink-400 hover:bg-surface-sunken transition-all group">
+                <div className="w-10 h-10 bg-ink-100 rounded-md flex items-center justify-center group-hover:bg-ink-200 transition">
+                  <Camera size={20} className="text-ink-400 group-hover:text-ink-600 transition" />
                 </div>
-                <p className="text-sm text-gray-400 group-hover:text-violet-500 font-medium">Click to upload photo</p>
-                <p className="text-xs text-gray-300">JPG, PNG up to 5MB</p>
+                <p className="text-body-m text-content-muted group-hover:text-content font-medium">Click to upload photo</p>
+                <p className="text-body-s text-content-subtle">JPG, PNG up to 5MB</p>
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </div>
 
-          <button onClick={handleNext} className="w-full btn-primary py-3.5">Continue to Route & Size</button>
+          <button onClick={handleNext} className="btn-primary w-full py-3.5">Continue to route &amp; size</button>
         </div>
       )}
 
       {/* ── STEP 2 ── */}
       {step === 2 && (
         <div className="space-y-4">
-          <div className="bg-gray-50 rounded-xl p-3.5 flex items-center gap-3 border border-gray-100">
+          <div className="bg-surface-sunken rounded-md p-3.5 flex items-center gap-3 border border-line">
             {photoPreview ? (
-              <div className="w-12 h-12 rounded-lg overflow-hidden bg-white border border-gray-100 flex-shrink-0">
+              <div className="w-12 h-12 rounded-md overflow-hidden bg-surface border border-line flex-shrink-0">
                 <img src={photoPreview} alt="" className="w-full h-full object-contain" />
               </div>
             ) : (
-              <div className="w-12 h-12 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Package size={18} className="text-violet-400" />
+              <div className="w-12 h-12 bg-ink-100 rounded-md flex items-center justify-center flex-shrink-0">
+                <Package size={18} className="text-ink-400" />
               </div>
             )}
             <div>
-              <p className="text-sm font-bold text-gray-900">{form.item_name}</p>
-              <p className="text-xs text-gray-400">{form.category}</p>
+              <p className="font-display font-semibold text-title-s text-ink-900">{form.item_name}</p>
+              <p className="text-body-s text-content-subtle">{form.category}</p>
             </div>
           </div>
 
@@ -715,19 +715,19 @@ const NewRequest = ({ session }) => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                Total Weight (kg) *
+              <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                Total weight (kg) *
               </label>
               <div className="relative">
-                <Weight size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+                <Weight size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
                 <input type="number" placeholder="e.g. 2.5" min="0.1" max="50" step="0.1"
                   value={form.weight_kg} onChange={e => setForm({ ...form, weight_kg: e.target.value })}
-                  className="input-field pl-9" />
+                  className="input-field pl-9 font-mono" />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                Dimensions <span className="text-gray-300 font-normal normal-case">(optional)</span>
+              <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                Dimensions <span className="text-ink-300 font-normal normal-case">(optional)</span>
               </label>
               <input type="text" placeholder="e.g. 30×20×10cm"
                 value={form.dimensions} onChange={e => setForm({ ...form, dimensions: e.target.value })}
@@ -737,44 +737,44 @@ const NewRequest = ({ session }) => {
 
           {/* Max budget — USD only */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Max Budget (USD) <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+              Max budget (USD) <span className="text-ink-300 font-normal normal-case">(optional)</span>
             </label>
             <div className="relative">
-              <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <DollarSign size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
               <input type="number" placeholder="Optional max you'll pay" min="0" step="0.01"
                 value={form.max_budget} onChange={e => {
                   const v = e.target.value;
                   if (v === '' || parseFloat(v) >= 0) setForm({ ...form, max_budget: v });
                 }}
-                className="input-field pl-9" />
+                className="input-field pl-9 font-mono" />
             </div>
             {form.max_budget && (
-              <div className="mt-2 bg-violet-50 rounded-xl p-3.5 flex items-center justify-between border border-violet-100">
-                <span className="text-sm text-gray-600 font-medium">Your maximum budget</span>
-                <span className="text-base font-bold text-violet-700">${form.max_budget} USD</span>
+              <div className="mt-2 bg-surface-sunken rounded-md p-3.5 flex items-center justify-between border border-line">
+                <span className="text-body-m text-content-muted font-medium">Your maximum budget</span>
+                <span className="font-mono text-num-l font-bold text-ink-900">${parseFloat(form.max_budget).toFixed(2)}</span>
               </div>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Needed By <span className="text-gray-300 font-normal normal-case">(dd/mm/yyyy, optional)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+              Needed by <span className="text-ink-300 font-normal normal-case">(optional)</span>
             </label>
             <div className="relative">
-              <Calendar size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <Calendar size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
               <input type="date" min={today} value={form.needed_by}
                 onChange={e => setForm({ ...form, needed_by: e.target.value })}
                 className="input-field pl-9" />
             </div>
             {form.needed_by && (
-              <p className="text-xs text-gray-400 mt-1 ml-1">Selected: {formatDateForDisplay(form.needed_by)}</p>
+              <p className="text-body-s text-content-subtle mt-1 ml-1 font-mono">Selected: {formatDateForDisplay(form.needed_by)}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+              Notes <span className="text-ink-300 font-normal normal-case">(optional)</span>
             </label>
             <textarea placeholder="Fragile, special packaging, any other requirements..."
               value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
@@ -782,8 +782,8 @@ const NewRequest = ({ session }) => {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep(1)} className="flex-1 btn-secondary py-3">Back</button>
-            <button onClick={handleNext} className="flex-1 btn-primary py-3">Continue to Delivery</button>
+            <button onClick={() => setStep(1)} className="btn-secondary flex-1 py-3">Back</button>
+            <button onClick={handleNext} className="btn-primary flex-1 py-3">Continue to delivery</button>
           </div>
         </div>
       )}
@@ -792,56 +792,56 @@ const NewRequest = ({ session }) => {
       {step === 3 && (
         <div className="space-y-5">
 
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-1.5 text-sm">
+          <div className="card p-4 space-y-1.5 text-body-m">
             {[
               { label: 'Item', value: form.item_name },
               { label: 'Route', value: `${form.from_city || form.from_code} → ${form.to_city || form.to_code}` },
-              { label: 'Weight', value: `${form.weight_kg}kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
-              form.max_budget && { label: 'Max budget', value: `$${form.max_budget} USD` },
+              { label: 'Weight', value: `${form.weight_kg} kg${form.dimensions ? ` · ${form.dimensions}` : ''}` },
+              form.max_budget && { label: 'Max budget', value: `$${parseFloat(form.max_budget).toFixed(2)}` },
             ].filter(Boolean).map((row, i) => (
               <div key={i} className="flex justify-between">
-                <span className="text-gray-500">{row.label}</span>
-                <span className="font-semibold text-gray-900">{row.value}</span>
+                <span className="text-content-muted">{row.label}</span>
+                <span className="font-mono font-semibold text-content">{row.value}</span>
               </div>
             ))}
           </div>
 
           {/* Delivery mode */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+            <label className="block text-label text-content-muted mb-2 uppercase tracking-wide">
               How should this be delivered? *
             </label>
             <div className="space-y-2">
               {[
                 {
                   value: 'handover',
-                  icon: '📦',
-                  label: 'I have the item and will hand it to the traveler',
-                  desc: 'You or a trusted person will provide the item directly to the traveler before their flight.',
+                  icon: Package,
+                  label: 'I have the item and will hand it to the traveller',
+                  desc: 'You or a trusted person will provide the item directly to the traveller before their flight.',
                 },
                 {
                   value: 'purchase',
-                  icon: '🛍️',
-                  label: 'I need the traveler to purchase the item for me',
-                  desc: 'The traveler buys the item at the destination. You pay the item cost plus their service fee via secure escrow.',
+                  icon: ShoppingBag,
+                  label: 'I need the traveller to purchase the item for me',
+                  desc: 'The traveller buys the item at the destination. You pay the item cost plus their service fee via secure escrow.',
                 },
               ].map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => setForm({ ...form, delivery_mode: opt.value })}
-                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${
+                  className={`w-full flex items-start gap-3 p-4 rounded-lg border-2 transition-all text-left ${
                     form.delivery_mode === opt.value
-                      ? 'border-violet-400 bg-violet-50'
-                      : 'border-gray-200 hover:border-violet-200 bg-white'
+                      ? 'border-ink-900 bg-surface-sunken'
+                      : 'border-line hover:border-line-strong bg-surface'
                   }`}>
-                  <span className="text-2xl flex-shrink-0">{opt.icon}</span>
+                  <opt.icon size={20} className="text-ink-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900">{opt.label}</p>
+                      <p className="font-display font-semibold text-title-s text-ink-900">{opt.label}</p>
                       {form.delivery_mode === opt.value && (
-                        <CheckCircle size={15} className="text-violet-600 flex-shrink-0" />
+                        <CheckCircle size={15} className="text-ink-900 flex-shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{opt.desc}</p>
+                    <p className="text-body-s text-content-muted mt-0.5 leading-relaxed">{opt.desc}</p>
                   </div>
                 </button>
               ))}
@@ -851,41 +851,41 @@ const NewRequest = ({ session }) => {
           {/* Handover sub-flow */}
           {form.delivery_mode === 'handover' && (
             <div className="space-y-4">
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-                <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="bg-danger-tint rounded-r px-2.5 py-2.5 flex items-start gap-2 border-l-[3px] border-danger">
+                <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold text-red-700 mb-1">⚠️ Item Security Notice</p>
-                  <p className="text-xs text-red-600 leading-relaxed">
-                    <strong>Do not hand over the item until escrow is confirmed paid.</strong> Once the deal is matched and terms agreed, the shipper must pay escrow before you release the item. The traveler's identity is logged in the deal. Always verify the traveler's identity before releasing the item.
+                  <p className="text-body-s font-semibold text-danger mb-1">Item security notice</p>
+                  <p className="text-body-s text-danger leading-relaxed">
+                    Do not hand over the item until escrow is confirmed paid. Once the deal is matched and terms agreed, the sender must pay escrow before you release the item. The traveller's identity is logged in the deal — always verify it before releasing the item.
                   </p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                <label className="block text-label text-content-muted mb-2 uppercase tracking-wide">
                   Who will hand over the item? *
                 </label>
                 <div className="space-y-2">
                   {[
-                    { value: 'self', icon: '🙋', label: 'I will hand it over myself', desc: 'You will personally meet the traveler and hand over the item.' },
-                    { value: 'trusted_person', icon: '🤝', label: 'A trusted person will hand it over on my behalf', desc: 'A family member, friend, or colleague will meet the traveler.' },
+                    { value: 'self', icon: User, label: 'I will hand it over myself', desc: 'You will personally meet the traveller and hand over the item.' },
+                    { value: 'trusted_person', icon: Shield, label: 'A trusted person will hand it over on my behalf', desc: 'A family member, friend, or colleague will meet the traveller.' },
                   ].map(opt => (
                     <button key={opt.value} type="button"
                       onClick={() => setForm({ ...form, handover_type: opt.value })}
-                      className={`w-full flex items-start gap-3 p-3.5 rounded-xl border-2 transition-all text-left ${
+                      className={`w-full flex items-start gap-3 p-3.5 rounded-lg border-2 transition-all text-left ${
                         form.handover_type === opt.value
-                          ? 'border-violet-400 bg-violet-50'
-                          : 'border-gray-200 hover:border-violet-200 bg-white'
+                          ? 'border-ink-900 bg-surface-sunken'
+                          : 'border-line hover:border-line-strong bg-surface'
                       }`}>
-                      <span className="text-xl flex-shrink-0">{opt.icon}</span>
+                      <opt.icon size={18} className="text-ink-600 flex-shrink-0" />
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-gray-900">{opt.label}</p>
+                          <p className="font-display font-semibold text-title-s text-ink-900">{opt.label}</p>
                           {form.handover_type === opt.value && (
-                            <CheckCircle size={14} className="text-violet-600 flex-shrink-0" />
+                            <CheckCircle size={14} className="text-ink-900 flex-shrink-0" />
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                        <p className="text-body-s text-content-muted mt-0.5">{opt.desc}</p>
                       </div>
                     </button>
                   ))}
@@ -893,22 +893,22 @@ const NewRequest = ({ session }) => {
               </div>
 
               {form.handover_type === 'trusted_person' && (
-                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
-                  <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
-                    <User size={13} /> Trusted Person Details
+                <div className="bg-info-50 rounded-lg p-4 space-y-3">
+                  <p className="text-body-s font-semibold text-info-500 flex items-center gap-1.5">
+                    <User size={13} /> Trusted person details
                   </p>
-                  <p className="text-xs text-indigo-600 leading-relaxed">
-                    These details will be shared with the matched traveler so they can coordinate the handover.
+                  <p className="text-body-s text-info-500 leading-relaxed">
+                    These details will be shared with the matched traveller so they can coordinate the handover.
                   </p>
                   {[
-                    { label: 'Full Name *', key: 'trusted_person_name', placeholder: 'e.g. Sarah Johnson', icon: User },
+                    { label: 'Full name *', key: 'trusted_person_name', placeholder: 'e.g. Sarah Johnson', icon: User },
                     { label: 'Phone / WhatsApp *', key: 'trusted_person_phone', placeholder: 'e.g. +971 50 123 4567', icon: Phone },
-                    { label: 'Meeting Location *', key: 'trusted_person_location', placeholder: 'e.g. Dubai Mall main entrance...', icon: MapPin },
+                    { label: 'Meeting location *', key: 'trusted_person_location', placeholder: 'e.g. Dubai Mall main entrance...', icon: MapPin },
                   ].map(f => (
                     <div key={f.key}>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{f.label}</label>
+                      <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">{f.label}</label>
                       <div className="relative">
-                        <f.icon size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                        <f.icon size={14} className="absolute left-3.5 top-3 text-ink-400 pointer-events-none" />
                         <input type="text" placeholder={f.placeholder}
                           value={form[f.key]}
                           onChange={e => setForm({ ...form, [f.key]: e.target.value })}
@@ -917,8 +917,8 @@ const NewRequest = ({ session }) => {
                     </div>
                   ))}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                      Additional Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                    <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                      Additional notes <span className="text-ink-300 font-normal normal-case">(optional)</span>
                     </label>
                     <input type="text" placeholder="e.g. Available weekdays 9am-6pm..."
                       value={form.trusted_person_notes}
@@ -932,13 +932,13 @@ const NewRequest = ({ session }) => {
 
           {/* Purchase sub-flow */}
           {form.delivery_mode === 'purchase' && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 space-y-4">
+            <div className="bg-info-50 rounded-lg p-5 space-y-4">
               <div className="flex items-center gap-2">
-                <ShoppingBag size={16} className="text-blue-600" />
-                <p className="text-sm font-bold text-blue-700">Purchase Details</p>
+                <ShoppingBag size={16} className="text-info-500" />
+                <p className="font-display font-semibold text-title-s text-info-500">Purchase details</p>
               </div>
-              <p className="text-xs text-blue-600 leading-relaxed">
-                All amounts in USD. Provide as much detail as possible so the traveler can find and purchase the exact item.
+              <p className="text-body-s text-info-500 leading-relaxed">
+                All amounts in USD. Provide as much detail as possible so the traveller can find and purchase the exact item.
               </p>
 
               <StoreSearch
@@ -947,27 +947,27 @@ const NewRequest = ({ session }) => {
               />
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Anticipated Purchase Price (USD) *
+                <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                  Anticipated purchase price (USD) *
                 </label>
                 <div className="relative">
-                  <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+                  <DollarSign size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
                   <input type="number" placeholder="e.g. 299.00" min="0" step="0.01"
                     value={form.purchase_price}
                     onChange={e => {
                       const v = e.target.value;
                       if (v === '' || parseFloat(v) >= 0) setForm({ ...form, purchase_price: v });
                     }}
-                    className="input-field pl-9" />
+                    className="input-field pl-9 font-mono" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Product Link <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                  Product link <span className="text-ink-300 font-normal normal-case">(optional)</span>
                 </label>
                 <div className="relative">
-                  <Link size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                  <Link size={14} className="absolute left-3.5 top-3 text-ink-400 pointer-events-none" />
                   <input type="url" placeholder="https://www.apple.com/iphone-15-pro..."
                     value={form.purchase_url}
                     onChange={e => setForm({ ...form, purchase_url: e.target.value })}
@@ -976,10 +976,10 @@ const NewRequest = ({ session }) => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                  Product Specifications{' '}
-                  {!form.purchase_url && <span className="text-red-400">*</span>}
-                  {form.purchase_url && <span className="text-gray-300 font-normal normal-case">(optional if link provided)</span>}
+                <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
+                  Product specifications{' '}
+                  {!form.purchase_url && <span className="text-danger">*</span>}
+                  {form.purchase_url && <span className="text-ink-300 font-normal normal-case">(optional if link provided)</span>}
                 </label>
                 <textarea
                   placeholder="Size, color, model number, storage, specific variants..."
@@ -988,7 +988,7 @@ const NewRequest = ({ session }) => {
                   rows={3} className="input-field resize-none py-2.5"
                 />
                 {!form.purchase_url && (
-                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-body-s text-warning mt-1 flex items-center gap-1">
                     <Info size={11} /> Required when no product link is provided
                   </p>
                 )}
@@ -997,45 +997,45 @@ const NewRequest = ({ session }) => {
           )}
 
           {/* Safety declaration */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-amber-800 mb-3 flex items-center gap-1.5">
-              <Shield size={13} /> Safety & Legal Declaration
+          <div className="bg-warning-tint rounded-r px-4 py-4 border-l-[3px] border-warn-400">
+            <p className="text-body-s font-semibold text-warning mb-3 flex items-center gap-1.5">
+              <Shield size={13} /> Safety &amp; legal declaration
             </p>
             <div className="flex items-start gap-3">
               <input type="checkbox" id="safety-ack-req" checked={safetyAcknowledged}
                 onChange={e => setSafetyAcknowledged(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0" />
-              <label htmlFor="safety-ack-req" className="text-xs text-amber-800 leading-relaxed cursor-pointer">
+                className="mt-0.5 w-4 h-4 accent-ink-900 flex-shrink-0" />
+              <label htmlFor="safety-ack-req" className="text-body-s text-warning leading-relaxed cursor-pointer">
                 I confirm that:
                 <ul className="mt-1.5 space-y-1 list-disc list-inside ml-1">
                   <li>The item is <strong>legal</strong> and complies with all airline regulations and customs laws.</li>
                   <li>I am <strong>not</strong> requesting transport of illegal substances, weapons, counterfeit goods, or any prohibited items.</li>
                   <li>I accept <strong>full legal responsibility</strong> for this shipment.</li>
-                  <li>Fetchr is a <strong>matchmaking and payment platform only</strong> — no liability for items transported.</li>
+                  <li>fetchr is a <strong>matchmaking and payment platform only</strong> — no liability for items transported.</li>
                   <li>Violation results in <strong>immediate account termination</strong> and may be reported to authorities.</li>
                 </ul>
               </label>
             </div>
             {!safetyAcknowledged && (
-              <p className="text-xs text-amber-700 font-semibold mt-3 flex items-center gap-1.5">
+              <p className="text-body-s text-warning font-semibold mt-3 flex items-center gap-1.5">
                 <AlertCircle size={12} /> You must accept this declaration to post the request.
               </p>
             )}
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-xl">
+            <div className="flex items-center gap-2 bg-danger-tint text-danger text-body-m px-4 py-3 rounded-md">
               <AlertCircle size={16} className="flex-shrink-0" /> {error}
             </div>
           )}
 
           <div className="flex gap-3">
-            <button onClick={() => setStep(2)} className="flex-1 btn-secondary py-3">Back</button>
+            <button onClick={() => setStep(2)} className="btn-secondary flex-1 py-3">Back</button>
             <button onClick={saveRequest} disabled={loading || uploadingPhoto || !safetyAcknowledged}
-              className="flex-1 btn-primary py-3.5 flex items-center justify-center gap-2 disabled:opacity-50">
+              className="btn-primary flex-1 py-3.5 disabled:opacity-50">
               {loading || uploadingPhoto
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Posting...</>
-                : <><Package size={15} /> Post Request</>
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Posting</>
+                : <><Package size={15} /> Post request</>
               }
             </button>
           </div>

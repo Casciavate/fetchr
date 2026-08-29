@@ -50,12 +50,18 @@ function App() {
   }, []);
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-ground">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center animate-pulse">
-          <span className="text-white text-xl">✈️</span>
-        </div>
-        <p className="text-purple-600 font-semibold text-sm">Loading Fetchr...</p>
+        <svg width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="fetchr" className="animate-pulse">
+          <rect width="48" height="48" rx="10" fill="#14181F" />
+          <path d="M17.5 37 V21.5 C17.5 15 23 12.5 27.5 14.5"
+            fill="none" stroke="#FBFAF8" strokeWidth="4.6" strokeLinecap="round" />
+          <rect x="10.5" y="21" width="16" height="4.4" rx="2.2" fill="#FBFAF8" />
+          <path d="M29 10.5 L38.5 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
+        </svg>
+        <p className="font-display font-semibold text-body-m text-ink-muted">
+          Loading fetchr
+        </p>
       </div>
     </div>
   );

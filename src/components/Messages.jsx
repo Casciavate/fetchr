@@ -3,17 +3,28 @@ import { supabase } from '../supabaseClient';
 import {
   Send, Package, Plane, DollarSign, CheckCircle, Shield,
   XCircle, AlertTriangle, ChevronDown, MessageCircle,
-  Camera, Lock, Info, X, Edit2, ShoppingBag, MapPin, Phone
+  Camera, Lock, Info, X, Edit2, ShoppingBag, MapPin, Phone,
+  Circle, Zap
 } from 'lucide-react';
 import EscrowPayment, { ProofUploadModal, calcFees } from './EscrowPayment';
 
 const STAGES = [
-  { id: 'matched', label: 'Matched', icon: '🤝' },
-  { id: 'terms_agreed', label: 'Terms Agreed', icon: '✅' },
-  { id: 'in_escrow', label: 'Escrow Paid', icon: '🔒' },
-  { id: 'proof_uploaded', label: 'Proof Uploaded', icon: '📸' },
-  { id: 'completed', label: 'Completed', icon: '🎉' },
+  { id: 'matched', label: 'Matched', icon: Zap },
+  { id: 'terms_agreed', label: 'Terms agreed', icon: CheckCircle },
+  { id: 'in_escrow', label: 'Escrow paid', icon: Lock },
+  { id: 'proof_uploaded', label: 'Proof uploaded', icon: Camera },
+  { id: 'completed', label: 'Delivered', icon: CheckCircle },
 ];
+
+// System messages are inserted by the app itself (never typed by a user).
+// Both the legacy emoji-prefixed strings (already in the DB) and the current
+// plain-text prefixes are recognised, so old rows keep rendering correctly.
+const SYSTEM_MSG_PREFIXES = [
+  'Match accepted', 'Terms agreed', 'Deal amended', 'Deal completed', 'Delivery confirmed by',
+  'Cancellation request:', 'Cancellation agreed:', 'Cancellation declined:',
+  'Proof uploaded:', '🎉', '✅', '⏳', '⚠️', '❌', '🔒', '📸', '✏️',
+];
+const isSystemMessage = (content) => SYSTEM_MSG_PREFIXES.some(p => content?.startsWith(p));
 
 // ── Deal Details Modal ──
 const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
@@ -59,7 +70,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
     await supabase.from('messages').insert([{
       match_id: match.id,
       sender_id: session.user.id,
-      content: `✏️ DEAL AMENDED by ${isTrav ? 'Traveler' : 'Shipper'}: Price $${form.agreed_price_per_kg}/kg · Weight ${form.agreed_weight_kg}kg${form.agreed_notes ? ` · Notes: ${form.agreed_notes}` : ''}. Both parties need to re-agree to terms.`,
+      content: `Deal amended by the ${isTrav ? 'traveller' : 'sender'}: price $${form.agreed_price_per_kg}/kg · weight ${form.agreed_weight_kg}kg${form.agreed_notes ? ` · notes: ${form.agreed_notes}` : ''}. Both parties need to re-agree to terms.`,
       is_read: false,
     }]);
     onSaveAmendment(updates);
@@ -68,20 +79,19 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-3xl">
-          <h3 className="font-bold text-gray-900">Deal Details</h3>
+    <div className="fixed inset-0 bg-[var(--scrim)] z-modal flex items-end md:items-center justify-center p-4">
+      <div className="bg-surface-raised rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-elev-3">
+        <div className="sticky top-0 bg-surface-raised border-b border-line px-5 py-4 flex items-center justify-between rounded-t-xl">
+          <h3 className="font-display font-bold text-title-s text-ink-900">Deal details</h3>
           <div className="flex items-center gap-2">
             {!editing && match.status === 'accepted' && (
-              <button onClick={() => setEditing(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-50 text-violet-600 hover:bg-violet-100 transition">
+              <button onClick={() => setEditing(true)} className="btn-secondary px-3 text-label">
                 <Edit2 size={12} /> Amend
               </button>
             )}
             <button onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-              <X size={18} className="text-gray-500" />
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
+              <X size={18} className="text-ink-500" />
             </button>
           </div>
         </div>
@@ -89,26 +99,26 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
         <div className="p-5 space-y-4">
 
           {/* Route */}
-          <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
-            <p className="text-xs font-bold text-violet-700 mb-3 flex items-center gap-1.5">
-              <Plane size={13} /> Flight Route
+          <div className="bg-surface-sunken rounded-lg p-4 border border-line">
+            <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+              <Plane size={13} /> Flight route
             </p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-2 gap-3 text-body-s">
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">From</p>
-                <p className="font-bold text-gray-900">{match.flight?.from_city} ({match.flight?.from_code})</p>
+                <p className="text-micro text-ink-subtle mb-0.5">From</p>
+                <p className="font-semibold text-ink-900">{match.flight?.from_city} ({match.flight?.from_code})</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">To</p>
-                <p className="font-bold text-gray-900">{match.flight?.to_city} ({match.flight?.to_code})</p>
+                <p className="text-micro text-ink-subtle mb-0.5">To</p>
+                <p className="font-semibold text-ink-900">{match.flight?.to_city} ({match.flight?.to_code})</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Airline</p>
-                <p className="font-semibold text-gray-700">{match.flight?.airline}</p>
+                <p className="text-micro text-ink-subtle mb-0.5">Airline</p>
+                <p className="font-medium text-content">{match.flight?.airline}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Date</p>
-                <p className="font-semibold text-gray-700">
+                <p className="text-micro text-ink-subtle mb-0.5">Date</p>
+                <p className="font-mono font-medium text-content">
                   {match.flight?.flight_date
                     ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                     : '—'}
@@ -118,71 +128,71 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
           </div>
 
           {/* Item */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-            <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-              <Package size={13} /> Shipment Details
+          <div className="bg-surface-sunken rounded-lg p-4 border border-line">
+            <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+              <Package size={13} /> Shipment details
             </p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-2 gap-3 text-body-s">
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Item</p>
-                <p className="font-bold text-gray-900">{match.request?.item_name}</p>
+                <p className="text-micro text-ink-subtle mb-0.5">Item</p>
+                <p className="font-semibold text-ink-900">{match.request?.item_name}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Category</p>
-                <p className="font-semibold text-gray-700">{match.request?.category}</p>
+                <p className="text-micro text-ink-subtle mb-0.5">Category</p>
+                <p className="font-medium text-content">{match.request?.category}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Weight</p>
-                <p className="font-bold text-gray-900">{match.agreed_weight_kg || match.request?.weight_kg}kg</p>
+                <p className="text-micro text-ink-subtle mb-0.5">Weight</p>
+                <p className="font-mono font-semibold text-ink-900">{match.agreed_weight_kg || match.request?.weight_kg} kg</p>
               </div>
               {match.request?.item_dimensions && (
                 <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Dimensions</p>
-                  <p className="font-semibold text-gray-700">{match.request.item_dimensions}</p>
+                  <p className="text-micro text-ink-subtle mb-0.5">Dimensions</p>
+                  <p className="font-medium text-content">{match.request.item_dimensions}</p>
                 </div>
               )}
             </div>
             {match.request?.description && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs text-gray-400 mb-1">Description</p>
-                <p className="text-sm text-gray-600">{match.request.description}</p>
+              <div className="mt-3 pt-3 border-t border-line">
+                <p className="text-micro text-ink-subtle mb-1">Description</p>
+                <p className="text-body-s text-ink-muted">{match.request.description}</p>
               </div>
             )}
           </div>
 
           {/* Shop & Ship */}
           {isPurchase && (
-            <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-              <p className="text-xs font-bold text-blue-700 mb-3 flex items-center gap-1.5">
-                <ShoppingBag size={13} /> Shop & Ship Details
+            <div className="bg-info-50 rounded-lg p-4 border border-line">
+              <p className="font-mono text-overline uppercase text-info-500 mb-3 flex items-center gap-1.5">
+                <ShoppingBag size={13} /> Shop & Ship details
               </p>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2 text-body-s">
                 {match.request?.purchase_store && (
                   <div className="flex items-start gap-2">
-                    <MapPin size={13} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                    <MapPin size={13} className="text-info-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs text-gray-400">Store</p>
-                      <p className="font-semibold text-gray-700">{match.request.purchase_store}</p>
+                      <p className="text-micro text-ink-subtle">Store</p>
+                      <p className="font-medium text-content">{match.request.purchase_store}</p>
                     </div>
                   </div>
                 )}
                 {match.request?.purchase_price && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Item purchase price</span>
-                    <span className="font-bold text-gray-800">${parseFloat(match.request.purchase_price).toFixed(2)}</span>
+                    <span className="text-ink-muted">Item purchase price</span>
+                    <span className="font-mono font-semibold text-ink-900">${parseFloat(match.request.purchase_price).toFixed(2)}</span>
                   </div>
                 )}
                 {match.request?.purchase_url && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Product link</p>
+                    <p className="text-micro text-ink-subtle mb-0.5">Product link</p>
                     <a href={match.request.purchase_url} target="_blank" rel="noreferrer"
-                      className="text-xs text-violet-600 underline break-all">{match.request.purchase_url}</a>
+                      className="text-micro text-info-500 underline break-all">{match.request.purchase_url}</a>
                   </div>
                 )}
                 {match.request?.purchase_details && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Specifications</p>
-                    <p className="text-xs text-gray-600">{match.request.purchase_details}</p>
+                    <p className="text-micro text-ink-subtle mb-0.5">Specifications</p>
+                    <p className="text-micro text-ink-muted">{match.request.purchase_details}</p>
                   </div>
                 )}
               </div>
@@ -191,34 +201,34 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 
           {/* Handover details */}
           {(match.flight?.handover_location_departure || match.flight?.handover_location_arrival || match.request?.trusted_person_name) && (
-            <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
-              <p className="text-xs font-bold text-indigo-700 mb-3 flex items-center gap-1.5">
-                <MapPin size={13} /> Handover Details
+            <div className="bg-surface-sunken rounded-lg p-4 border border-line">
+              <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+                <MapPin size={13} /> Handover details
               </p>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2 text-body-s">
                 {match.flight?.handover_location_departure && (
                   <div>
-                    <p className="text-xs text-gray-400">Departure handover</p>
-                    <p className="font-semibold text-gray-700">{match.flight.handover_location_departure}</p>
+                    <p className="text-micro text-ink-subtle">Departure handover</p>
+                    <p className="font-medium text-content">{match.flight.handover_location_departure}</p>
                   </div>
                 )}
                 {match.flight?.handover_location_arrival && (
                   <div>
-                    <p className="text-xs text-gray-400">Arrival handover</p>
-                    <p className="font-semibold text-gray-700">{match.flight.handover_location_arrival}</p>
+                    <p className="text-micro text-ink-subtle">Arrival handover</p>
+                    <p className="font-medium text-content">{match.flight.handover_location_arrival}</p>
                   </div>
                 )}
                 {match.request?.trusted_person_name && (
-                  <div className="pt-2 border-t border-indigo-200 space-y-1">
-                    <p className="text-xs font-bold text-indigo-600">Handover contact</p>
-                    <p className="text-sm font-semibold text-gray-800">{match.request.trusted_person_name}</p>
+                  <div className="pt-2 border-t border-line space-y-1">
+                    <p className="font-mono text-overline uppercase text-ink-muted">Handover contact</p>
+                    <p className="text-body-s font-semibold text-ink-900">{match.request.trusted_person_name}</p>
                     {match.request.trusted_person_phone && (
-                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                      <p className="text-micro text-ink-muted flex items-center gap-1">
                         <Phone size={11} /> {match.request.trusted_person_phone}
                       </p>
                     )}
                     {match.request.trusted_person_location && (
-                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                      <p className="text-micro text-ink-muted flex items-center gap-1">
                         <MapPin size={11} /> {match.request.trusted_person_location}
                       </p>
                     )}
@@ -230,123 +240,124 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 
           {/* Financials / Amend */}
           {editing ? (
-            <div className="bg-white rounded-xl border-2 border-violet-200 p-4 space-y-3">
-              <p className="text-xs font-bold text-violet-700 mb-1">Amend Deal Terms</p>
-              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg p-2.5 border border-amber-100">
-                ⚠️ Amending resets both parties' agreement. You will both need to re-agree to terms.
-              </p>
+            <div className="bg-surface rounded-lg border border-line-strong p-4 space-y-3">
+              <p className="font-display font-semibold text-title-s text-ink-900 mb-1">Amend deal terms</p>
+              <div className="flex items-start gap-2 bg-warning-tint border-l-[3px] border-warn-400 rounded-r px-2.5 py-2">
+                <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                <p className="text-body-s text-warning">Amending resets both parties' agreement. You will both need to re-agree to terms.</p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Price/kg ($)</label>
-                  <input type="number" min="0" step="0.5"
+                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Price/kg ($)</label>
+                  <input type="number" min="0" step="0.5" inputMode="decimal"
                     value={form.agreed_price_per_kg}
                     onChange={e => setForm({ ...form, agreed_price_per_kg: e.target.value })}
-                    className="input-field py-2.5" />
+                    className="input-field font-mono" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Weight (kg)</label>
-                  <input type="number" min="0" step="0.1"
+                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Weight (kg)</label>
+                  <input type="number" min="0" step="0.1" inputMode="decimal"
                     value={form.agreed_weight_kg}
                     onChange={e => setForm({ ...form, agreed_weight_kg: e.target.value })}
-                    className="input-field py-2.5" />
+                    className="input-field font-mono" />
                 </div>
               </div>
               {isPurchase && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
-                    Shop & Ship Service Fee ($) <span className="text-blue-400 font-normal normal-case">— traveler's fee for purchasing the item</span>
+                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">
+                    Shop & Ship service fee ($) <span className="text-info-500 font-normal normal-case">— the traveller's fee for purchasing the item</span>
                   </label>
-                  <input type="number" min="0" step="0.5" placeholder="e.g. 15.00"
+                  <input type="number" min="0" step="0.5" inputMode="decimal" placeholder="e.g. 15.00"
                     value={form.agreed_shop_fee}
                     onChange={e => setForm({ ...form, agreed_shop_fee: e.target.value })}
-                    className="input-field py-2.5" />
-                  <p className="text-xs text-gray-400 mt-1">This is the traveler's service fee for going to the store and buying the item. Fetchr fee applies to this amount too.</p>
+                    className="input-field font-mono" />
+                  <p className="text-micro text-ink-subtle mt-1">This is the traveller's service fee for going to the store and buying the item. The fetchr fee applies to this amount too.</p>
                 </div>
               )}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Notes</label>
+                <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Notes</label>
                 <textarea rows={2} placeholder="Any agreed conditions..."
                   value={form.agreed_notes}
                   onChange={e => setForm({ ...form, agreed_notes: e.target.value })}
-                  className="input-field resize-none py-2.5 text-sm" />
+                  className="input-field resize-none text-body-s" />
               </div>
               {form.agreed_price_per_kg && form.agreed_weight_kg && (
-                <div className="bg-violet-50 rounded-xl p-3 text-xs border border-violet-100">
-                  <div className="flex justify-between font-bold text-violet-700">
+                <div className="bg-surface-sunken rounded-md p-3 text-body-s border border-line">
+                  <div className="flex justify-between font-mono font-semibold text-ink-900">
                     <span>New deal value</span>
                     <span>${(parseFloat(form.agreed_price_per_kg) * parseFloat(form.agreed_weight_kg)).toFixed(2)}</span>
                   </div>
                 </div>
               )}
               <div className="flex gap-2">
-                <button onClick={() => setEditing(false)} className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>
+                <button onClick={() => setEditing(false)} className="flex-1 btn-secondary">Keep it</button>
                 <button onClick={handleSave} disabled={saving}
-                  className="flex-[2] btn-primary py-2.5 text-sm disabled:opacity-50">
-                  {saving ? 'Saving...' : 'Save & Notify Other Party'}
+                  className="flex-[2] btn-primary disabled:opacity-50">
+                  {saving ? 'Saving' : 'Save and notify'}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 border border-violet-100">
-              <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-                <DollarSign size={13} /> Financial Summary
+            <div className="bg-surface-sunken rounded-lg p-4 border border-line">
+              <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+                <DollarSign size={13} /> Financial summary
               </p>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2 text-body-s">
                 {/* 1. Transport */}
-                <div className="flex justify-between text-gray-600">
-                  <span>{match.agreed_weight_kg || match.request?.weight_kg}kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
-                  <span className="font-semibold">${dealValue.toFixed(2)}</span>
+                <div className="flex justify-between text-ink-muted font-mono">
+                  <span>{match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
+                  <span className="font-semibold text-ink-900">${dealValue.toFixed(2)}</span>
                 </div>
                 {/* 2. Shop & ship fee */}
                 {isPurchase && (
-                  <div className="flex justify-between text-gray-600">
+                  <div className="flex justify-between text-ink-muted">
                     <span>Shop & ship service fee</span>
-                    <span className="font-semibold">{shopFee > 0 ? `$${shopFee.toFixed(2)}` : <span className="text-amber-500">TBD — set in Amend</span>}</span>
+                    <span className="font-mono font-semibold">{shopFee > 0 ? `$${shopFee.toFixed(2)}` : <span className="text-warning">TBD — set in Amend</span>}</span>
                   </div>
                 )}
                 {/* 3. Item purchase price */}
                 {isPurchase && purchasePrice > 0 && (
-                  <div className="flex justify-between text-gray-600">
+                  <div className="flex justify-between text-ink-muted">
                     <span>Item purchase price</span>
-                    <span className="font-semibold">${purchasePrice.toFixed(2)}</span>
+                    <span className="font-mono font-semibold text-ink-900">${purchasePrice.toFixed(2)}</span>
                   </div>
                 )}
-                {/* 4. Shipper pays total */}
-                <div className="border-t border-violet-200 pt-2">
-                  <div className="flex justify-between font-bold text-violet-700">
-                    <span>Shipper pays total</span>
+                {/* 4. Sender pays total */}
+                <div className="border-t border-line pt-2">
+                  <div className="flex justify-between font-mono font-bold text-ink-900">
+                    <span>Sender pays total</span>
                     <span>${totalShipperPays.toFixed(2)}</span>
                   </div>
                 </div>
                 {/* 5. Fetchr fee (on transport + shop only) */}
-                <div className="bg-white/60 rounded-xl p-3 space-y-1.5 text-xs mt-1">
-                  <p className="text-gray-400 font-semibold uppercase tracking-wide">Distribution</p>
-                  <div className="flex justify-between text-red-400">
-                    <span>Fetchr fee ({Math.round(fetchrPct * 100)}%) on ${fetchrBase.toFixed(2)}</span>
+                <div className="bg-surface rounded-md p-3 space-y-1.5 text-micro mt-1 border border-line">
+                  <p className="text-ink-subtle font-mono uppercase tracking-wide">Distribution</p>
+                  <div className="flex justify-between font-mono text-ink-muted">
+                    <span>fetchr fee ({Math.round(fetchrPct * 100)}%) on ${fetchrBase.toFixed(2)}</span>
                     <span>−${fetchrFee.toFixed(2)}</span>
                   </div>
                   {isPurchase && purchasePrice > 0 && (
-                    <div className="flex justify-between text-gray-500">
+                    <div className="flex justify-between font-mono text-ink-muted">
                       <span>Item purchase reimbursement</span>
                       <span>+${purchasePrice.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-200 pt-1.5">
-                    <span>Traveler receives</span>
+                  <div className="flex justify-between font-mono font-bold text-success border-t border-line pt-1.5">
+                    <span>Traveller receives</span>
                     <span>${travelerReceives.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
               {match.agreed_notes && (
-                <div className="mt-3 pt-3 border-t border-violet-200">
-                  <p className="text-xs text-gray-400 mb-1">Agreed notes</p>
-                  <p className="text-xs text-gray-600 italic">"{match.agreed_notes}"</p>
+                <div className="mt-3 pt-3 border-t border-line">
+                  <p className="text-micro text-ink-subtle mb-1">Agreed notes</p>
+                  <p className="text-body-s text-ink-muted italic">"{match.agreed_notes}"</p>
                 </div>
               )}
             </div>
           )}
 
-          <button onClick={onClose} className="w-full btn-secondary py-3">Close</button>
+          <button onClick={onClose} className="w-full btn-secondary">Close</button>
         </div>
       </div>
     </div>
@@ -580,12 +591,11 @@ const Messages = ({ session }) => {
       [myField]: true,
       ...(otherAgreed ? { status: 'terms_agreed', deal_stage: 'terms_agreed' } : {})
     }).eq('id', activeMatch.id);
-    const role = iAmTraveler ? 'TRAVELER' : 'SHIPPER';
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id, sender_id: session.user.id,
       content: otherAgreed
-        ? `✅ TERMS AGREED BY BOTH PARTIES: The deal is locked in. Shipper can now proceed with escrow payment.`
-        : `✅ ${role} AGREED TO TERMS: Waiting for the ${iAmTraveler ? 'shipper' : 'traveler'} to also agree.`,
+        ? `Terms agreed by both parties. The deal is locked in — the sender can now pay escrow.`
+        : `Terms agreed by the ${iAmTraveler ? 'traveller' : 'sender'}. Waiting for the ${iAmTraveler ? 'sender' : 'traveller'} to also agree.`,
       is_read: false,
     }]).select();
     if (msg) setMessages(prev => [...prev, msg[0]]);
@@ -612,7 +622,7 @@ const Messages = ({ session }) => {
       }).eq('id', activeMatch.id);
       const { data: msg } = await supabase.from('messages').insert([{
         match_id: activeMatch.id, sender_id: session.user.id,
-        content: `📸 PROOF UPLOADED: ${proofUrl}`, is_read: false,
+        content: `Proof uploaded: ${proofUrl}`, is_read: false,
       }]).select();
       if (msg) setMessages(prev => [...prev, msg[0]]);
       setActiveMatch(prev => ({ ...prev, proof_photo_url: proofUrl, status: 'proof_uploaded', deal_stage: 'proof_uploaded' }));
@@ -626,7 +636,7 @@ const Messages = ({ session }) => {
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'traveler_completed' : 'shipper_completed';
     const otherDone = iAmTraveler ? activeMatch.shipper_completed : activeMatch.traveler_completed;
-    if (!window.confirm(otherDone ? 'Confirm delivery and release escrow funds to the traveler?' : 'Confirm delivery on your side?')) return;
+    if (!window.confirm(otherDone ? 'Confirm delivery and release escrow to the traveller?' : 'Confirm delivery on your side?')) return;
     setSubmittingComplete(true);
     if (otherDone) {
       if (activeMatch.payment_intent_id) {
@@ -649,17 +659,16 @@ const Messages = ({ session }) => {
       const travelerReceives = dealValue * (1 - fetchrPct);
       const { data: msg } = await supabase.from('messages').insert([{
         match_id: activeMatch.id, sender_id: session.user.id,
-        content: `🎉 DEAL COMPLETED! Both parties confirmed delivery. $${travelerReceives.toFixed(2)} has been released to the traveler's wallet. Thank you for using Fetchr!`,
+        content: `Deal completed. Both sides confirmed delivery — $${travelerReceives.toFixed(2)} has been released to the traveller's wallet.`,
         is_read: false,
       }]).select();
       if (msg) setMessages(prev => [...prev, msg[0]]);
       setTimeout(() => { setAcceptedMatches(prev => prev.filter(m => m.id !== activeMatch.id)); setActiveMatch(null); setMessages([]); }, 3000);
     } else {
       await supabase.from('matches').update({ [myField]: true }).eq('id', activeMatch.id);
-      const role = iAmTraveler ? 'TRAVELER' : 'SHIPPER';
       const { data: msg } = await supabase.from('messages').insert([{
         match_id: activeMatch.id, sender_id: session.user.id,
-        content: `⏳ DELIVERY CONFIRMED BY ${role}: Waiting for the ${iAmTraveler ? 'Shipper' : 'Traveler'} to also confirm.`,
+        content: `Delivery confirmed by the ${iAmTraveler ? 'traveller' : 'sender'}. Waiting for the ${iAmTraveler ? 'sender' : 'traveller'} to also confirm.`,
         is_read: false,
       }]).select();
       if (msg) setMessages(prev => [...prev, msg[0]]);
@@ -678,7 +687,7 @@ const Messages = ({ session }) => {
     }]);
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id, sender_id: session.user.id,
-      content: `⚠️ CANCELLATION REQUEST: ${cancelReason}. Please respond to agree or decline.`, is_read: false,
+      content: `Cancellation request: ${cancelReason}. Respond to agree or decline.`, is_read: false,
     }]).select();
     if (msg) setMessages(prev => [...prev, msg[0]]);
     await fetchCancelRequest(activeMatch.id);
@@ -703,8 +712,8 @@ const Messages = ({ session }) => {
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id, sender_id: session.user.id,
       content: hasEscrow
-        ? '✅ CANCELLATION AGREED: Deal cancelled. Escrow refunded automatically within 5-10 business days.'
-        : '✅ CANCELLATION AGREED: Deal cancelled by mutual agreement.',
+        ? 'Cancellation agreed: deal cancelled. Escrow will be refunded within 5–10 business days.'
+        : 'Cancellation agreed: deal cancelled by mutual agreement.',
       is_read: false,
     }]).select();
     if (msg) setMessages(prev => [...prev, msg[0]]);
@@ -717,7 +726,7 @@ const Messages = ({ session }) => {
     await supabase.from('cancellation_requests').update({ status: 'rejected' }).eq('id', cancelRequest.id);
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id, sender_id: session.user.id,
-      content: '❌ CANCELLATION DECLINED: The deal continues as agreed.', is_read: false,
+      content: 'Cancellation declined: the deal continues as agreed.', is_read: false,
     }]).select();
     if (msg) setMessages(prev => [...prev, msg[0]]);
     setCancelRequest(null);
@@ -736,22 +745,22 @@ const Messages = ({ session }) => {
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   if (acceptedMatches.length === 0) return (
     <div className="flex flex-col items-center justify-center py-24">
-      <div className="w-20 h-20 bg-violet-50 rounded-2xl flex items-center justify-center mb-4">
-        <MessageCircle size={32} className="text-violet-300" />
+      <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mb-4">
+        <MessageCircle size={32} className="text-ink-300" />
       </div>
-      <h2 className="text-lg font-bold text-gray-800 mb-1">No active conversations</h2>
-      <p className="text-gray-400 text-sm">Accept a match to start chatting</p>
+      <h2 className="font-display font-bold text-title-m text-ink-900 mb-1">No conversations</h2>
+      <p className="text-body-m text-ink-muted">Chat opens once both sides accept a match</p>
     </div>
   );
 
   return (
-    <div className="flex h-[calc(100vh-120px)] bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden animate-fade-in">
+    <div className="flex h-[calc(100vh-120px)] bg-surface rounded-lg border border-line overflow-hidden animate-fade-in">
 
       {showDealDetails && activeMatch && (
         <DealDetailsModal match={activeMatch} session={session}
@@ -773,14 +782,14 @@ const Messages = ({ session }) => {
       )}
 
       {/* Sidebar */}
-      <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-gray-100 flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+      <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-line flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
+        <div className="p-4 border-b border-line flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="font-bold text-gray-900 text-sm">Messages</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}</p>
+            <h2 className="font-display font-semibold text-title-s text-ink-900">Messages</h2>
+            <p className="text-micro text-ink-subtle mt-0.5">{acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}</p>
           </div>
           {totalUnread > 0 && (
-            <span className="bg-violet-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">{totalUnread}</span>
+            <span className="bg-accent-fill text-white font-mono text-micro font-bold rounded-full w-5 h-5 flex items-center justify-center">{totalUnread}</span>
           )}
         </div>
         <div className="overflow-y-auto flex-1">
@@ -789,27 +798,28 @@ const Messages = ({ session }) => {
             const unread = unreadCounts[match.id] || 0;
             const isActive = activeMatch?.id === match.id;
             const stageInfo = STAGES.find(s => s.id === getCurrentStage(match)) || STAGES[0];
+            const StageIcon = stageInfo.icon;
             return (
               <button key={match.id}
                 onClick={() => { setActiveMatch(match); setShowPayment(false); setShowCancelRequest(false); }}
-                className={`w-full text-left p-3.5 border-b border-gray-50 transition-all ${isActive ? 'bg-violet-50' : 'hover:bg-gray-50'}`}>
+                className={`w-full text-left p-3.5 border-b border-line transition-all ${isActive ? 'bg-surface-sunken' : 'hover:bg-surface-sunken'}`}>
                 <div className="flex items-center gap-2.5">
                   <div className="relative flex-shrink-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold ${isActive ? 'bg-violet-600 text-white' : 'bg-violet-100 text-violet-600'}`}>
+                    <div className={`w-9 h-9 rounded-avatar flex items-center justify-center text-micro font-mono font-semibold ${isActive ? 'bg-ink-900 text-paper-100' : 'bg-ink-100 text-ink-600'}`}>
                       {getInitials(other?.full_name)}
                     </div>
                     {unread > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-violet-600 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                      <span className="absolute -top-1 -right-1 bg-accent-fill text-white font-mono text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                         {unread > 9 ? '9+' : unread}
                       </span>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <p className={`text-xs truncate ${unread > 0 ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'}`}>{other?.full_name || 'User'}</p>
-                      <span className="text-sm flex-shrink-0">{stageInfo.icon}</span>
+                      <p className={`text-body-s truncate ${unread > 0 ? 'font-semibold text-ink-900' : 'font-medium text-content'}`}>{other?.full_name || 'User'}</p>
+                      <StageIcon size={13} className="text-ink-400 flex-shrink-0" />
                     </div>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
+                    <p className="text-micro text-ink-subtle truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
                   </div>
                 </div>
               </button>
@@ -822,22 +832,23 @@ const Messages = ({ session }) => {
       {activeMatch ? (
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Stage bar */}
-          <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex-shrink-0">
+          {/* Stage bar — tracking timeline, §7.15 */}
+          <div className="bg-surface border-b border-line px-4 py-2.5 flex-shrink-0">
             <div className="flex items-center justify-between gap-1 max-w-md mx-auto">
               {STAGES.map((stage, i) => {
                 const currentIdx = getStageIndex(getCurrentStage(activeMatch));
                 const isDone = i < currentIdx;
                 const isCurrent = i === currentIdx;
+                const StageIcon = stage.icon;
                 return (
                   <React.Fragment key={stage.id}>
                     <div className="flex flex-col items-center gap-0.5">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-all ${isDone ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                        {isDone ? '✓' : stage.icon}
+                      <div className={`w-6 h-6 rounded-sm flex items-center justify-center transition-all ${isDone ? 'bg-success text-white' : isCurrent ? 'bg-accent-fill text-white' : 'bg-ink-200 text-ink-400'}`}>
+                        {isDone ? <CheckCircle size={13} /> : <StageIcon size={12} />}
                       </div>
-                      <p className={`hidden sm:block text-center ${isCurrent ? 'text-violet-600 font-bold' : 'text-gray-400'}`} style={{ fontSize: '9px' }}>{stage.label}</p>
+                      <p className={`hidden sm:block text-center font-mono ${isCurrent ? 'text-accent font-semibold' : 'text-ink-subtle'}`} style={{ fontSize: '9px' }}>{stage.label}</p>
                     </div>
-                    {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 rounded-full transition-all ${isDone ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+                    {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 rounded-full transition-all ${isDone ? 'bg-success' : 'bg-ink-100'}`} />}
                   </React.Fragment>
                 );
               })}
@@ -845,80 +856,83 @@ const Messages = ({ session }) => {
           </div>
 
           {/* Chat header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 flex-shrink-0">
+          <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 flex-shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <button onClick={() => setShowSidebar(!showSidebar)}
-                className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-400 flex-shrink-0">
+                className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-400 flex-shrink-0">
                 <ChevronDown size={14} className={`transition-transform ${showSidebar ? 'rotate-90' : '-rotate-90'}`} />
               </button>
-              <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600 flex-shrink-0">
+              <div className="w-8 h-8 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 flex-shrink-0">
                 {getInitials(getOtherParty(activeMatch)?.full_name)}
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-gray-900 text-sm truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
-                <p className="text-xs text-gray-400 truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
+                  {getOtherParty(activeMatch)?.verified && (
+                    <Shield size={13} className="text-success flex-shrink-0" aria-label="Identity verified" />
+                  )}
+                </div>
+                <p className="text-micro text-ink-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Deal details — always visible */}
-              <button onClick={() => setShowDealDetails(true)}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold bg-violet-50 text-violet-600 hover:bg-violet-100 transition">
+              <button onClick={() => setShowDealDetails(true)} className="btn-secondary px-2.5 text-label">
                 <Info size={12} /> Deal
               </button>
 
-              {/* Agree Terms */}
+              {/* Agree Terms — the pending action is the one Signal button on this screen */}
               {activeMatch.status === 'accepted' && !myTermsAgreed && (
-                <button onClick={agreeToTerms}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition shadow-button">
-                  <CheckCircle size={12} /> Agree Terms
+                <button onClick={agreeToTerms} className="btn-signal px-3 text-label">
+                  <CheckCircle size={12} /> Agree terms
                 </button>
               )}
 
-              {/* Pay Escrow — SHIPPER ONLY */}
+              {/* Pay Escrow — SENDER ONLY */}
               {isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
                 <button onClick={() => { setShowPayment(!showPayment); setShowCancelRequest(false); }}
-                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${showPayment ? 'bg-violet-100 text-violet-700' : 'btn-primary'}`}>
-                  <Shield size={12} /> Pay Escrow
+                  className={showPayment ? 'btn-secondary px-3 text-label' : 'btn-signal px-3 text-label'}>
+                  <Shield size={12} /> Pay escrow
                 </button>
               )}
 
-              {/* Upload Proof — traveler only */}
+              {/* Upload Proof — traveller only */}
               {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
-                <button onClick={() => setShowProofModal(true)}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold bg-blue-500 text-white hover:bg-blue-600 transition">
-                  <Camera size={12} /> Upload Proof
+                <button onClick={() => setShowProofModal(true)} className="btn-signal px-3 text-label">
+                  <Camera size={12} /> Upload proof
                 </button>
               )}
 
               {/* Confirm Delivery */}
               {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && (
                 <button onClick={handleCompleteDeal} disabled={submittingComplete || myCompleted}
-                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                    myCompleted ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : otherCompleted ? 'bg-emerald-500 text-white animate-pulse'
-                      : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                  }`}>
+                  className={
+                    myCompleted ? 'inline-flex items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
+                      : 'btn-signal px-3 text-label'
+                  }>
                   <CheckCircle size={12} />
-                  {myCompleted ? 'Waiting...' : otherCompleted ? 'Confirm & Release' : 'Confirm Delivery'}
+                  {myCompleted ? 'Waiting' : otherCompleted ? 'Confirm & release' : 'Confirm delivery'}
                 </button>
               )}
 
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500 transition">
+                className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-ink-muted hover:bg-danger-tint hover:text-danger transition">
                 <XCircle size={12} /> Cancel
               </button>
             </div>
           </div>
 
-          {/* Safety notice */}
+          {/* Safety notice — §7.9 advisory banner */}
           {activeMatch.status === 'accepted' && (
-            <div className={`px-4 py-2.5 flex items-start gap-2 border-b flex-shrink-0 ${isTraveler(activeMatch) ? 'bg-amber-50/60 border-amber-100' : 'bg-blue-50/60 border-blue-100'}`}>
-              <span className="text-sm flex-shrink-0 mt-0.5">{isTraveler(activeMatch) ? '⚠️' : 'ℹ️'}</span>
-              <p className={`text-xs leading-relaxed ${isTraveler(activeMatch) ? 'text-amber-700' : 'text-blue-700'}`}>
+            <div className={`px-4 py-2.5 flex items-start gap-2 border-l-[3px] flex-shrink-0 ${isTraveler(activeMatch) ? 'bg-warning-tint border-warn-400' : 'bg-info-50 border-info-400'}`}>
+              {isTraveler(activeMatch)
+                ? <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                : <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />}
+              <p className={`text-body-s leading-relaxed ${isTraveler(activeMatch) ? 'text-warning' : 'text-info-500'}`}>
                 {activeMatch.request?.requires_purchase
-                  ? isTraveler(activeMatch) ? 'Only purchase the item once escrow is confirmed paid.' : 'Once you agree terms and pay escrow, the traveler will purchase your item at the destination.'
-                  : isTraveler(activeMatch) ? 'Only accept the item from the shipper once escrow is confirmed paid.' : 'Hand the item to the traveler before their flight. Your payment is secured in escrow until both parties confirm delivery.'
+                  ? isTraveler(activeMatch) ? 'Only purchase the item once escrow is confirmed paid.' : 'Once you agree terms and pay escrow, the traveller will purchase your item at the destination.'
+                  : isTraveler(activeMatch) ? 'Only accept the item from the sender once escrow is confirmed paid.' : 'Hand the item to the traveller before their flight. Your payment is secured in escrow until both parties confirm delivery.'
                 }
               </p>
             </div>
@@ -926,33 +940,33 @@ const Messages = ({ session }) => {
 
           {/* Terms status */}
           {activeMatch.status === 'accepted' && (
-            <div className="bg-amber-50/50 px-4 py-2 flex items-center gap-4 text-xs border-b border-amber-100/50 flex-shrink-0">
-              <p className="text-amber-700 font-semibold">Terms:</p>
-              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_traveler ? 'text-emerald-600' : 'text-gray-300'}`}>
-                {activeMatch.terms_agreed_traveler ? '✓' : '○'} Traveler
+            <div className="bg-surface-sunken px-4 py-2 flex items-center gap-4 text-body-s border-b border-line flex-shrink-0">
+              <p className="text-ink-muted font-semibold">Terms:</p>
+              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_traveler ? 'text-success' : 'text-ink-300'}`}>
+                {activeMatch.terms_agreed_traveler ? <CheckCircle size={13} /> : <Circle size={13} />} Traveller
               </span>
-              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_shipper ? 'text-emerald-600' : 'text-gray-300'}`}>
-                {activeMatch.terms_agreed_shipper ? '✓' : '○'} Shipper
+              <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_shipper ? 'text-success' : 'text-ink-300'}`}>
+                {activeMatch.terms_agreed_shipper ? <CheckCircle size={13} /> : <Circle size={13} />} Sender
               </span>
-              <p className="text-amber-600 ml-auto text-right">{!myTermsAgreed ? 'Click "Agree Terms" to proceed' : 'Waiting for other party...'}</p>
+              <p className="text-ink-subtle ml-auto text-right">{!myTermsAgreed ? 'Tap "Agree terms" to proceed' : 'Waiting for other party'}</p>
             </div>
           )}
 
-          {/* Escrow pending notice */}
+          {/* Escrow pending notice — copy per BRAND.md §9.2 */}
           {activeMatch.status === 'terms_agreed' && (
-            <div className={`px-4 py-2.5 flex items-start gap-2 border-b flex-shrink-0 ${isShipper(activeMatch) ? 'bg-violet-50/60 border-violet-100' : 'bg-blue-50/60 border-blue-100'}`}>
-              <Shield size={14} className={`flex-shrink-0 mt-0.5 ${isShipper(activeMatch) ? 'text-violet-500' : 'text-blue-500'}`} />
-              <p className={`text-xs leading-relaxed ${isShipper(activeMatch) ? 'text-violet-700' : 'text-blue-700'}`}>
+            <div className="px-4 py-2.5 flex items-start gap-2 border-l-[3px] border-info-400 bg-info-50 flex-shrink-0">
+              <Shield size={14} className="flex-shrink-0 mt-0.5 text-info-500" />
+              <p className="text-body-s leading-relaxed text-info-500">
                 {isShipper(activeMatch)
-                  ? '💳 Both parties agreed to terms. Please pay escrow to secure the deal.'
-                  : '⏳ Terms agreed! Waiting for the shipper to pay escrow. You will be notified once secured.'}
+                  ? `You'll pay $${calcFees(activeMatch).totalShipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
+                  : `Nothing to do yet — ${getOtherParty(activeMatch)?.full_name || 'the sender'} pays into escrow before you fly.`}
               </p>
             </div>
           )}
 
-          {/* Escrow panel — SHIPPER ONLY */}
+          {/* Escrow panel — SENDER ONLY */}
           {showPayment && isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
-            <div className="border-b border-gray-100 bg-gray-50/50 overflow-y-auto max-h-96 flex-shrink-0">
+            <div className="border-b border-line bg-surface-sunken overflow-y-auto max-h-96 flex-shrink-0">
               <EscrowPayment match={activeMatch} session={session}
                 onPaymentComplete={async () => { setShowPayment(false); await fetchMatches(); if (activeMatch) await fetchMessages(activeMatch.id); }} />
             </div>
@@ -960,18 +974,18 @@ const Messages = ({ session }) => {
 
           {/* Cancel form */}
           {showCancelRequest && !cancelRequest && (
-            <div className="border-b border-red-100 bg-red-50/50 p-4 flex-shrink-0">
-              <p className="text-sm font-bold text-red-700 mb-2 flex items-center gap-1.5"><AlertTriangle size={14} /> Request Cancellation</p>
+            <div className="border-b border-line bg-danger-tint p-4 flex-shrink-0">
+              <p className="text-body-s font-semibold text-danger mb-2 flex items-center gap-1.5"><AlertTriangle size={14} /> Request cancellation</p>
               {['in_escrow', 'proof_uploaded'].includes(activeMatch.status) && (
-                <p className="text-xs text-red-500 mb-2">⚠️ Escrow will be refunded automatically if both parties agree.</p>
+                <p className="text-micro text-danger mb-2">Escrow will be refunded automatically if both parties agree.</p>
               )}
-              <textarea placeholder="Please explain the reason..." value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)} rows={2} className="input-field resize-none text-xs mb-2" />
+              <textarea placeholder="Explain the reason..." value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)} rows={2} className="input-field resize-none text-body-s mb-2" />
               <div className="flex gap-2">
-                <button onClick={() => setShowCancelRequest(false)} className="flex-1 btn-secondary py-2 text-xs">Close</button>
+                <button onClick={() => setShowCancelRequest(false)} className="flex-1 btn-secondary">Keep it</button>
                 <button onClick={requestCancellation} disabled={!cancelReason.trim() || submittingCancel}
-                  className="flex-1 bg-red-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-red-600 transition disabled:opacity-50">
-                  {submittingCancel ? 'Sending...' : 'Send Request'}
+                  className="flex-1 btn-danger disabled:opacity-50">
+                  {submittingCancel ? 'Sending' : 'Send request'}
                 </button>
               </div>
             </div>
@@ -979,14 +993,14 @@ const Messages = ({ session }) => {
 
           {/* Incoming cancel */}
           {cancelRequest && cancelRequest.requested_by !== session.user.id && (
-            <div className="border-b border-amber-100 bg-amber-50/50 p-4 flex-shrink-0">
-              <p className="text-sm font-bold text-amber-700 mb-1 flex items-center gap-1.5"><AlertTriangle size={14} /> Cancellation Requested</p>
-              <p className="text-xs text-amber-600 mb-2">Reason: {cancelRequest.reason}</p>
+            <div className="border-b border-line bg-warning-tint p-4 flex-shrink-0">
+              <p className="text-body-s font-semibold text-warning mb-1 flex items-center gap-1.5"><AlertTriangle size={14} /> Cancellation requested</p>
+              <p className="text-micro text-warning mb-2">Reason: {cancelRequest.reason}</p>
               <div className="flex gap-2">
-                <button onClick={rejectCancellation} className="flex-1 btn-secondary py-2 text-xs">Decline</button>
+                <button onClick={rejectCancellation} className="flex-1 btn-secondary">Decline</button>
                 <button onClick={agreeCancellation} disabled={submittingCancel}
-                  className="flex-1 bg-amber-500 text-white rounded-xl py-2 text-xs font-bold hover:bg-amber-600 transition disabled:opacity-50">
-                  {submittingCancel ? 'Processing...' : 'Agree to Cancel'}
+                  className="flex-1 btn-danger disabled:opacity-50">
+                  {submittingCancel ? 'Processing' : 'Agree to cancel'}
                 </button>
               </div>
             </div>
@@ -996,44 +1010,42 @@ const Messages = ({ session }) => {
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((msg) => {
               const isMe = msg.sender_id === session.user.id;
-              const isSystem = msg.content?.startsWith('🎉') || msg.content?.startsWith('✅') ||
-                msg.content?.startsWith('⏳') || msg.content?.startsWith('⚠️') ||
-                msg.content?.startsWith('❌') || msg.content?.startsWith('🔒') ||
-                msg.content?.startsWith('📸') || msg.content?.startsWith('✏️');
 
-              if (msg.content?.includes('PROOF_IMAGE_1:') || msg.content?.startsWith('📸 PROOF UPLOADED:')) {
+              if (msg.content?.includes('PROOF_IMAGE_1:') || msg.content?.startsWith('📸 PROOF UPLOADED:') || msg.content?.startsWith('Proof uploaded:')) {
                 // Parse proof images — could be single URL or multi-image format
                 const lines = msg.content.split('\n');
                 const imageUrls = lines
-                  .filter(l => l.startsWith('PROOF_IMAGE_') || l.startsWith('📸 PROOF UPLOADED: http'))
-                  .map(l => l.includes('PROOF_IMAGE_') ? l.split(':').slice(1).join(':').trim() : l.replace('📸 PROOF UPLOADED: ', '').trim());
+                  .filter(l => l.startsWith('PROOF_IMAGE_') || l.startsWith('📸 PROOF UPLOADED: http') || l.startsWith('Proof uploaded: http'))
+                  .map(l => l.includes('PROOF_IMAGE_') ? l.split(':').slice(1).join(':').trim() : l.replace(/^(📸 PROOF UPLOADED:|Proof uploaded:)\s*/, '').trim());
                 const notes = lines.find(l => l.startsWith('Notes:'))?.replace('Notes: ', '');
-                if (imageUrls.length === 0 && msg.content.startsWith('📸 PROOF UPLOADED:')) {
-                  imageUrls.push(msg.content.replace('📸 PROOF UPLOADED:', '').split('\n')[0].trim());
+                if (imageUrls.length === 0) {
+                  imageUrls.push(msg.content.replace(/^(📸 PROOF UPLOADED:|Proof uploaded:)/, '').split('\n')[0].trim());
                 }
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 max-w-sm w-full">
-                      <p className="text-xs font-bold text-blue-700 mb-3">📸 Delivery Proof Submitted</p>
+                    <div className="bg-info-50 border border-line rounded-lg p-4 max-w-sm w-full">
+                      <p className="font-mono text-overline uppercase text-info-500 mb-3 flex items-center gap-1.5">
+                        <Camera size={13} /> Delivery proof submitted
+                      </p>
                       <div className={`grid gap-2 mb-3 ${imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         {imageUrls.filter(Boolean).map((url, i) => (
                           <a key={i} href={url} target="_blank" rel="noreferrer">
                             <img src={url} alt={`Proof ${i + 1}`}
-                              className="rounded-xl w-full h-32 object-cover hover:opacity-90 transition border border-blue-200" />
+                              className="rounded-md w-full h-32 object-cover hover:opacity-90 transition border border-line" />
                           </a>
                         ))}
                       </div>
-                      {notes && <p className="text-xs text-blue-600 italic">"{notes}"</p>}
-                      <p className="text-xs text-blue-400 mt-1">Tap photos to view full size</p>
+                      {notes && <p className="text-micro text-info-500 italic">"{notes}"</p>}
+                      <p className="text-micro text-ink-subtle mt-1">Tap photos to view full size</p>
                     </div>
                   </div>
                 );
               }
-              if (isSystem) {
+              if (isSystemMessage(msg.content)) {
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5 max-w-sm text-center">
-                      <p className="text-xs text-gray-500 leading-relaxed">{msg.content}</p>
+                    <div className="bg-surface-sunken border border-line rounded-lg px-4 py-2.5 max-w-sm text-center">
+                      <p className="text-micro text-ink-muted leading-relaxed">{msg.content}</p>
                     </div>
                   </div>
                 );
@@ -1041,16 +1053,16 @@ const Messages = ({ session }) => {
               return (
                 <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
-                    <div className="w-7 h-7 rounded-xl bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-600 flex-shrink-0 mr-2 mt-1">
+                    <div className="w-7 h-7 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 flex-shrink-0 mr-2 mt-1">
                       {getInitials(msg.sender?.full_name)}
                     </div>
                   )}
                   <div className={`max-w-xs lg:max-w-sm flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${isMe ? 'bg-violet-600 text-white rounded-br-md' : 'bg-gray-100 text-gray-800 rounded-bl-md'}`}>
+                    <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-surface-inverse text-ink-inverse rounded-br-[3px]' : 'bg-surface-sunken text-content rounded-bl-[3px]'}`}>
                       {msg.content}
                     </div>
-                    <p className={`text-xs text-gray-400 mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
-                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <p className={`font-mono text-micro text-ink-subtle mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                     </p>
                   </div>
                 </div>
@@ -1060,14 +1072,14 @@ const Messages = ({ session }) => {
           </div>
 
           {/* Input */}
-          <div className="border-t border-gray-100 p-3 flex-shrink-0">
+          <div className="border-t border-line p-3 flex-shrink-0">
             <div className="flex items-end gap-2">
               <textarea value={newMessage} onChange={e => setNewMessage(e.target.value)}
-                onKeyDown={handleKeyDown} placeholder="Type a message... (Enter to send)"
-                rows={1} className="flex-1 input-field resize-none py-2.5 text-sm min-h-[42px] max-h-24"
+                onKeyDown={handleKeyDown} placeholder="Type a message (Enter to send)"
+                rows={1} className="flex-1 input-field resize-none py-2.5 text-body-m min-h-[42px] max-h-24"
                 onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }} />
               <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
-                className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center hover:bg-violet-700 transition shadow-button disabled:opacity-50 flex-shrink-0">
+                className="w-11 h-11 bg-brand rounded-md flex items-center justify-center hover:bg-brand-hover transition disabled:opacity-50 flex-shrink-0">
                 {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send size={16} className="text-white" />}
               </button>
             </div>
@@ -1075,11 +1087,11 @@ const Messages = ({ session }) => {
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-          <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center mb-4">
-            <MessageCircle size={28} className="text-violet-300" />
+          <div className="w-16 h-16 bg-ink-100 rounded-lg flex items-center justify-center mb-4">
+            <MessageCircle size={28} className="text-ink-300" />
           </div>
-          <p className="text-gray-600 font-semibold mb-1">Select a conversation</p>
-          <p className="text-gray-400 text-sm">Choose a deal from the sidebar to start chatting</p>
+          <p className="font-display font-semibold text-title-s text-ink-900 mb-1">Select a conversation</p>
+          <p className="text-body-m text-ink-muted">Choose a deal from the sidebar to start chatting</p>
         </div>
       )}
     </div>

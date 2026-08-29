@@ -1,10 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Search, Plane, Package, Star, CheckCircle, XCircle,
-  ChevronRight, Shield, X, Award, Globe, Clock, Zap, ShoppingBag,
-  AlertTriangle
+  Search, Star, CheckCircle, XCircle,
+  ChevronRight, X, Award, Globe,
+  AlertTriangle, BadgeCheck, AlertCircle, Info
 } from 'lucide-react';
+
+// Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
+// where the tile would double up on the surface-inverse fill.
+const BareGlyph = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="fetchr">
+    <path d="M17.5 37 V21.5 C17.5 15 23 12.5 27.5 14.5"
+      fill="none" stroke="#FBFAF8" strokeWidth="5" strokeLinecap="round" />
+    <rect x="10.5" y="21" width="16" height="4.6" rx="2.3" fill="#FBFAF8" />
+    <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
+  </svg>
+);
+
+// Rating display, docs/BRAND.md §7.11 — one star, never five, red below 3.0
+const RatingDisplay = ({ profile }) => {
+  if (!profile?.rating) return <span className="text-micro text-ink-subtle">No ratings yet</span>;
+  const lowRep = profile.total_reviews < 3;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Star size={14} className="text-ink-900 fill-ink-900" />
+      <span className={`font-mono text-num-m font-semibold ${profile.rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
+        {profile.rating.toFixed(1)}
+      </span>
+      <span className="text-micro text-ink-subtle">({profile.total_reviews})</span>
+      {lowRep && <span className="text-micro text-ink-subtle">· New traveller</span>}
+    </span>
+  );
+};
+
+// Verification badge, docs/BRAND.md §7.10 — never icon-only, never a colour
+// below full ID verification
+const VerificationBadge = ({ verified }) => verified ? (
+  <span className="inline-flex items-center gap-1 bg-success-tint text-success rounded-sm px-1.5 py-0.5 text-overline uppercase font-mono"
+    aria-label="Identity verified">
+    <BadgeCheck size={12} /> ID verified
+  </span>
+) : (
+  <span className="inline-flex items-center gap-1 text-ink-400 text-overline uppercase font-mono"
+    aria-label="Identity not verified">
+    <AlertCircle size={12} /> Not verified
+  </span>
+);
 
 const Matches = ({ session, onNavigate }) => {
   const [matches, setMatches] = useState([]);
@@ -151,7 +192,7 @@ const Matches = ({ session, onNavigate }) => {
       await supabase.from('messages').insert([{
         match_id: matchId,
         sender_id: session.user.id,
-        content: `🎉 MATCH ACCEPTED! Both parties have agreed. You can now chat and arrange the delivery.`,
+        content: `Match accepted. Both parties have agreed — you can now chat and arrange the delivery.`,
         is_read: false,
       }]);
 
@@ -211,19 +252,13 @@ const Matches = ({ session, onNavigate }) => {
     return { agreedPrice, fetchrFee, fetchrPct, travelerReceives };
   };
 
-  const getScoreBadge = (score) => {
-    if (score >= 90) return 'badge-green';
-    if (score >= 75) return 'badge-blue';
-    return 'badge-yellow';
-  };
-
   if (loading && matches.length === 0) return (
     <div className="flex flex-col items-center justify-center py-24">
-      <div className="w-14 h-14 bg-violet-100 rounded-2xl flex items-center justify-center mb-4 animate-pulse">
-        <Search size={24} className="text-violet-500" />
+      <div className="w-14 h-14 bg-ink-100 rounded-lg flex items-center justify-center mb-4 animate-pulse">
+        <Search size={24} className="text-ink-400" />
       </div>
-      <p className="text-gray-500 font-medium">Finding your matches...</p>
-      <p className="text-gray-400 text-sm mt-1">This updates every 2 seconds</p>
+      <p className="text-body-m text-ink-muted font-medium">Finding your matches</p>
+      <p className="text-body-s text-ink-subtle mt-1">This updates every 2 seconds</p>
     </div>
   );
 
@@ -231,25 +266,25 @@ const Matches = ({ session, onNavigate }) => {
     <div className="max-w-3xl mx-auto animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Your Matches</h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {matches.length} pending match{matches.length !== 1 ? 'es' : ''} · Auto-refreshes every 2s
+          <h1 className="font-display font-bold text-title-l text-ink-900">Your matches</h1>
+          <p className="text-body-s text-ink-muted mt-0.5">
+            {matches.length} pending match{matches.length !== 1 ? 'es' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
-          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+        <div className="flex items-center gap-1.5 bg-success-tint text-success px-2.5 py-1 rounded-sm font-mono text-overline uppercase">
+          <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
           Live
         </div>
       </div>
 
       {matches.length === 0 ? (
-        <div className="text-center py-24 bg-white rounded-2xl shadow-card border border-gray-100/80">
-          <div className="w-20 h-20 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Search size={32} className="text-violet-300" />
+        <div className="text-center py-24 ticket">
+          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+            <Search size={32} className="text-ink-300" />
           </div>
-          <h2 className="text-lg font-bold text-gray-800 mb-2">No matches yet</h2>
-          <p className="text-gray-400 text-sm max-w-xs mx-auto">
-            Add a flight or shipment request and we'll find your perfect match automatically.
+          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No matches yet</h2>
+          <p className="text-body-m text-ink-muted max-w-xs mx-auto">
+            Add a flight or shipment request and we'll find your match automatically.
           </p>
         </div>
       ) : (
@@ -267,210 +302,161 @@ const Matches = ({ session, onNavigate }) => {
               : match.traveler_accepted;
             // Also treat awaiting_other as other having accepted
             const otherHasAcceptedFull = otherHasAccepted || match.status === 'awaiting_other';
+            const ref = match.id.slice(0, 6).toUpperCase();
 
             return (
               <div key={match.id}
-                className="bg-white rounded-2xl shadow-card border border-gray-100/80 overflow-hidden hover:shadow-card-hover transition-all duration-300">
+                className={`ticket ${!iHaveAccepted ? 'border-l-[3px] border-l-signal-500' : ''}`}>
 
-                <div className={`h-1 ${
-                  match.match_score >= 90
-                    ? 'bg-gradient-to-r from-emerald-400 to-green-500'
-                    : match.match_score >= 75
-                      ? 'bg-gradient-to-r from-blue-400 to-indigo-500'
-                      : 'bg-gradient-to-r from-amber-400 to-orange-500'
-                }`} style={{ width: `${Math.min(match.match_score, 100)}%` }} />
-
-                <div className="p-5">
-
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`badge ${getScoreBadge(Math.min(match.match_score, 100))}`}>
-                        <Zap size={10} /> {Math.min(match.match_score, 100)}% Match
-                      </span>
-                      {iHaveAccepted && !otherHasAcceptedFull && (
-                        <span className="badge badge-yellow">
-                          <Clock size={10} /> Waiting for {iAmTraveler ? 'shipper' : 'traveler'}
-                        </span>
-                      )}
-                      {otherHasAcceptedFull && !iHaveAccepted && (
-                        <span className="badge badge-blue">
-                          <Clock size={10} /> {iAmTraveler ? 'Shipper' : 'Traveler'} accepted — your turn!
-                        </span>
-                      )}
-                      {iHaveAccepted && (
-                        <span className="badge badge-green">
-                          <CheckCircle size={10} /> You accepted
-                        </span>
-                      )}
-                    </div>
-                    <span className={`badge ${iAmTraveler ? 'badge-blue' : 'badge-purple'}`}>
-                      {iAmTraveler ? '✈️ Traveler' : '📦 Shipper'}
+                {/* Header bar — docs/BRAND.md §7.7 / §7.8 (32px compact) */}
+                <div className="h-8 bg-ink-900 flex items-center justify-between px-3">
+                  <div className="flex items-center gap-1.5">
+                    <BareGlyph size={14} />
+                    <span className="font-display font-extrabold text-[11px] tracking-[-0.05em] text-paper-100">
+                      fetchr
                     </span>
                   </div>
+                  <span className="font-mono text-[10px] text-ink-300">
+                    MATCH · {Math.min(match.match_score, 100)}% · #{ref}
+                  </span>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
-                      <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
-                        <Plane size={10} /> Flight
+                <div className="px-4 py-3 space-y-2.5">
+
+                  {/* State pill */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {!iHaveAccepted && (
+                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-accent-fill text-white font-mono text-overline uppercase">
+                        Your turn
+                      </span>
+                    )}
+                    {iHaveAccepted && !otherHasAcceptedFull && (
+                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-ink-100 text-content-muted font-mono text-overline uppercase">
+                        Waiting on {iAmTraveler ? 'sender' : 'traveller'}
+                      </span>
+                    )}
+                    {iHaveAccepted && otherHasAcceptedFull && (
+                      <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-success-tint text-success font-mono text-overline uppercase">
+                        Both accepted
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Route block */}
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-overline uppercase text-ink-400">From</p>
+                      <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">
+                        {match.flight?.from_code || '—'}
                       </p>
-                      <p className="text-base font-bold text-gray-900">
-                        {match.flight?.from_code} → {match.flight?.to_code}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {match.flight?.from_city} → {match.flight?.to_city}
-                      </p>
-                      <p className="text-xs font-semibold text-violet-600 mt-2">
-                        {match.flight?.flight_date
-                          ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', {
-                              day: '2-digit', month: '2-digit', year: 'numeric'
-                            })
-                          : ''}
+                      <p className="text-body-s text-ink-muted truncate" title={match.flight?.from_city}>
+                        {match.flight?.from_city}
                       </p>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
-                      <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
-                        <Package size={10} /> Shipment
+                    <div className="flex items-center justify-center pt-4">
+                      <div className="w-8 border-t border-dashed border-line-perf" />
+                    </div>
+                    <div className="min-w-0 text-right">
+                      <p className="font-mono text-overline uppercase text-ink-400">To</p>
+                      <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">
+                        {match.flight?.to_code || '—'}
                       </p>
-                      <p className="text-base font-bold text-gray-900 truncate">
-                        {match.request?.item_name}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">{match.request?.category}</p>
-                      <p className="text-xs font-semibold text-violet-600 mt-2">
-                        {match.request?.weight_kg}kg
+                      <p className="text-body-s text-ink-muted truncate" title={match.flight?.to_city}>
+                        {match.flight?.to_city}
                       </p>
                     </div>
                   </div>
 
+                  {/* Data strip — single micro line, §7.8 */}
+                  <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                    {match.flight?.flight_date
+                      ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                      : '—'}
+                    {' · '}{match.flight?.flight_number || match.flight?.airline || '—'}
+                    {' · '}{match.request?.weight_kg}kg
+                  </p>
+
+                  {/* Advisory — §7.9 */}
                   {match.flight?.delivery_type === 'both' && (
-                    <div className="flex items-center gap-2 bg-blue-50 text-blue-700 rounded-xl px-3 py-2 mb-4 border border-blue-100">
-                      <ShoppingBag size={14} />
-                      <p className="text-xs font-semibold">
-                        Shop & Ship available — traveler can purchase items at destination
+                    <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
+                      <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-body-s text-info-500">
+                        <span className="font-semibold">Shop & Ship available</span> — the traveller can buy at the destination.
                       </p>
                     </div>
                   )}
-
                   {match.request?.requires_purchase && match.flight?.delivery_type !== 'both' && (
-                    <div className="flex items-center gap-2 bg-amber-50 text-amber-700 rounded-xl px-3 py-2 mb-4 border border-amber-100">
-                      <AlertTriangle size={14} />
-                      <p className="text-xs font-semibold">
-                        Mismatch: this shipment needs Shop & Ship, but this traveler only offers handover
-                      </p>
+                    <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
+                      <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                      <div className="text-body-s text-warning">
+                        <p className="font-semibold">Buy-and-carry needed</p>
+                        <p>This traveller only offers handover, not Shop & Ship.</p>
+                      </div>
                     </div>
                   )}
 
-                  <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl p-4 mb-4 border border-violet-100">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                      Deal Preview
-                    </p>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      <div>
-                        <p className="text-xs text-gray-400 mb-1">Shipper pays</p>
-                        <p className="text-base font-bold text-gray-900">
-                          ${fees.agreedPrice.toFixed(2)}
-                        </p>
-                        <p className="text-xs text-gray-400">agreed price</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 mb-1">Fetchr fee</p>
-                        <p className="text-base font-bold text-red-400">
-                          −${fees.fetchrFee.toFixed(2)}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {Math.round(fees.fetchrPct * 100)}% of deal
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 mb-1">Traveler gets</p>
-                        <p className="text-base font-bold text-emerald-600">
-                          ${fees.travelerReceives.toFixed(2)}
-                        </p>
-                        <p className="text-xs text-gray-400">net earnings</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-400 text-center mt-3 italic">
-                      Shipper pays the agreed price only. Fetchr's fee comes from the traveler's share.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => fetchProfile(other?.id)}
-                    className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100 mb-4 group">
-                    <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center text-sm font-bold text-violet-600 flex-shrink-0 overflow-hidden">
+                  {/* Person row */}
+                  <button onClick={() => fetchProfile(other?.id)}
+                    className="w-full flex items-center gap-2.5 py-1 group">
+                    <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0 overflow-hidden">
                       {avatarUrl
                         ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" />
                         : getInitials(other?.full_name)
                       }
                     </div>
-                    <div className="flex-1 text-left">
-                      <p className="text-sm font-bold text-gray-900">{other?.full_name || 'User'}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {other?.rating > 0 ? (
-                          <div className="flex items-center gap-1">
-                            {[1,2,3,4,5].map(s => (
-                              <Star key={s} size={11}
-                                className={s <= Math.round(other.rating)
-                                  ? 'text-amber-400 fill-amber-400'
-                                  : 'text-gray-200'} />
-                            ))}
-                            <span className="text-xs text-gray-500 ml-0.5">
-                              {other.rating.toFixed(1)} ({other.total_reviews})
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">New member</span>
-                        )}
-                        {other?.verified && (
-                          <span className="badge badge-blue"><Shield size={9} /> Verified</span>
-                        )}
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-display font-semibold text-title-s text-ink-900 truncate">
+                          {other?.full_name || 'User'}
+                        </p>
+                        <VerificationBadge verified={other?.verified} />
                       </div>
+                      <RatingDisplay profile={other} />
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-violet-500 font-semibold group-hover:gap-2 transition-all flex-shrink-0">
-                      View profile <ChevronRight size={14} />
-                    </div>
+                    <ChevronRight size={16} className="text-ink-400 flex-shrink-0 group-hover:text-ink-600 transition-colors" />
                   </button>
+                </div>
 
-                  {match.request?.item_photo_url && (
-                    <div className="mb-4 rounded-xl overflow-hidden border border-gray-100">
-                      <img
-                        src={match.request.item_photo_url}
-                        alt={match.request.item_name}
-                        className="w-full h-36 object-contain bg-gray-50"
-                      />
-                    </div>
-                  )}
+                <div className="perf" />
+
+                {/* Coupon — one money line + one action, §7.8 */}
+                <div className="px-4 pt-3.5 pb-4 space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-mono text-body-m text-ink-muted">
+                      {iAmTraveler ? 'You receive' : 'You pay'}
+                    </span>
+                    <span className="font-mono font-bold text-num-l text-ink-900">
+                      ${(iAmTraveler ? fees.travelerReceives : fees.agreedPrice).toFixed(2)}
+                    </span>
+                  </div>
 
                   {!iHaveAccepted ? (
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleDecline(match.id)}
                         disabled={!!acting[match.id]}
-                        className="flex-1 flex items-center justify-center gap-2 border-2 border-gray-200 text-gray-500 rounded-xl py-3 text-sm font-semibold hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50">
-                        <XCircle size={16} />
-                        {acting[match.id] === 'declining' ? 'Declining...' : 'Decline'}
+                        className="btn-secondary flex-1 disabled:opacity-50">
+                        <XCircle size={15} />
+                        {acting[match.id] === 'declining' ? 'Declining' : 'Decline'}
                       </button>
                       <button
                         onClick={() => handleAccept(match.id)}
                         disabled={!!acting[match.id]}
-                        className={`flex-[2] flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all ${
-                          otherHasAcceptedFull
-                            ? 'bg-emerald-500 text-white hover:bg-emerald-600 animate-pulse'
-                            : 'btn-primary'
-                        }`}>
-                        <CheckCircle size={16} />
+                        className="btn-primary flex-[2] disabled:opacity-50">
+                        <CheckCircle size={15} />
                         {acting[match.id] === 'accepting'
-                          ? 'Accepting...'
+                          ? 'Accepting'
                           : otherHasAcceptedFull
-                            ? '✅ Confirm & Start Chat'
-                            : 'Accept Match'
+                            ? 'Confirm & start chat'
+                            : 'Accept match'
                         }
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 bg-emerald-50 rounded-xl p-3.5 border border-emerald-100">
-                      <CheckCircle size={18} className="text-emerald-500 flex-shrink-0" />
-                      <p className="text-sm text-emerald-700 font-semibold">
-                        You accepted — waiting for {iAmTraveler ? 'shipper' : 'traveler'} to confirm
+                    <div className="flex items-center gap-2 bg-success-tint rounded-md px-3 py-2.5">
+                      <CheckCircle size={16} className="text-success flex-shrink-0" />
+                      <p className="text-body-s text-success font-medium">
+                        Waiting for {iAmTraveler ? 'sender' : 'traveller'} to confirm
                       </p>
                     </div>
                   )}
@@ -483,24 +469,24 @@ const Matches = ({ session, onNavigate }) => {
 
       {/* Profile Modal */}
       {viewingProfile && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl animate-slide-up">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-3xl">
-              <h3 className="font-bold text-gray-900">User Profile</h3>
+        <div className="fixed inset-0 bg-[var(--scrim)] z-backdrop flex items-end md:items-center justify-center p-4">
+          <div className="bg-surface-raised rounded-xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-elev-3 animate-slide-up">
+            <div className="sticky top-0 bg-surface-raised border-b border-line px-5 py-4 flex items-center justify-between rounded-t-xl">
+              <h3 className="font-display font-semibold text-title-m text-ink-900">User profile</h3>
               <button onClick={() => setViewingProfile(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-                <X size={18} className="text-gray-500" />
+                className="w-11 h-11 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
+                <X size={18} className="text-ink-500" />
               </button>
             </div>
 
             {profileLoading ? (
               <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
               <div className="p-5">
                 <div className="flex items-center gap-4 mb-5">
-                  <div className="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center text-xl font-bold text-violet-600 overflow-hidden flex-shrink-0">
+                  <div className="w-16 h-16 rounded-avatar bg-ink-900 flex items-center justify-center text-title-m font-mono font-semibold text-paper-100 overflow-hidden flex-shrink-0">
                     {viewingProfile?.avatar_url ? (
                       <img
                         src={supabase.storage.from('avatars').getPublicUrl(viewingProfile.avatar_url).data?.publicUrl}
@@ -511,37 +497,20 @@ const Matches = ({ session, onNavigate }) => {
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-lg font-bold text-gray-900">
+                      <h2 className="font-display font-bold text-title-m text-ink-900">
                         {viewingProfile?.full_name || 'User'}
                       </h2>
-                      {viewingProfile?.verified && (
-                        <span className="badge badge-blue"><Shield size={10} /> Verified</span>
-                      )}
+                      <VerificationBadge verified={viewingProfile?.verified} />
                     </div>
-                    {viewingProfile?.rating > 0 ? (
-                      <div className="flex items-center gap-1 mt-1">
-                        {[1,2,3,4,5].map(s => (
-                          <Star key={s} size={14}
-                            className={s <= Math.round(viewingProfile.rating)
-                              ? 'text-amber-400 fill-amber-400'
-                              : 'text-gray-200'} />
-                        ))}
-                        <span className="text-sm font-bold text-gray-700 ml-1">
-                          {viewingProfile.rating.toFixed(1)}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          ({viewingProfile.total_reviews} reviews)
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-1">No reviews yet</p>
-                    )}
+                    <div className="mt-1">
+                      <RatingDisplay profile={viewingProfile} />
+                    </div>
                   </div>
                 </div>
 
                 {viewingProfile?.bio && (
-                  <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
-                    <p className="text-sm text-gray-600 italic leading-relaxed">
+                  <div className="bg-surface-sunken rounded-md p-4 mb-4 border border-line">
+                    <p className="text-body-m text-content-muted italic leading-relaxed">
                       "{viewingProfile.bio}"
                     </p>
                   </div>
@@ -549,35 +518,34 @@ const Matches = ({ session, onNavigate }) => {
 
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
-                    { label: 'Deals Done', value: viewingProfile?.totalDeals || 0, color: 'bg-violet-50 text-violet-700' },
-                    { label: 'Flights', value: viewingProfile?.totalFlights || 0, color: 'bg-blue-50 text-blue-700' },
-                    { label: 'Response', value: `${viewingProfile?.response_rate || 100}%`, color: 'bg-emerald-50 text-emerald-700' },
+                    { label: 'Deals done', value: viewingProfile?.totalDeals || 0 },
+                    { label: 'Flights', value: viewingProfile?.totalFlights || 0 },
+                    { label: 'Response', value: `${viewingProfile?.response_rate || 100}%` },
                   ].map((stat, i) => (
-                    <div key={i} className={`${stat.color} rounded-xl p-3 text-center`}>
-                      <p className="text-xl font-bold">{stat.value}</p>
-                      <p className="text-xs font-medium mt-0.5 opacity-70">{stat.label}</p>
+                    <div key={i} className="card p-3 text-center">
+                      <p className="font-mono text-title-m font-bold text-ink-900">{stat.value}</p>
+                      <p className="text-label text-content-muted mt-0.5">{stat.label}</p>
                     </div>
                   ))}
                 </div>
 
                 <div className="space-y-2.5 mb-5">
                   {viewingProfile?.nationality && (
-                    <div className="flex items-center gap-2.5 text-sm text-gray-600">
-                      <Globe size={15} className="text-violet-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2.5 text-body-m text-content-muted">
+                      <Globe size={15} className="text-ink-400 flex-shrink-0" />
                       <span>{viewingProfile.nationality}</span>
                     </div>
                   )}
                   {viewingProfile?.languages?.length > 0 && (
-                    <div className="flex items-center gap-2.5 text-sm text-gray-600">
-                      <Award size={15} className="text-violet-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2.5 text-body-m text-content-muted">
+                      <Award size={15} className="text-ink-400 flex-shrink-0" />
                       <span>{viewingProfile.languages.join(', ')}</span>
                     </div>
                   )}
                 </div>
 
-                <button onClick={() => setViewingProfile(null)}
-                  className="w-full btn-primary py-3 rounded-xl">
-                  Close Profile
+                <button onClick={() => setViewingProfile(null)} className="btn-primary w-full py-3">
+                  Close profile
                 </button>
               </div>
             )}

@@ -4,8 +4,8 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { supabase } from '../supabaseClient';
 import {
   WalletCards, DollarSign, ArrowDownCircle, ArrowUpCircle,
-  CreditCard, CheckCircle, Clock, Shield, AlertTriangle,
-  X, ChevronRight, Building, Lock
+  CreditCard, CheckCircle, Clock, Lock, AlertTriangle,
+  X, ChevronRight, Building, Plus
 } from 'lucide-react';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
@@ -14,12 +14,12 @@ const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
       fontSize: '14px',
-      fontFamily: 'Inter, sans-serif',
-      color: '#1f2937',
-      '::placeholder': { color: '#9ca3af' },
-      iconColor: '#7c3aed',
+      fontFamily: '"IBM Plex Sans", sans-serif',
+      color: '#14181F',
+      '::placeholder': { color: '#7F8794' },
+      iconColor: '#14181F',
     },
-    invalid: { color: '#ef4444', iconColor: '#ef4444' },
+    invalid: { color: '#B0301C', iconColor: '#B0301C' },
   },
   hidePostalCode: true,
 };
@@ -44,7 +44,7 @@ const callStripe = async (action, data) => {
 
 // ── TOP UP FORM ──
 // User selects saved card (enters CVC) OR enters a completely new card
-// Stripe CardElement handles all card input — number never touches Fetchr servers
+// Stripe CardElement handles all card input — number never touches fetchr servers
 const TopUpForm = ({ profile, onSuccess, onClose }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -147,12 +147,12 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 
   if (step === 'processing') return (
     <div className="p-8 text-center">
-      <div className="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-16 h-16 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+        <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
       </div>
-      <p className="font-bold text-gray-900 mb-1">Processing Payment</p>
-      <p className="text-sm text-gray-500">Charging your card via Stripe...</p>
-      <p className="text-xs text-gray-400 mt-2">
+      <p className="font-display font-bold text-ink-900 mb-1">Processing payment</p>
+      <p className="text-body-s text-content-muted">Charging your card via Stripe</p>
+      <p className="text-micro text-content-subtle mt-2">
         If your bank requires it, a verification screen will appear automatically.
       </p>
     </div>
@@ -160,11 +160,11 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 
   if (step === 'success') return (
     <div className="p-8 text-center">
-      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={32} className="text-emerald-500" />
+      <div className="w-16 h-16 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={32} className="text-success" />
       </div>
-      <p className="font-bold text-gray-900 mb-1">Top Up Successful!</p>
-      <p className="text-sm text-gray-500">
+      <p className="font-display font-bold text-ink-900 mb-1">Wallet topped up.</p>
+      <p className="text-body-s text-content-muted">
         ${parseFloat(amount).toFixed(2)} added to your wallet.
       </p>
     </div>
@@ -172,17 +172,17 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 
   return (
     <div className="p-5 space-y-4">
-      <h3 className="font-bold text-gray-900 flex items-center gap-2">
-        <ArrowDownCircle size={18} className="text-violet-600" /> Top Up Wallet
+      <h3 className="font-display font-bold text-title-s text-ink-900 flex items-center gap-2">
+        <ArrowDownCircle size={18} className="text-ink-600" /> Top up wallet
       </h3>
 
       {/* Amount */}
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+        <label className="block text-label text-content-muted mb-1.5 uppercase">
           Amount (USD)
         </label>
         <div className="relative">
-          <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+          <DollarSign size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
           <input
             type="number"
             placeholder="0.00"
@@ -200,10 +200,10 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         <div className="flex gap-2 mt-2">
           {[25, 50, 100, 250].map(a => (
             <button key={a} type="button" onClick={() => setAmount(a.toString())}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+              className={`flex-1 py-2 rounded-md text-label font-bold border transition-all ${
                 amount === a.toString()
-                  ? 'bg-violet-600 text-white border-violet-600'
-                  : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-violet-300'
+                  ? 'bg-brand text-white border-brand'
+                  : 'bg-surface-sunken text-content border-line-strong hover:border-paper-600'
               }`}>
               ${a}
             </button>
@@ -214,21 +214,21 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
       {/* Payment method selector — only shown when a saved card exists */}
       {hasSavedCard && (
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Payment Method
+          <label className="block text-label text-content-muted uppercase">
+            Payment method
           </label>
           {[
             {
               val: false,
               label: savedCardLabel,
               sub: 'Stripe handles 3DS authentication automatically',
-              icon: '💳',
+              Icon: CreditCard,
             },
             {
               val: true,
               label: 'Use a different card',
               sub: 'Enter new card details',
-              icon: '➕',
+              Icon: Plus,
             },
           ].map(opt => (
             <button key={String(opt.val)} type="button"
@@ -237,18 +237,18 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
                 setError('');
                 // Don't reset cardReady — CardElement stays mounted
               }}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${
                 useNewCard === opt.val
-                  ? 'border-violet-400 bg-violet-50'
-                  : 'border-gray-200 hover:border-violet-200'
+                  ? 'border-ink-900 bg-surface-sunken'
+                  : 'border-line hover:border-line-strong'
               }`}>
-              <span className="text-xl">{opt.icon}</span>
+              <opt.Icon size={18} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">{opt.label}</p>
-                <p className="text-xs text-gray-400">{opt.sub}</p>
+                <p className="text-body-m font-semibold text-ink-900">{opt.label}</p>
+                <p className="text-micro text-content-subtle">{opt.sub}</p>
               </div>
               {useNewCard === opt.val && (
-                <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />
+                <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />
               )}
             </button>
           ))}
@@ -259,11 +259,11 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
       {/* Shown when: no saved card, OR user chose "use a different card" */}
       {/* Hidden (but mounted) otherwise — this prevents the "element not ready" error */}
       <div style={{ display: showNewCardForm ? 'block' : 'none' }}>
-        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-          Card Details
+        <label className="block text-label text-content-muted mb-1.5 uppercase">
+          Card details
         </label>
         <div
-          className="border-2 border-gray-200 rounded-xl px-4 py-3.5 focus-within:border-violet-400 transition-all bg-white"
+          className="border border-line-strong rounded-md px-4 py-3.5 focus-within:border-signal-500 transition-all bg-surface"
           data-lpignore="true"
           data-form-type="other"
         >
@@ -277,12 +277,12 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
             onReady={() => setCardReady(true)}
           />
         </div>
-        <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-          <Lock size={10} /> Card details encrypted by Stripe — never stored on Fetchr servers
+        <p className="text-micro text-content-subtle mt-1.5 flex items-center gap-1">
+          <Lock size={10} /> Card details encrypted by Stripe — never stored on fetchr servers
         </p>
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mt-2">
-          <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-          <p className="text-xs text-amber-600 mt-0.5">
+        <div className="bg-info-50 border border-line rounded-md p-3 mt-2">
+          <p className="text-label text-info-500 font-bold">Test mode</p>
+          <p className="text-body-s text-info-500 mt-0.5">
             Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC<br />
             3DS auth: <strong>4000 0025 0000 3155</strong> · Any future date · Any 3-digit CVC
           </p>
@@ -291,23 +291,23 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 
       {/* Info shown when saved card is selected */}
       {hasSavedCard && !useNewCard && (
-        <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex items-start gap-2">
-          <Shield size={14} className="text-violet-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-violet-700">
-            Click Pay to charge your saved card. If your bank requires 3DS verification, a secure popup will appear automatically.
+        <div className="bg-info-50 border border-line rounded-md p-3 flex items-start gap-2">
+          <Lock size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
+          <p className="text-body-s text-info-500">
+            Tap Pay to charge your saved card. If your bank requires 3DS verification, a secure popup will appear automatically.
           </p>
         </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-red-600 text-xs">{error}</p>
+        <div className="bg-danger-tint border border-line rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+          <p className="text-danger text-body-s">{error}</p>
         </div>
       )}
 
       <div className="flex gap-2">
-        <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
+        <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
         <button
           onClick={handlePay}
           disabled={
@@ -317,16 +317,16 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
             parseFloat(amount) <= 0 ||
             (showNewCardForm && !cardReady)
           }
-          className="flex-[2] btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
-          <Shield size={15} />
+          className="btn-signal flex-[2] disabled:opacity-50">
+          <Lock size={15} />
           {loading
-            ? 'Processing...'
+            ? 'Processing'
             : `Pay $${parseFloat(amount) > 0 ? parseFloat(amount).toFixed(2) : '0.00'}`
           }
         </button>
       </div>
 
-      <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
+      <p className="text-micro text-content-subtle text-center flex items-center justify-center gap-1">
         <Lock size={10} /> Secured by Stripe · PCI DSS · Visa/Mastercard 3DS
       </p>
     </div>
@@ -405,21 +405,21 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
   if (step === 'processing') return (
     <div className="p-8 text-center">
-      <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-16 h-16 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+        <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
       </div>
-      <p className="font-bold text-gray-900 mb-1">Processing Withdrawal</p>
-      <p className="text-sm text-gray-500">Verifying balance and submitting payout via Stripe...</p>
+      <p className="font-display font-bold text-ink-900 mb-1">Processing withdrawal</p>
+      <p className="text-body-s text-content-muted">Verifying balance and submitting payout via Stripe</p>
     </div>
   );
 
   if (step === 'success') return (
     <div className="p-8 text-center">
-      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={32} className="text-emerald-500" />
+      <div className="w-16 h-16 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={32} className="text-success" />
       </div>
-      <p className="font-bold text-gray-900 mb-1">Withdrawal Initiated!</p>
-      <p className="text-sm text-gray-500">
+      <p className="font-display font-bold text-ink-900 mb-1">Withdrawal initiated.</p>
+      <p className="text-body-s text-content-muted">
         ${net.toFixed(2)} will arrive in your bank account within 3-5 business days.
       </p>
     </div>
@@ -427,20 +427,20 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
   return (
     <div className="p-5 space-y-4">
-      <h3 className="font-bold text-gray-900 flex items-center gap-2">
-        <ArrowUpCircle size={18} className="text-gray-700" /> Withdraw to Bank Account
+      <h3 className="font-display font-bold text-title-s text-ink-900 flex items-center gap-2">
+        <ArrowUpCircle size={18} className="text-ink-600" /> Withdraw to bank account
       </h3>
-      <p className="text-xs text-gray-400">
+      <p className="text-micro text-content-subtle">
         {WITHDRAWAL_FEE_PCT}% fee · {forceWithdrawAll ? 'No minimum (account closure)' : 'Min $10'} · 3-5 business days
       </p>
 
       {/* Amount */}
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+        <label className="block text-label text-content-muted mb-1.5 uppercase">
           Amount · Available: ${(profile?.wallet_balance || 0).toFixed(2)}
         </label>
         <div className="relative">
-          <DollarSign size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+          <DollarSign size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
           <input type="number" placeholder="0.00" min="0.01"
             max={profile?.wallet_balance || 0} step="0.01" value={amount}
             onChange={e => { const v = e.target.value; if (v === '' || parseFloat(v) >= 0) setAmount(v); }}
@@ -449,19 +449,19 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
         {(profile?.wallet_balance || 0) > 0 && (
           <button type="button"
             onClick={() => setAmount((profile.wallet_balance || 0).toFixed(2))}
-            className="mt-1.5 text-xs text-violet-600 font-semibold hover:text-violet-700">
+            className="mt-1.5 text-body-s text-ink-900 font-semibold hover:underline">
             Withdraw full balance (${(profile?.wallet_balance || 0).toFixed(2)})
           </button>
         )}
         {amt > 0 && (
-          <div className="mt-2 bg-gray-50 rounded-xl p-3 text-xs space-y-1.5 border border-gray-100">
-            <div className="flex justify-between text-gray-500">
+          <div className="mt-2 bg-surface-sunken rounded-md p-3 text-body-s font-mono space-y-1.5 border border-line">
+            <div className="flex justify-between text-content-muted">
               <span>Withdrawal amount</span><span>${amt.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-red-400">
-              <span>Fee ({WITHDRAWAL_FEE_PCT}%)</span><span>-${fee.toFixed(2)}</span>
+            <div className="flex justify-between text-danger">
+              <span>Fee ({WITHDRAWAL_FEE_PCT}%)</span><span>−${fee.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between font-bold text-gray-800 border-t border-gray-200 pt-1.5">
+            <div className="flex justify-between font-bold text-ink-900 border-t border-line pt-1.5">
               <span>You receive</span><span>${net.toFixed(2)}</span>
             </div>
           </div>
@@ -471,24 +471,24 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       {/* Bank account selector */}
       {hasSavedBank && (
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Bank Account
+          <label className="block text-label text-content-muted uppercase">
+            Bank account
           </label>
           {[
-            { val: true, label: `Bank ****${profile.bank_account_last4}`, sub: profile.bank_account_holder || 'Saved bank account', icon: '🏦' },
-            { val: false, label: 'Use a different account', sub: 'Enter bank details (one-time)', icon: '➕' },
+            { val: true, label: `Bank ****${profile.bank_account_last4}`, sub: profile.bank_account_holder || 'Saved bank account', Icon: Building },
+            { val: false, label: 'Use a different account', sub: 'Enter bank details (one-time)', Icon: Plus },
           ].map(opt => (
             <button key={String(opt.val)} type="button"
               onClick={() => setUseSavedBank(opt.val)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                useSavedBank === opt.val ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'
+              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${
+                useSavedBank === opt.val ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'
               }`}>
-              <span className="text-xl">{opt.icon}</span>
+              <opt.Icon size={18} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">{opt.label}</p>
-                <p className="text-xs text-gray-400">{opt.sub}</p>
+                <p className="text-body-m font-semibold text-ink-900">{opt.label}</p>
+                <p className="text-micro text-content-subtle">{opt.sub}</p>
               </div>
-              {useSavedBank === opt.val && <CheckCircle size={16} className="text-violet-600 flex-shrink-0" />}
+              {useSavedBank === opt.val && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
             </button>
           ))}
         </div>
@@ -497,23 +497,23 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       {/* New bank details */}
       {(!hasSavedBank || !useSavedBank) && (
         <div className="space-y-3">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-            <p className="text-xs text-blue-700 font-bold mb-1">Bank Account Details</p>
-            <p className="text-xs text-blue-600">
+          <div className="bg-info-50 border border-line rounded-md p-3">
+            <p className="text-label text-info-500 font-bold mb-1">Bank account details</p>
+            <p className="text-body-s text-info-500">
               SEPA/international: use IBAN. US accounts: use account number + routing number.
               Enter country as a 2-letter ISO code (US, GB, AE, DE, AU, SG, etc.)
             </p>
           </div>
 
           {[
-            { label: 'Account Holder Name *', key: 'accountHolderName', placeholder: 'Full name as on bank account' },
-            { label: 'Country Code *', key: 'country', placeholder: 'e.g. US, GB, AE, DE', maxLen: 2 },
-            { label: 'Account Number / IBAN *', key: 'accountNumber', placeholder: 'IBAN or account number' },
-            { label: 'Routing Number (US only)', key: 'routingNumber', placeholder: '9-digit routing number' },
+            { label: 'Account holder name (required)', key: 'accountHolderName', placeholder: 'Full name as on bank account' },
+            { label: 'Country code (required)', key: 'country', placeholder: 'e.g. US, GB, AE', maxLen: 2 },
+            { label: 'Account number / IBAN (required)', key: 'accountNumber', placeholder: 'IBAN or account number' },
+            { label: 'Routing number (US only)', key: 'routingNumber', placeholder: '9-digit routing number' },
             { label: 'Currency', key: 'currency', placeholder: 'usd, gbp, eur, aed...' },
           ].map(f => (
             <div key={f.key}>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+              <label className="block text-label text-content-muted mb-1.5 uppercase">
                 {f.label}
               </label>
               <input type="text" placeholder={f.placeholder} maxLength={f.maxLen}
@@ -523,9 +523,9 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
             </div>
           ))}
 
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-            <p className="text-xs text-amber-700 font-bold">🧪 Test Mode</p>
-            <p className="text-xs text-amber-600 mt-0.5">
+          <div className="bg-info-50 border border-line rounded-md p-3">
+            <p className="text-label text-info-500 font-bold">Test mode</p>
+            <p className="text-body-s text-info-500 mt-0.5">
               US: Account <strong>000123456789</strong> · Routing <strong>110000000</strong> · Country <strong>US</strong><br />
               UK: IBAN <strong>GB29NWBK60161331926819</strong> · Country <strong>GB</strong>
             </p>
@@ -534,24 +534,32 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-red-600 text-xs">{error}</p>
+        <div className="bg-danger-tint border border-line rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+          <p className="text-danger text-body-s">{error}</p>
         </div>
       )}
 
       <div className="flex gap-2">
-        <button onClick={onClose} className="flex-1 btn-secondary py-3">Cancel</button>
+        <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
         <button onClick={handleWithdraw} disabled={loading}
-          className="flex-[2] bg-gray-900 text-white rounded-xl py-3 text-sm font-bold hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50">
+          className="btn-primary flex-[2] disabled:opacity-50">
           {loading
-            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
+            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>
             : <><ArrowUpCircle size={15} /> Withdraw ${net > 0 ? net.toFixed(2) : '0.00'}</>
           }
         </button>
       </div>
     </div>
   );
+};
+
+const TXN_ICON = {
+  topup: ArrowDownCircle,
+  withdrawal: Building,
+  escrow_release: CheckCircle,
+  escrow_hold: Lock,
+  fetchr_fee: DollarSign,
 };
 
 // ── MAIN WALLET SCREEN ──
@@ -584,14 +592,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const getTxnIcon = (txn) => {
-    if (txn.type === 'topup') return '💳';
-    if (txn.type === 'withdrawal') return '🏦';
-    if (txn.type === 'escrow_release') return '✈️';
-    if (txn.type === 'escrow_hold') return '🔒';
-    if (txn.type === 'fetchr_fee') return '💼';
-    return '💸';
-  };
+  const getTxnIcon = (txn) => TXN_ICON[txn.type] || DollarSign;
 
   const isCredit = (txn) => ['topup', 'credit', 'escrow_release'].includes(txn.type);
   const totalCredits = transactions.filter(t => isCredit(t) && t.status === 'completed').reduce((s, t) => s + (t.amount || 0), 0);
@@ -599,7 +600,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
@@ -607,51 +608,47 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
     <Elements stripe={stripePromise}>
       <div className="max-w-2xl mx-auto animate-fade-in">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Wallet</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Manage your Fetchr balance</p>
+          <h1 className="font-display font-bold text-title-l text-ink-900">Wallet</h1>
+          <p className="text-body-s text-content-muted mt-0.5">Manage your fetchr balance</p>
         </div>
 
         {success && (
-          <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
+          <div className="bg-success-tint text-success text-body-s px-4 py-3 rounded-md mb-4 flex items-center gap-2">
             <CheckCircle size={16} /> {success}
           </div>
         )}
 
-        {/* Balance card — clean, no payment method display */}
-        <div className="relative bg-gradient-to-br from-violet-600 via-purple-700 to-indigo-700 rounded-2xl p-6 mb-4 text-white overflow-hidden">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-20 translate-x-20" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-16 -translate-x-16" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-violet-200 text-sm">Available Balance</p>
-                <p className="text-4xl font-bold mt-1 tracking-tight">
-                  ${(profile?.wallet_balance || 0).toFixed(2)}
-                </p>
-              </div>
-              <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center">
-                <WalletCards size={26} className="text-white" />
-              </div>
+        {/* Balance card */}
+        <div className="bg-surface-inverse rounded-lg p-6 mb-4 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-ink-300 text-body-s">Available balance</p>
+              <p className="font-mono font-bold text-display-l mt-1 text-white">
+                ${(profile?.wallet_balance || 0).toFixed(2)}
+              </p>
             </div>
-            <p className="text-xs text-violet-300 flex items-center gap-1">
-              <Shield size={11} /> Secured by Stripe · Funds held in segregated account
-            </p>
+            <div className="w-14 h-14 bg-ink-800 rounded-lg flex items-center justify-center flex-shrink-0">
+              <WalletCards size={26} className="text-white" />
+            </div>
           </div>
+          <p className="text-micro text-ink-300 flex items-center gap-1">
+            <Lock size={11} /> Secured by Stripe · funds held in a segregated account
+          </p>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           {[
-            { label: 'Total Received', value: `$${totalCredits.toFixed(2)}`, icon: ArrowDownCircle, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-            { label: 'Total Withdrawn', value: `$${totalDebits.toFixed(2)}`, icon: ArrowUpCircle, color: 'text-red-400', bg: 'bg-red-50' },
+            { label: 'Total received', value: `$${totalCredits.toFixed(2)}`, icon: ArrowDownCircle, text: 'text-success', bg: 'bg-success-tint' },
+            { label: 'Total withdrawn', value: `$${totalDebits.toFixed(2)}`, icon: ArrowUpCircle, text: 'text-danger', bg: 'bg-danger-tint' },
           ].map((s, i) => (
-            <div key={i} className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center`}>
-                <s.icon size={18} className={s.color} />
+            <div key={i} className="card p-4 flex items-center gap-3">
+              <div className={`w-10 h-10 ${s.bg} rounded-md flex items-center justify-center flex-shrink-0`}>
+                <s.icon size={18} className={s.text} />
               </div>
               <div>
-                <p className="text-xs text-gray-400">{s.label}</p>
-                <p className="text-lg font-bold text-gray-900">{s.value}</p>
+                <p className="text-micro text-content-subtle">{s.label}</p>
+                <p className="font-mono font-bold text-title-s text-ink-900">{s.value}</p>
               </div>
             </div>
           ))}
@@ -661,28 +658,28 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
         <div className="grid grid-cols-2 gap-3 mb-4">
           <button
             onClick={() => setActivePanel(activePanel === 'topup' ? null : 'topup')}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${
-              activePanel === 'topup' ? 'bg-violet-100 text-violet-700' : 'btn-primary'
-            }`}>
-            <ArrowDownCircle size={16} /> Top Up
+            className={activePanel === 'topup'
+              ? 'flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-surface-sunken text-ink-900 border border-line-strong'
+              : 'btn-primary'}>
+            <ArrowDownCircle size={16} /> Top up
           </button>
           <button
             onClick={() => setActivePanel(activePanel === 'withdraw' ? null : 'withdraw')}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${
-              activePanel === 'withdraw' ? 'bg-gray-200 text-gray-700' : 'btn-secondary'
-            }`}>
+            className={activePanel === 'withdraw'
+              ? 'flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-md font-display font-semibold text-body-m bg-surface-sunken text-ink-900 border border-line-strong'
+              : 'btn-secondary'}>
             <ArrowUpCircle size={16} /> Withdraw
           </button>
         </div>
 
         {/* Top Up panel */}
         {activePanel === 'topup' && (
-          <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 mb-4 overflow-hidden">
+          <div className="ticket mb-4">
             <TopUpForm
               profile={profile}
               onSuccess={(amt) => {
                 setActivePanel(null);
-                setSuccess(`$${amt.toFixed(2)} successfully added to your wallet!`);
+                setSuccess(`$${amt.toFixed(2)} added to your wallet.`);
                 setTimeout(() => setSuccess(''), 5000);
                 fetchData();
               }}
@@ -693,7 +690,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
 
         {/* Withdraw panel */}
         {activePanel === 'withdraw' && (
-          <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 mb-4 overflow-hidden">
+          <div className="ticket mb-4">
             <WithdrawForm
               profile={profile}
               forceWithdrawAll={forceWithdrawAll}
@@ -709,98 +706,101 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
         )}
 
         {/* Transaction history */}
-        <div className="bg-white rounded-2xl shadow-card border border-gray-100/80 p-5">
-          <h3 className="font-bold text-gray-900 mb-4">Transaction History</h3>
+        <div className="card p-5">
+          <h3 className="font-display font-bold text-title-s text-ink-900 mb-4">Transaction history</h3>
           {transactions.length === 0 ? (
-            <div className="text-center py-10 bg-gray-50 rounded-xl">
-              <WalletCards size={24} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-gray-400 text-sm">No transactions yet</p>
+            <div className="text-center py-10 bg-surface-sunken rounded-md">
+              <WalletCards size={24} className="text-ink-300 mx-auto mb-2" />
+              <p className="text-body-s text-content-subtle">No transactions yet</p>
             </div>
           ) : (
             <div className="space-y-1">
-              {transactions.map((txn, i) => (
-                <button key={i} onClick={() => setSelectedTxn(txn)}
-                  className="w-full flex items-center justify-between py-3 px-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded-xl transition text-left group">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-                      isCredit(txn) ? 'bg-emerald-50' : 'bg-red-50'
-                    }`}>
-                      {getTxnIcon(txn)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 truncate max-w-[180px]">
-                        {txn.description}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-xs text-gray-400">
-                          {new Date(txn.created_at).toLocaleDateString('en-GB', {
-                            day: '2-digit', month: 'short', year: 'numeric'
-                          })}
+              {transactions.map((txn, i) => {
+                const Icon = getTxnIcon(txn);
+                return (
+                  <button key={i} onClick={() => setSelectedTxn(txn)}
+                    className="w-full flex items-center justify-between py-3 px-2 border-b border-line last:border-0 hover:bg-surface-sunken rounded-md transition text-left group">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 ${
+                        isCredit(txn) ? 'bg-success-tint' : 'bg-danger-tint'
+                      }`}>
+                        <Icon size={17} className={isCredit(txn) ? 'text-success' : 'text-danger'} />
+                      </div>
+                      <div>
+                        <p className="text-body-m font-semibold text-ink-900 truncate max-w-[180px]">
+                          {txn.description}
                         </p>
-                        <span className={`badge text-xs ${txn.status === 'pending' ? 'badge-yellow' : 'badge-green'}`}>
-                          {txn.status === 'pending' ? <><Clock size={9} /> Processing</> : <><CheckCircle size={9} /> Done</>}
-                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-micro text-content-subtle">
+                            {new Date(txn.created_at).toLocaleDateString('en-GB', {
+                              day: '2-digit', month: 'short', year: 'numeric'
+                            })}
+                          </p>
+                          <span className={txn.status === 'pending' ? 'badge-yellow' : 'badge-green'}>
+                            {txn.status === 'pending' ? <><Clock size={9} /> Processing</> : <><CheckCircle size={9} /> Done</>}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <p className={`text-sm font-bold ${isCredit(txn) ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {isCredit(txn) ? '+' : '-'}${(txn.amount || 0).toFixed(2)}
-                    </p>
-                    <ChevronRight size={14} className="text-gray-300 group-hover:text-gray-500 transition" />
-                  </div>
-                </button>
-              ))}
+                    <div className="flex items-center gap-2">
+                      <p className={`font-mono text-body-m font-bold ${isCredit(txn) ? 'text-success' : 'text-danger'}`}>
+                        {isCredit(txn) ? '+' : '−'}${(txn.amount || 0).toFixed(2)}
+                      </p>
+                      <ChevronRight size={14} className="text-ink-300 group-hover:text-ink-500 transition" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* Transaction detail modal */}
         {selectedTxn && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-slide-up">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                <h3 className="font-bold text-gray-900">Transaction Detail</h3>
+          <div className="fixed inset-0 z-modal flex items-end md:items-center justify-center p-4" style={{ backgroundColor: 'var(--scrim)' }}>
+            <div className="bg-surface-raised rounded-xl w-full max-w-md shadow-elev-3 animate-slide-up">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+                <h3 className="font-display font-bold text-title-s text-ink-900">Transaction detail</h3>
                 <button onClick={() => setSelectedTxn(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-                  <X size={18} className="text-gray-500" />
+                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
+                  <X size={18} className="text-ink-500" />
                 </button>
               </div>
               <div className="p-6 space-y-4">
                 <div className="text-center py-4">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3 ${
-                    isCredit(selectedTxn) ? 'bg-emerald-50' : 'bg-red-50'
+                  <div className={`w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-3 ${
+                    isCredit(selectedTxn) ? 'bg-success-tint' : 'bg-danger-tint'
                   }`}>
-                    {getTxnIcon(selectedTxn)}
+                    {(() => { const Icon = getTxnIcon(selectedTxn); return <Icon size={28} className={isCredit(selectedTxn) ? 'text-success' : 'text-danger'} />; })()}
                   </div>
-                  <p className={`text-3xl font-bold ${isCredit(selectedTxn) ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {isCredit(selectedTxn) ? '+' : '-'}${(selectedTxn.amount || 0).toFixed(2)}
+                  <p className={`font-mono font-bold text-display-m ${isCredit(selectedTxn) ? 'text-success' : 'text-danger'}`}>
+                    {isCredit(selectedTxn) ? '+' : '−'}${(selectedTxn.amount || 0).toFixed(2)}
                   </p>
-                  <p className="text-gray-500 text-sm mt-1">{selectedTxn.description}</p>
+                  <p className="text-content-muted text-body-s mt-1">{selectedTxn.description}</p>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4 space-y-2.5 text-sm border border-gray-100">
+                <div className="bg-surface-sunken rounded-md p-4 space-y-2.5 text-body-s border border-line">
                   {[
                     { label: 'Date', value: new Date(selectedTxn.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) },
                     { label: 'Time', value: new Date(selectedTxn.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
-                    { label: 'Type', value: selectedTxn.type === 'topup' ? 'Wallet Top Up' : selectedTxn.type === 'withdrawal' ? 'Bank Withdrawal' : selectedTxn.type === 'escrow_release' ? 'Delivery Payment' : selectedTxn.type === 'escrow_hold' ? 'Escrow Payment' : selectedTxn.type === 'fetchr_fee' ? 'Fetchr Fee' : selectedTxn.type },
-                    { label: 'Status', value: selectedTxn.status === 'pending' ? '⏳ Processing' : '✅ Completed', color: selectedTxn.status === 'pending' ? 'text-amber-600' : 'text-emerald-600' },
+                    { label: 'Type', value: selectedTxn.type === 'topup' ? 'Wallet top up' : selectedTxn.type === 'withdrawal' ? 'Bank withdrawal' : selectedTxn.type === 'escrow_release' ? 'Delivery payment' : selectedTxn.type === 'escrow_hold' ? 'Escrow payment' : selectedTxn.type === 'fetchr_fee' ? 'fetchr fee' : selectedTxn.type },
+                    { label: 'Status', value: selectedTxn.status === 'pending' ? 'Processing' : 'Completed', color: selectedTxn.status === 'pending' ? 'text-warning' : 'text-success' },
                   ].map((row, i) => (
                     <div key={i} className="flex justify-between">
-                      <span className="text-gray-400">{row.label}</span>
-                      <span className={`font-semibold ${row.color || 'text-gray-800'}`}>{row.value}</span>
+                      <span className="text-content-subtle">{row.label}</span>
+                      <span className={`font-semibold ${row.color || 'text-ink-900'}`}>{row.value}</span>
                     </div>
                   ))}
                   {selectedTxn.type === 'withdrawal' && selectedTxn.metadata?.fee != null && (
-                    <div className="border-t border-gray-200 pt-2 space-y-1">
+                    <div className="border-t border-line pt-2 space-y-1 font-mono">
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Gross amount</span>
-                        <span className="font-semibold">${selectedTxn.amount.toFixed(2)}</span>
+                        <span className="text-content-subtle">Gross amount</span>
+                        <span className="font-semibold text-ink-900">${selectedTxn.amount.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Fee (2.5%)</span>
-                        <span className="font-semibold text-red-400">-${selectedTxn.metadata.fee.toFixed(2)}</span>
+                        <span className="text-content-subtle">Fee (2.5%)</span>
+                        <span className="font-semibold text-danger">−${selectedTxn.metadata.fee.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between font-bold text-gray-800">
+                      <div className="flex justify-between font-bold text-ink-900">
                         <span>You received</span>
                         <span>${selectedTxn.metadata.net.toFixed(2)}</span>
                       </div>
@@ -808,8 +808,8 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                   )}
                 </div>
                 {selectedTxn.match && (
-                  <div className="bg-violet-50 rounded-xl p-4 border border-violet-100 space-y-2 text-sm">
-                    <p className="text-xs font-bold text-violet-700 mb-2">Deal Details</p>
+                  <div className="bg-surface-sunken rounded-md p-4 border border-line space-y-2 text-body-s">
+                    <p className="text-label text-ink-600 mb-2">Deal details</p>
                     {[
                       { label: 'Route', value: `${selectedTxn.match.flight?.from_code} → ${selectedTxn.match.flight?.to_code}` },
                       { label: 'Item', value: selectedTxn.match.request?.item_name },
@@ -817,13 +817,13 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                       selectedTxn.match.flight?.flight_date && { label: 'Flight date', value: new Date(selectedTxn.match.flight.flight_date).toLocaleDateString('en-GB') },
                     ].filter(Boolean).map((row, i) => (
                       <div key={i} className="flex justify-between">
-                        <span className="text-gray-400">{row.label}</span>
-                        <span className="font-semibold text-gray-800">{row.value}</span>
+                        <span className="text-content-subtle">{row.label}</span>
+                        <span className="font-semibold text-ink-900">{row.value}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                <button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary py-3">Close</button>
+                <button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary">Close</button>
               </div>
             </div>
           </div>

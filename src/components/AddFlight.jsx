@@ -5,7 +5,7 @@ import {
   Plane, Search, MapPin, Calendar, DollarSign,
   CheckCircle, AlertCircle, ShoppingBag,
   Briefcase, Package, Plus, X, Weight, AlertTriangle,
-  Radar, ChevronDown, PenLine
+  Radar, ChevronDown, PenLine, Handshake
 } from 'lucide-react';
 
 const FLIGHT_SEARCH_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/flight-search';
@@ -277,11 +277,11 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+      <label className="block text-label text-content-muted mb-1.5 uppercase">
         {label}
       </label>
       <div className="relative">
-        <MapPin size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        <MapPin size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
         <input type="text" value={query}
           onChange={e => handleSearch(e.target.value)}
           onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
@@ -290,16 +290,16 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
           autoComplete="off" />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+        <div className="absolute z-tooltip w-full mt-1 bg-surface border border-line rounded-lg shadow-elev-2 overflow-hidden max-h-64 overflow-y-auto">
           {results.map(airport => (
             <button key={airport.code} type="button" onClick={() => handleSelect(airport)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
-              <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-violet-600">{airport.code}</span>
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-sunken text-left transition border-b border-line last:border-0">
+              <div className="w-16 flex-shrink-0">
+                <span className="font-mono text-code-l font-semibold text-content">{airport.code}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{airport.city}</p>
-                <p className="text-xs text-gray-400 truncate">
+                <p className="text-body-m font-semibold text-content">{airport.city}</p>
+                <p className="text-body-s text-content-muted truncate">
                   {airport.name}{airport.country ? ` · ${airport.country}` : ''}
                 </p>
               </div>
@@ -307,33 +307,33 @@ const AirportSearch = ({ label, value, onChange, placeholder }) => {
           ))}
           <button type="button"
             onClick={() => { setShowManual(true); setOpen(false); setQuery(''); }}
-            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-t border-gray-100">
-            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-bold text-gray-500">?</span>
+            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-sunken text-left border-t border-line">
+            <div className="w-10 h-10 bg-ink-100 rounded-md flex items-center justify-center flex-shrink-0">
+              <AlertCircle size={16} className="text-ink-400" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-600">Not listed</p>
-              <p className="text-xs text-gray-400">Enter manually</p>
+              <p className="text-body-m font-semibold text-content-muted">Not listed</p>
+              <p className="text-body-s text-content-subtle">Enter manually</p>
             </div>
           </button>
         </div>
       )}
       {showManual && (
-        <div className="mt-2 bg-gray-50 rounded-xl p-3 border border-gray-200 space-y-2">
-          <p className="text-xs font-semibold text-gray-600">Enter airport manually</p>
+        <div className="mt-2 bg-surface-sunken rounded-md p-3 border border-line space-y-2">
+          <p className="text-body-s font-semibold text-content-muted">Enter airport manually</p>
           <input type="text" placeholder="3-letter code (e.g. XYZ)"
             value={manualCode}
             onChange={e => setManualCode(e.target.value.toUpperCase().slice(0, 3))}
-            maxLength={3} className="input-field py-2 text-sm font-mono" />
+            maxLength={3} className="input-field py-2 text-body-s font-mono" />
           <input type="text" placeholder="City name" value={manualCity}
             onChange={e => setManualCity(e.target.value)}
-            className="input-field py-2 text-sm" />
+            className="input-field py-2 text-body-s" />
           <div className="flex gap-2">
             <button onClick={() => { setShowManual(false); setManualCode(''); setManualCity(''); }}
-              className="flex-1 btn-secondary py-2 text-xs">Cancel</button>
+              className="flex-1 btn-secondary py-2 text-body-s">Cancel</button>
             <button onClick={handleManualSave}
               disabled={!manualCode || manualCode.length < 2 || !manualCity}
-              className="flex-1 btn-primary py-2 text-xs disabled:opacity-50">Confirm</button>
+              className="flex-1 btn-primary py-2 text-body-s disabled:opacity-50">Confirm</button>
           </div>
         </div>
       )}
@@ -385,11 +385,11 @@ const AirlineSearch = ({ label, value, onChange, suggestions = [], suggestionsLa
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+      <label className="block text-label text-content-muted mb-1.5 uppercase">
         {label}
       </label>
       <div className="relative">
-        <Plane size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+        <Plane size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
         <input type="text" value={query}
           onChange={e => handleSearch(e.target.value)}
           onFocus={() => query.length > 0 && results.length > 0 && setOpen(true)}
@@ -398,25 +398,25 @@ const AirlineSearch = ({ label, value, onChange, suggestions = [], suggestionsLa
           autoComplete="off" />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+        <div className="absolute z-tooltip w-full mt-1 bg-surface border border-line rounded-lg shadow-elev-2 overflow-hidden max-h-64 overflow-y-auto">
           {results.map(name => (
             <button key={name} type="button" onClick={() => handleSelect(name)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50 text-left transition border-b border-gray-50 last:border-0">
-              <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-violet-600">{AIRLINE_CODES[name]}</span>
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-sunken text-left transition border-b border-line last:border-0">
+              <div className="w-16 flex-shrink-0">
+                <span className="font-mono text-code-m font-semibold text-content">{AIRLINE_CODES[name]}</span>
               </div>
-              <p className="text-sm font-semibold text-gray-800 flex-1 min-w-0 truncate">{name}</p>
+              <p className="text-body-m font-semibold text-content flex-1 min-w-0 truncate">{name}</p>
             </button>
           ))}
         </div>
       )}
       {!open && !value && suggestions.length > 0 && (
         <div className="mt-2">
-          <p className="text-xs text-gray-400 mb-1.5">{suggestionsLabel}</p>
+          <p className="text-body-s text-content-subtle mb-1.5">{suggestionsLabel}</p>
           <div className="flex flex-wrap gap-1.5">
             {suggestions.map(name => (
               <button key={name} type="button" onClick={() => handleSelect(name)}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-violet-50 text-violet-700 hover:bg-violet-100 transition">
+                className="text-body-s font-semibold px-2.5 py-1.5 rounded-sm bg-ink-100 text-content-muted hover:bg-ink-200 transition">
                 {name}
               </button>
             ))}
@@ -444,76 +444,72 @@ const LuggageOptionCard = ({ type, data, onChange, onRemove }) => {
   const earnings = getNetEarnings(data.available_kg, data.price_per_kg);
 
   return (
-    <div className={`rounded-2xl border-2 p-4 space-y-3 ${
-      isCarryOn ? 'border-blue-200 bg-blue-50/40' : 'border-emerald-200 bg-emerald-50/40'
-    }`}>
+    <div className="ticket p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-            isCarryOn ? 'bg-blue-100' : 'bg-emerald-100'
-          }`}>
+          <div className="w-9 h-9 rounded-md bg-ink-100 flex items-center justify-center">
             {isCarryOn
-              ? <Briefcase size={17} className="text-blue-600" />
-              : <Package size={17} className="text-emerald-600" />
+              ? <Briefcase size={17} className="text-ink-600" />
+              : <Package size={17} className="text-ink-600" />
             }
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-900">
-              {isCarryOn ? '✈️ Hand Luggage' : '🧳 Check-in Luggage'}
+            <p className="text-title-s font-display font-semibold text-ink-900">
+              {isCarryOn ? 'Hand luggage' : 'Check-in luggage'}
             </p>
-            <p className="text-xs text-gray-400">
+            <p className="text-body-s text-content-subtle">
               {isCarryOn ? 'Max 10kg · cabin bag' : 'Max 32kg · hold luggage'}
             </p>
           </div>
         </div>
         <button onClick={onRemove}
-          className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-50 transition">
-          <X size={14} className="text-red-400" />
+          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-danger-tint transition">
+          <X size={14} className="text-danger" />
         </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+          <label className="block text-label text-content-muted mb-1 uppercase">
             kg available
           </label>
           <div className="relative">
-            <Weight size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <Weight size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
             <input type="number"
               placeholder={isCarryOn ? 'e.g. 5' : 'e.g. 15'}
               min="0.5" max={isCarryOn ? '10' : '32'} step="0.5"
               value={data.available_kg}
               onChange={e => onChange({ ...data, available_kg: e.target.value })}
-              className="input-field pl-8 py-2.5 text-sm" />
+              className="input-field pl-8 py-2.5 text-body-s font-mono" />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+          <label className="block text-label text-content-muted mb-1 uppercase">
             Price/kg ($)
           </label>
           <div className="relative">
-            <DollarSign size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <DollarSign size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
             <input type="number"
               placeholder={isCarryOn ? 'e.g. 15' : 'e.g. 8'}
               min="1" step="0.5"
               value={data.price_per_kg}
               onChange={e => onChange({ ...data, price_per_kg: e.target.value })}
-              className="input-field pl-8 py-2.5 text-sm" />
+              className="input-field pl-8 py-2.5 text-body-s font-mono" />
           </div>
         </div>
       </div>
 
       {earnings && (
-        <div className="bg-white rounded-xl p-3 border border-gray-100 space-y-1 text-xs">
-          <div className="flex justify-between text-gray-500">
+        <div className="bg-surface-sunken rounded-md p-3 border border-line space-y-1 text-body-s font-mono">
+          <div className="flex justify-between text-content-muted">
             <span>Gross ({data.available_kg}kg × ${data.price_per_kg})</span>
             <span>${earnings.gross.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-red-400">
-            <span>Fetchr service fee ({earnings.pct}%)</span>
-            <span>-${earnings.fee.toFixed(2)}</span>
+          <div className="flex justify-between text-content-muted">
+            <span>fetchr service fee ({earnings.pct}%)</span>
+            <span>−${earnings.fee.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between font-bold text-emerald-600 border-t border-gray-100 pt-1">
+          <div className="flex justify-between font-semibold text-ink-900 border-t border-line pt-1">
             <span>Your net earnings</span>
             <span>${earnings.net.toFixed(2)}</span>
           </div>
@@ -813,70 +809,70 @@ const AddFlight = ({ session }) => {
   // ── Success screen ──
   if (success) return (
     <div className="max-w-xl mx-auto py-16 px-6 text-center animate-fade-in">
-      <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={40} className="text-emerald-500" />
+      <div className="w-20 h-20 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={40} className="text-success" />
       </div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">Flight Listed!</h2>
-      <p className="text-gray-500 mb-6">
+      <h2 className="text-title-l font-display font-bold text-ink-900 mb-2">Flight listed</h2>
+      <p className="text-body-m text-content-muted mb-6">
         Your flight from <strong>{form.from_city}</strong> to <strong>{form.to_city}</strong> is now live.
       </p>
-      <div className="bg-gray-50 rounded-2xl p-5 mb-6 text-left space-y-2.5 border border-gray-100">
+      <div className="card p-5 mb-6 text-left space-y-2.5">
         {[
           { label: 'Route', value: `${form.from_code} → ${form.to_code}` },
           { label: 'Date', value: new Date(form.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) },
           { label: 'Airline', value: `${form.airline}${form.flight_number ? ` · ${form.flight_number}` : ''}` },
-          { label: 'Total capacity', value: `${totalKg.toFixed(1)}kg` },
-          { label: 'Luggage types', value: luggageOptions.map(l => l.type === 'carry_on' ? '✈️ Hand' : '🧳 Check-in').join(' + ') },
+          { label: 'Total capacity', value: `${totalKg.toFixed(1)} kg` },
+          { label: 'Luggage types', value: luggageOptions.map(l => l.type === 'carry_on' ? 'Hand' : 'Check-in').join(' + ') },
           { label: 'Max net earnings', value: `$${totalNet.toFixed(2)} after fees` },
         ].map((row, i) => (
-          <div key={i} className="flex justify-between text-sm">
-            <span className="text-gray-500">{row.label}</span>
-            <span className="font-semibold text-gray-900">{row.value}</span>
+          <div key={i} className="flex justify-between text-body-m">
+            <span className="text-content-muted">{row.label}</span>
+            <span className="font-mono font-semibold text-ink-900">{row.value}</span>
           </div>
         ))}
       </div>
-      <button onClick={resetForm} className="w-full btn-primary py-3">Add Another Flight</button>
+      <button onClick={resetForm} className="btn-primary w-full py-3">Add another flight</button>
     </div>
   );
 
   return (
     <div className="max-w-xl mx-auto animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">List Your Flight</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Earn money using your spare luggage capacity</p>
+        <h1 className="text-title-l font-display font-bold text-ink-900">List your flight</h1>
+        <p className="text-body-s text-content-muted mt-0.5">Earn money using your spare luggage capacity</p>
       </div>
 
       {/* Progress */}
       <div className="flex items-center gap-2 mb-8">
         {[
-          { n: 1, label: 'Flight Info' },
-          { n: 2, label: 'Capacity & Safety' },
+          { n: 1, label: 'Flight info' },
+          { n: 2, label: 'Capacity & safety' },
           { n: 3, label: 'Delivery' },
         ].map((s, i) => (
           <React.Fragment key={s.n}>
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold transition-all ${
-                step > s.n ? 'bg-emerald-500 text-white' :
-                step === s.n ? 'bg-violet-600 text-white shadow-button' : 'bg-gray-100 text-gray-400'
+              <div className={`w-8 h-8 rounded-md flex items-center justify-center text-body-m font-mono font-semibold transition-all ${
+                step > s.n ? 'bg-success text-white' :
+                step === s.n ? 'bg-brand text-white' : 'bg-ink-100 text-ink-400'
               }`}>
                 {step > s.n ? <CheckCircle size={16} /> : s.n}
               </div>
-              <span className={`text-xs font-semibold hidden sm:block ${
-                step === s.n ? 'text-violet-600' : 'text-gray-400'
+              <span className={`text-label hidden sm:block ${
+                step === s.n ? 'text-ink-900 font-semibold' : 'text-content-subtle'
               }`}>{s.label}</span>
             </div>
-            {i < 2 && <div className={`flex-1 h-0.5 rounded-full ${step > s.n ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+            {i < 2 && <div className={`flex-1 h-0.5 rounded-full ${step > s.n ? 'bg-success' : 'bg-ink-200'}`} />}
           </React.Fragment>
         ))}
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-xl mb-4">
+        <div className="flex items-center gap-2 bg-danger-tint border-l-[3px] border-danger text-danger text-body-m px-4 py-3 rounded-r mb-4">
           <AlertCircle size={16} className="flex-shrink-0" /> {error}
         </div>
       )}
       {successMsg && (
-        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm px-4 py-3 rounded-xl mb-4">
+        <div className="flex items-center gap-2 bg-success-tint text-success text-body-m px-4 py-3 rounded-md mb-4">
           <CheckCircle size={16} className="flex-shrink-0" /> {successMsg}
         </div>
       )}
@@ -886,41 +882,41 @@ const AddFlight = ({ session }) => {
         <div className="space-y-4">
           {/* Date comes first — both search modes need it, and it can never be in the past */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Flight Date * <span className="text-gray-300 font-normal normal-case">(dd/mm/yyyy)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase">
+              Flight date (required) <span className="text-content-subtle font-normal normal-case">(dd/mm/yyyy)</span>
             </label>
             <div className="relative">
-              <Calendar size={15} className="absolute left-3.5 top-3.5 text-gray-400 pointer-events-none" />
+              <Calendar size={15} className="absolute left-3.5 top-3.5 text-ink-400 pointer-events-none" />
               <input type="date" min={today} value={form.flight_date}
                 onChange={e => setForm({ ...form, flight_date: e.target.value })}
                 className="input-field pl-9" />
             </div>
             {form.flight_date && (
-              <p className="text-xs text-gray-400 mt-1 ml-1">
+              <p className="text-body-s font-mono text-content-subtle mt-1 ml-1">
                 {new Date(form.flight_date).toLocaleDateString('en-GB', {
-                  day: '2-digit', month: '2-digit', year: 'numeric'
+                  weekday: 'short', day: 'numeric', month: 'short'
                 })}
               </p>
             )}
           </div>
 
           {/* Live schedule search — flight number or route + date */}
-          <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4 space-y-3">
+          <div className="bg-surface-sunken border border-line rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-2">
-              <Radar size={15} className="text-violet-600" />
-              <p className="text-sm font-semibold text-violet-700">Find your flight</p>
+              <Radar size={15} className="text-ink-600" />
+              <p className="text-title-s font-display font-semibold text-ink-900">Find your flight</p>
             </div>
 
-            <div className="flex gap-1 bg-white/70 rounded-xl p-1">
+            <div className="flex gap-1 bg-surface rounded-md p-1 border border-line">
               <button type="button" onClick={() => setSearchTab('number')}
-                className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
-                  searchTab === 'number' ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white'
+                className={`flex-1 text-label py-2 rounded-md transition-all ${
+                  searchTab === 'number' ? 'bg-brand text-white font-semibold' : 'text-content-muted hover:bg-surface-sunken'
                 }`}>
                 By flight number
               </button>
               <button type="button" onClick={() => setSearchTab('route')}
-                className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
-                  searchTab === 'route' ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white'
+                className={`flex-1 text-label py-2 rounded-md transition-all ${
+                  searchTab === 'route' ? 'bg-brand text-white font-semibold' : 'text-content-muted hover:bg-surface-sunken'
                 }`}>
                 By route
               </button>
@@ -928,7 +924,7 @@ const AddFlight = ({ session }) => {
 
             {searchTab === 'number' && (
               <div className="space-y-2">
-                <p className="text-xs text-gray-500">
+                <p className="text-body-s text-content-muted">
                   Type your flight number — we'll fill in the airline and route automatically.
                 </p>
                 <div className="flex gap-2">
@@ -936,7 +932,7 @@ const AddFlight = ({ session }) => {
                     value={form.flight_number}
                     onChange={e => handleFlightNumberChange(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && searchByNumber()}
-                    className="input-field flex-1" />
+                    className="input-field flex-1 font-mono" />
                   <button type="button" onClick={searchByNumber}
                     disabled={numberSearching || !form.flight_number.trim() || !form.flight_date}
                     className="btn-primary px-4 gap-2 flex-shrink-0 disabled:opacity-50">
@@ -945,21 +941,21 @@ const AddFlight = ({ session }) => {
                   </button>
                 </div>
                 {!form.flight_date && form.flight_number && (
-                  <p className="text-xs text-amber-600">Pick a flight date above first.</p>
+                  <p className="text-body-s text-warning">Pick a flight date above first.</p>
                 )}
                 {form.airline && !numberResults?.length && (
-                  <p className="text-xs text-emerald-600 font-semibold">✓ Airline detected: {form.airline}</p>
+                  <p className="text-body-s text-success font-semibold">Airline detected: {form.airline}</p>
                 )}
-                {numberNote && <p className="text-xs text-gray-500">{numberNote}</p>}
+                {numberNote && <p className="text-body-s text-content-muted">{numberNote}</p>}
                 {numberResults?.length > 0 && (
                   <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-gray-500">Multiple matches — pick yours:</p>
+                    <p className="text-body-s font-semibold text-content-muted">Multiple matches — pick yours:</p>
                     {numberResults.map((f, i) => (
                       <button key={i} type="button"
                         onClick={() => { applyScheduleResult(f); setNumberResults(null); }}
-                        className="w-full text-left bg-white rounded-xl px-3 py-2.5 border border-gray-100 hover:border-violet-300 transition">
-                        <p className="text-sm font-bold text-gray-800">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
-                        <p className="text-xs text-gray-400">
+                        className="w-full text-left bg-surface rounded-md px-3 py-2.5 border border-line hover:border-line-strong transition">
+                        <p className="text-body-m font-mono font-semibold text-ink-900">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
+                        <p className="text-body-s text-content-subtle">
                           {f.from?.iata || '?'} → {f.to?.iata || '?'}
                           {f.departureLocal ? ` · dep ${new Date(f.departureLocal).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                         </p>
@@ -972,7 +968,7 @@ const AddFlight = ({ session }) => {
 
             {searchTab === 'route' && (
               <div className="space-y-2">
-                <p className="text-xs text-gray-500">
+                <p className="text-body-s text-content-muted">
                   Pick your departure and arrival airports below, then browse every scheduled flight for that date.
                 </p>
                 <button type="button" onClick={searchByRoute}
@@ -982,19 +978,19 @@ const AddFlight = ({ session }) => {
                   {routeSearching ? 'Searching...' : 'Browse flights for this route'}
                 </button>
                 {(!form.from_code || !form.to_code) && (
-                  <p className="text-xs text-amber-600">Pick both airports below first.</p>
+                  <p className="text-body-s text-warning">Pick both airports below first.</p>
                 )}
-                {routeNote && <p className="text-xs text-gray-500">{routeNote}</p>}
+                {routeNote && <p className="text-body-s text-content-muted">{routeNote}</p>}
                 {routeResults?.length > 0 && (
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    <p className="text-xs font-semibold text-gray-500">{routeResults.length} scheduled flight{routeResults.length === 1 ? '' : 's'} found:</p>
+                    <p className="text-body-s font-semibold text-content-muted">{routeResults.length} scheduled flight{routeResults.length === 1 ? '' : 's'} found:</p>
                     {routeResults.map((f, i) => (
                       <button key={i} type="button"
                         onClick={() => { applyScheduleResult(f); setRouteResults(null); }}
-                        className="w-full text-left bg-white rounded-xl px-3 py-2.5 border border-gray-100 hover:border-violet-300 transition">
-                        <p className="text-sm font-bold text-gray-800">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
+                        className="w-full text-left bg-surface rounded-md px-3 py-2.5 border border-line hover:border-line-strong transition">
+                        <p className="text-body-m font-mono font-semibold text-ink-900">{f.flightNumber} · {f.airline || 'Unknown airline'}</p>
                         {f.departureLocal && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-body-s text-content-subtle">
                             Departs {new Date(f.departureLocal).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
@@ -1009,7 +1005,7 @@ const AddFlight = ({ session }) => {
           {/* Manual fields — the source of truth for the form; auto-revealed
               once search fills anything in, or the user opts in directly */}
           <button type="button" onClick={() => setShowManualFields(v => !v)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700">
+            className="flex items-center gap-1.5 text-label text-content-muted hover:text-content">
             <PenLine size={13} />
             {showManualFields ? 'Hide manual entry' : 'Enter or edit details manually'}
             <ChevronDown size={13} className={`transition-transform ${showManualFields ? 'rotate-180' : ''}`} />
@@ -1018,7 +1014,7 @@ const AddFlight = ({ session }) => {
           {(showManualFields || form.from_code || form.to_code || form.airline) && (
             <div className="space-y-4 animate-fade-in">
               <AirlineSearch
-                label="Airline *"
+                label="Airline (required)"
                 value={form.airline}
                 onChange={airline => setForm(prev => ({ ...prev, airline }))}
                 suggestions={suggestedAirlinesForRoute}
@@ -1027,7 +1023,7 @@ const AddFlight = ({ session }) => {
 
               {suggestedRoutesForAirline.length > 0 && (
                 <div>
-                  <p className="text-xs text-gray-400 mb-1.5">Popular routes for {form.airline}:</p>
+                  <p className="text-body-s text-content-subtle mb-1.5">Popular routes for {form.airline}:</p>
                   <div className="flex flex-wrap gap-1.5">
                     {suggestedRoutesForAirline.map(r => (
                       <button key={`${r.fromCode}-${r.toCode}`} type="button"
@@ -1036,7 +1032,7 @@ const AddFlight = ({ session }) => {
                           from_code: r.from.code, from_city: r.from.city,
                           to_code: r.to.code, to_city: r.to.city,
                         }))}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition">
+                        className="font-mono text-body-s font-semibold px-2.5 py-1.5 rounded-sm bg-ink-100 text-content-muted hover:bg-ink-200 transition">
                         {r.from.code} → {r.to.code}
                       </button>
                     ))}
@@ -1045,7 +1041,7 @@ const AddFlight = ({ session }) => {
               )}
 
               <AirportSearch
-                label="Departure Airport *"
+                label="Departure airport (required)"
                 value={{ city: form.from_city, code: form.from_code }}
                 onChange={airport => setForm(prev => ({
                   ...prev, from_city: airport.city, from_code: airport.code
@@ -1054,7 +1050,7 @@ const AddFlight = ({ session }) => {
               />
 
               <AirportSearch
-                label="Arrival Airport *"
+                label="Arrival airport (required)"
                 value={{ city: form.to_city, code: form.to_code }}
                 onChange={airport => setForm(prev => ({
                   ...prev, to_city: airport.city, to_code: airport.code
@@ -1074,15 +1070,15 @@ const AddFlight = ({ session }) => {
       {step === 2 && (
         <div className="space-y-5">
           {/* Flight summary */}
-          <div className="bg-gray-50 rounded-xl p-3.5 flex items-center gap-3 border border-gray-100">
-            <div className="w-9 h-9 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Plane size={16} className="text-violet-600" />
+          <div className="card p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 bg-ink-100 rounded-md flex items-center justify-center flex-shrink-0">
+              <Plane size={16} className="text-ink-600" />
             </div>
             <div>
-              <p className="text-sm font-bold text-gray-900">
+              <p className="text-body-m font-mono font-semibold text-ink-900">
                 {form.from_city} ({form.from_code}) → {form.to_city} ({form.to_code})
               </p>
-              <p className="text-xs text-gray-400">
+              <p className="text-body-s text-content-subtle">
                 {form.airline}{form.flight_number ? ` · ${form.flight_number}` : ''} ·{' '}
                 {form.flight_date ? new Date(form.flight_date).toLocaleDateString('en-GB', {
                   day: '2-digit', month: '2-digit', year: 'numeric'
@@ -1093,29 +1089,29 @@ const AddFlight = ({ session }) => {
 
           {/* Luggage type selector */}
           <div>
-            <p className="text-sm font-bold text-gray-900 mb-1">Luggage Options *</p>
-            <p className="text-xs text-gray-400 mb-3">
+            <p className="text-title-s font-display font-semibold text-ink-900 mb-1">Luggage options (required)</p>
+            <p className="text-body-s text-content-subtle mb-3">
               Add hand luggage, check-in, or both — each with separate capacity and pricing
             </p>
 
             <div className="flex gap-2 mb-4">
               <button type="button" onClick={() => addLuggageOption('carry_on')}
                 disabled={hasCarryOn}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-md border text-body-m font-semibold transition-all ${
                   hasCarryOn
-                    ? 'border-blue-300 bg-blue-50 text-blue-700 cursor-default'
-                    : 'border-dashed border-blue-200 text-blue-600 hover:border-blue-400 hover:bg-blue-50/50'
+                    ? 'border-line-strong bg-ink-100 text-content-muted cursor-default'
+                    : 'border-dashed border-line-strong text-content-muted hover:border-ink-400 hover:bg-surface-sunken'
                 }`}>
                 {hasCarryOn ? <CheckCircle size={14} /> : <Plus size={14} />}
                 <Briefcase size={14} />
-                Hand Luggage
+                Hand luggage
               </button>
               <button type="button" onClick={() => addLuggageOption('checkin')}
                 disabled={hasCheckin}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-md border text-body-m font-semibold transition-all ${
                   hasCheckin
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 cursor-default'
-                    : 'border-dashed border-emerald-200 text-emerald-600 hover:border-emerald-400 hover:bg-emerald-50/50'
+                    ? 'border-line-strong bg-ink-100 text-content-muted cursor-default'
+                    : 'border-dashed border-line-strong text-content-muted hover:border-ink-400 hover:bg-surface-sunken'
                 }`}>
                 {hasCheckin ? <CheckCircle size={14} /> : <Plus size={14} />}
                 <Package size={14} />
@@ -1124,12 +1120,12 @@ const AddFlight = ({ session }) => {
             </div>
 
             {luggageOptions.length === 0 && (
-              <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+              <div className="text-center py-8 bg-surface-sunken rounded-lg border border-dashed border-line-strong">
                 <div className="flex items-center justify-center gap-3 mb-2">
-                  <Briefcase size={20} className="text-gray-300" />
-                  <Package size={20} className="text-gray-300" />
+                  <Briefcase size={20} className="text-ink-300" />
+                  <Package size={20} className="text-ink-300" />
                 </div>
-                <p className="text-sm text-gray-400 font-medium">Add at least one luggage type</p>
+                <p className="text-body-m text-content-subtle font-medium">Add at least one luggage type</p>
               </div>
             )}
 
@@ -1144,11 +1140,11 @@ const AddFlight = ({ session }) => {
             </div>
 
             {luggageOptions.length > 1 && totalKg > 0 && (
-              <div className="mt-3 bg-violet-50 rounded-xl p-3.5 border border-violet-100 flex items-center justify-between">
-                <p className="text-xs font-bold text-violet-700">Combined if fully booked</p>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-violet-700">{totalKg.toFixed(1)}kg total</p>
-                  <p className="text-xs text-emerald-600 font-semibold">${totalNet.toFixed(2)} net</p>
+              <div className="mt-3 bg-surface-sunken rounded-md p-3.5 border border-line flex items-center justify-between">
+                <p className="text-body-s font-semibold text-content-muted">Combined if fully booked</p>
+                <div className="text-right font-mono">
+                  <p className="text-body-m font-semibold text-ink-900">{totalKg.toFixed(1)} kg total</p>
+                  <p className="text-body-s text-success font-semibold">${totalNet.toFixed(2)} net</p>
                 </div>
               </div>
             )}
@@ -1156,16 +1152,16 @@ const AddFlight = ({ session }) => {
 
           {/* Categories */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              What items can you carry? *
+            <label className="block text-label text-content-muted mb-2 uppercase">
+              What items can you carry? (required)
             </label>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(cat => (
                 <button key={cat} type="button" onClick={() => toggleCategory(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  className={`px-3 py-1.5 rounded-md text-body-s font-semibold border transition-all ${
                     form.categories.includes(cat)
-                      ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
+                      ? 'bg-brand text-white border-brand'
+                      : 'bg-surface text-content border-line-strong hover:border-ink-400'
                   }`}>
                   {cat}
                 </button>
@@ -1175,8 +1171,8 @@ const AddFlight = ({ session }) => {
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            <label className="block text-label text-content-muted mb-1.5 uppercase">
+              Notes <span className="text-content-subtle font-normal normal-case">(optional)</span>
             </label>
             <textarea placeholder="Any special conditions or restrictions..."
               value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
@@ -1184,29 +1180,29 @@ const AddFlight = ({ session }) => {
           </div>
 
           {/* Safety declaration */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-amber-800 mb-3 flex items-center gap-1.5">
-              <AlertTriangle size={13} /> Safety & Legal Declaration
+          <div className="bg-warning-tint border-l-[3px] border-warn-400 rounded-r p-4">
+            <p className="text-body-s font-semibold text-warning mb-3 flex items-center gap-1.5">
+              <AlertTriangle size={13} /> Safety & legal declaration
             </p>
             <div className="flex items-start gap-3">
               <input type="checkbox" id="safety-flight"
                 checked={form.safetyAcknowledged}
                 onChange={e => setForm({ ...form, safetyAcknowledged: e.target.checked })}
-                className="mt-0.5 w-4 h-4 accent-violet-600 flex-shrink-0" />
-              <label htmlFor="safety-flight" className="text-xs text-amber-800 leading-relaxed cursor-pointer">
+                className="mt-0.5 w-4 h-4 accent-ink-900 flex-shrink-0" />
+              <label htmlFor="safety-flight" className="text-body-s text-warning leading-relaxed cursor-pointer">
                 I confirm I will only carry legal items permitted by airline regulations and customs laws.
                 I will <strong>not carry</strong> illegal substances, weapons, counterfeit goods, or restricted items.
-                I will <strong>verify the shipper's identity</strong> and only accept items
+                I will <strong>verify the sender's identity</strong> and only accept items
                 <strong> after escrow is confirmed paid</strong>.
-                I accept full legal responsibility. Fetchr bears no liability.
+                I accept full legal responsibility. fetchr bears no liability.
               </label>
             </div>
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep(1)} className="flex-1 btn-secondary py-3">Back</button>
-            <button onClick={handleNext} className="flex-1 btn-primary py-3">
-              Continue to Delivery
+            <button onClick={() => setStep(1)} className="btn-secondary flex-1 py-3">Back</button>
+            <button onClick={handleNext} className="btn-primary flex-1 py-3">
+              Continue to delivery
             </button>
           </div>
         </div>
@@ -1216,14 +1212,14 @@ const AddFlight = ({ session }) => {
       {step === 3 && (
         <div className="space-y-4">
           {/* Summary */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-2 text-sm">
+          <div className="card p-4 space-y-2 text-body-m">
             <div className="flex justify-between">
-              <span className="text-gray-500">Route</span>
-              <span className="font-semibold">{form.from_code} → {form.to_code}</span>
+              <span className="text-content-muted">Route</span>
+              <span className="font-mono font-semibold text-ink-900">{form.from_code} → {form.to_code}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Date</span>
-              <span className="font-semibold">
+              <span className="text-content-muted">Date</span>
+              <span className="font-mono font-semibold text-ink-900">
                 {new Date(form.flight_date).toLocaleDateString('en-GB', {
                   day: '2-digit', month: '2-digit', year: 'numeric'
                 })}
@@ -1231,56 +1227,58 @@ const AddFlight = ({ session }) => {
             </div>
             {luggageOptions.map((opt, i) => (
               <div key={i} className="flex justify-between">
-                <span className="text-gray-500">
-                  {opt.type === 'carry_on' ? '✈️ Hand' : '🧳 Check-in'}
+                <span className="text-content-muted">
+                  {opt.type === 'carry_on' ? 'Hand' : 'Check-in'}
                 </span>
-                <span className="font-semibold">
-                  {opt.available_kg}kg @ ${opt.price_per_kg}/kg
+                <span className="font-mono font-semibold text-ink-900">
+                  {opt.available_kg} kg @ ${opt.price_per_kg}/kg
                 </span>
               </div>
             ))}
-            <div className="flex justify-between border-t border-gray-200 pt-2">
-              <span className="text-gray-500">Max net earnings</span>
-              <span className="font-bold text-emerald-600">${totalNet.toFixed(2)}</span>
+            <div className="flex justify-between border-t border-line pt-2">
+              <span className="text-content-muted">Max net earnings</span>
+              <span className="font-mono font-bold text-success">${totalNet.toFixed(2)}</span>
             </div>
           </div>
 
           {/* Delivery service */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-              Delivery Service *
+            <label className="block text-label text-content-muted mb-2 uppercase">
+              Delivery service (required)
             </label>
             <div className="space-y-2">
               {[
                 {
                   value: 'handover',
-                  icon: '🤝',
-                  label: 'Handover Only',
-                  desc: 'The shipper hands you the item before your flight. You deliver it to the recipient at the destination.',
+                  Icon: Handshake,
+                  label: 'Handover only',
+                  desc: 'The sender hands you the item before your flight. You deliver it to the recipient at the destination.',
                 },
                 {
                   value: 'both',
-                  icon: '🛍️',
+                  Icon: ShoppingBag,
                   label: 'Handover + Shop & Ship',
-                  desc: 'You can also purchase items at the destination for shippers, for an additional service fee.',
+                  desc: 'You can also purchase items at the destination for senders, for an additional service fee.',
                 },
               ].map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => setForm({ ...form, delivery_type: opt.value })}
-                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${
+                  className={`w-full flex items-start gap-3 p-4 rounded-lg border-2 transition-all text-left ${
                     form.delivery_type === opt.value
-                      ? 'border-violet-400 bg-violet-50'
-                      : 'border-gray-200 hover:border-violet-200 bg-white'
+                      ? 'border-ink-900 bg-surface-sunken'
+                      : 'border-line hover:border-line-strong bg-surface'
                   }`}>
-                  <span className="text-2xl flex-shrink-0">{opt.icon}</span>
+                  <div className="w-9 h-9 rounded-md bg-ink-100 flex items-center justify-center flex-shrink-0">
+                    <opt.Icon size={17} className="text-ink-600" />
+                  </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900">{opt.label}</p>
+                      <p className="text-body-m font-display font-semibold text-ink-900">{opt.label}</p>
                       {form.delivery_type === opt.value && (
-                        <CheckCircle size={14} className="text-violet-600" />
+                        <CheckCircle size={14} className="text-ink-900" />
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{opt.desc}</p>
+                    <p className="text-body-s text-content-muted mt-0.5 leading-relaxed">{opt.desc}</p>
                   </div>
                 </button>
               ))}
@@ -1289,20 +1287,20 @@ const AddFlight = ({ session }) => {
 
           {/* Shop & Ship fee */}
           {form.delivery_type === 'both' && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <div className="bg-info-50 border border-info-100 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
-                <ShoppingBag size={15} className="text-blue-600" />
-                <p className="text-sm font-semibold text-blue-700">Shop & Ship Service Fee</p>
+                <ShoppingBag size={15} className="text-info-500" />
+                <p className="text-body-m font-semibold text-info-500">Shop & Ship service fee</p>
               </div>
-              <p className="text-xs text-blue-600 mb-3">
-                Your fee for purchasing. Item purchase price covered separately via escrow.
+              <p className="text-body-s text-info-500 mb-3">
+                Your fee for purchasing. Item purchase price is covered separately via escrow.
               </p>
               <div className="relative">
-                <DollarSign size={14} className="absolute left-3.5 top-3 text-gray-400 pointer-events-none" />
+                <DollarSign size={14} className="absolute left-3.5 top-3 text-ink-400 pointer-events-none" />
                 <input type="number" placeholder="e.g. 15.00" min="0" step="0.5"
                   value={form.shop_and_ship_fee}
                   onChange={e => setForm({ ...form, shop_and_ship_fee: e.target.value })}
-                  className="input-field pl-8 py-2.5" />
+                  className="input-field pl-8 py-2.5 font-mono" />
               </div>
             </div>
           )}
@@ -1310,11 +1308,11 @@ const AddFlight = ({ session }) => {
           {/* Handover locations */}
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                📍 Departure Handover Location
+              <label className="flex items-center gap-1.5 text-label text-content-muted mb-1.5 uppercase">
+                <MapPin size={12} /> Departure handover location
               </label>
-              <p className="text-xs text-gray-400 mb-1.5">
-                Where should the shipper hand the item to you before your flight?
+              <p className="text-body-s text-content-subtle mb-1.5">
+                Where should the sender hand the item to you before your flight?
               </p>
               <input type="text"
                 placeholder="e.g. Dubai Airport Terminal 3 departures..."
@@ -1323,10 +1321,10 @@ const AddFlight = ({ session }) => {
                 className="input-field" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                📍 Arrival Handover Location
+              <label className="flex items-center gap-1.5 text-label text-content-muted mb-1.5 uppercase">
+                <MapPin size={12} /> Arrival handover location
               </label>
-              <p className="text-xs text-gray-400 mb-1.5">
+              <p className="text-body-s text-content-subtle mb-1.5">
                 Where will you hand the item to the recipient at the destination?
               </p>
               <input type="text"
@@ -1338,12 +1336,12 @@ const AddFlight = ({ session }) => {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep(2)} className="flex-1 btn-secondary py-3">Back</button>
+            <button onClick={() => setStep(2)} className="btn-secondary flex-1 py-3">Back</button>
             <button onClick={saveFlight} disabled={loading}
-              className="flex-1 btn-primary py-3.5 disabled:opacity-50">
+              className="btn-primary flex-1 py-3.5 disabled:opacity-50">
               {loading
-                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publishing...</>
-                : <><Plane size={15} /> Publish Flight</>
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publishing</>
+                : <><Plane size={15} /> Publish flight</>
               }
             </button>
           </div>
