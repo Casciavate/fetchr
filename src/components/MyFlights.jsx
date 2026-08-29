@@ -193,6 +193,7 @@ const MyFlights = ({ session, onAddFlight }) => {
   const hasActiveMatch = (flightId) => !!flightStatuses[flightId];
 
   const startEditing = (flight) => {
+    if (hasActiveMatch(flight.id)) return;
     setEditingFlight(flight.id);
     const luggageOpts = getLuggageOptions(flight);
     setEditLuggage(luggageOpts.map(l => ({ ...l })));
@@ -226,6 +227,7 @@ const MyFlights = ({ session, onAddFlight }) => {
   };
 
   const saveEdit = async (flightId) => {
+    if (hasActiveMatch(flightId)) { setError('This flight has an active deal — changes must go through the deal chat.'); return; }
     if (editLuggage.length === 0) { setError('Add at least one luggage option.'); return; }
     for (const opt of editLuggage) {
       if (!opt.available_kg || parseFloat(opt.available_kg) <= 0) {
@@ -398,7 +400,9 @@ const MyFlights = ({ session, onAddFlight }) => {
                     <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
                       <AlertTriangle size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
                       <p className="text-body-s text-info-500">
-                        Active deal in progress — cannot delete until complete.
+                        Active deal in progress — this flight can't be deleted or edited here.
+                        Any change to price or terms needs to go through the Messages tab for
+                        that deal.
                       </p>
                     </div>
                   )}
@@ -652,7 +656,9 @@ const MyFlights = ({ session, onAddFlight }) => {
                         <span className="font-mono font-bold text-num-l text-ink-900">${totalNet.toFixed(2)}</span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => startEditing(flight)} className="flex-1 btn-secondary">
+                        <button onClick={() => startEditing(flight)}
+                          disabled={hasActiveMatch(flight.id)}
+                          className="flex-1 btn-secondary disabled:opacity-30 disabled:cursor-not-allowed">
                           <Edit2 size={14} /> Edit
                         </button>
                         <button onClick={() => deleteFlight(flight.id)}
