@@ -13,11 +13,12 @@ import Earnings from './Earnings';
 import WalletScreen from './Wallet';
 import AdminDashboard from './AdminDashboard';
 import { AIRLINE_CODES } from './shared/airlines';
+import { calcFees } from './EscrowPayment';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, LogOut, CheckCircle, Search,
-  Menu, X, TrendingUp, Zap, ArrowUpRight, Lock, Camera
+  TrendingUp, Zap, ArrowUpRight, Lock, Camera
 } from 'lucide-react';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the sidebar lockup and
@@ -46,7 +47,8 @@ const AirlineLogo = ({ airline }) => {
 
 const Dashboard = ({ session }) => {
   const [activeNav, setActiveNav] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [focusMatchId, setFocusMatchId] = useState(null);
+  const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [stats, setStats] = useState({
@@ -283,7 +285,7 @@ const Dashboard = ({ session }) => {
   const getOtherParty = (match) =>
     match.traveler_id === session.user.id ? match.shipper : match.traveler;
 
-  const navigate = (id) => { setActiveNav(id); setSidebarOpen(false); };
+  const navigate = (id, opts) => { setActiveNav(id); setFocusMatchId(opts?.focusMatchId ?? null); };
 
   const isAdmin = !!profile?.is_admin;
 
@@ -295,6 +297,37 @@ const Dashboard = ({ session }) => {
     return { label: 'In progress', color: 'text-content-muted' };
   };
 
+  // Mirrors the blocked-action precedence Messages.jsx uses for its header CTA.
+  const isTraveler = (m) => m?.traveler_id === session.user.id;
+  const isShipper = (m) => m?.shipper_id === session.user.id;
+  const flightHasDeparted = (m) => {
+    if (!m?.flight?.flight_date) return true;
+    return m.flight.flight_date <= new Date().toISOString().split('T')[0];
+  };
+
+  const getYourTurnItem = () => {
+    for (const deal of activeDeals) {
+      const myTermsAgreed = isTraveler(deal) ? deal.terms_agreed_traveler : deal.terms_agreed_shipper;
+      const myCompleted = isTraveler(deal) ? deal.traveler_completed : deal.shipper_completed;
+      if (deal.status === 'accepted' && !myTermsAgreed) {
+        return { kind: 'deal', deal, action: 'Agree terms', icon: CheckCircle };
+      }
+      if (deal.status === 'terms_agreed' && isShipper(deal)) {
+        return { kind: 'deal', deal, action: 'Pay escrow', icon: Lock };
+      }
+      if (deal.status === 'in_escrow' && isTraveler(deal)) {
+        return { kind: 'deal', deal, action: 'Upload proof', icon: Camera };
+      }
+      if (deal.status === 'proof_uploaded' && !myCompleted && flightHasDeparted(deal)) {
+        return { kind: 'deal', deal, action: 'Confirm delivery', icon: CheckCircle };
+      }
+    }
+    if (recentMatches.length > 0) {
+      return { kind: 'match', deal: recentMatches[0], action: 'Review match', icon: Search };
+    }
+    return null;
+  };
+
   const renderMain = () => {
     switch (activeNav) {
       case 'add-flight': return <AddFlight session={session} />;
@@ -302,10 +335,12 @@ const Dashboard = ({ session }) => {
       case 'new-request': return <NewRequest session={session} />;
       case 'my-requests': return <MyRequests session={session} onNewRequest={() => navigate('new-request')} />;
 case 'matches': return <Matches session={session} onNavigate={navigate} />;
-      case 'messages': return <Messages session={session} />;
+      case 'messages': return <Messages session={session} focusMatchId={focusMatchId}
+        onThreadOpenChange={setMobileThreadOpen} />;
       case 'active-deals': return <ActiveDeals session={session} onNavigate={navigate} />;
       case 'completed': return <Completed session={session} />;
-      case 'profile': return <Profile session={session} userRole={getUserRole()} />;
+      case 'profile': return <Profile session={session} userRole={getUserRole()}
+        onNavigate={navigate} isAdmin={isAdmin} />;
       case 'earnings': return <Earnings session={session} />;
       case 'wallet': return <WalletScreen session={session} />;
       case 'admin': return isAdmin ? <AdminDashboard /> : renderDashboard();
@@ -313,7 +348,14 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
     }
   };
 
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    const yourTurn = getYourTurnItem();
+    const comingUp = [
+      ...activeDeals.filter(d => !(yourTurn?.kind === 'deal' && d.id === yourTurn.deal.id)),
+      ...recentMatches.filter(m => !(yourTurn?.kind === 'match' && m.id === yourTurn.deal.id)),
+    ].slice(0, 4);
+
+    return (
     <div className="animate-fade-in space-y-6">
 
       {/* Greeting */}
@@ -325,6 +367,87 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           Here's what's happening with your deliveries today.
         </p>
       </div>
+
+      {/* ── Mobile — one decision per screen ───────────────────────── */}
+      <div className="md:hidden space-y-5">
+        {yourTurn ? (
+          <div className="ticket p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="badge badge-indigo">
+                <yourTurn.icon size={11} /> Your turn · {yourTurn.action}
+              </span>
+            </div>
+            <div>
+              <p className="font-mono text-title-s font-semibold text-ink-900">
+                {yourTurn.deal.flight?.from_code} → {yourTurn.deal.flight?.to_code}
+              </p>
+              <p className="text-body-s text-ink-subtle mt-0.5 truncate">{yourTurn.deal.request?.item_name}</p>
+            </div>
+            {yourTurn.kind === 'deal' && (() => {
+              const fees = calcFees(yourTurn.deal);
+              const amount = isShipper(yourTurn.deal) ? fees.totalShipperPays : fees.travelerReceives;
+              return (
+                <p className="font-mono text-title-m font-bold text-ink-900">
+                  {isShipper(yourTurn.deal) ? 'You pay' : 'You receive'} ${amount.toFixed(2)}
+                </p>
+              );
+            })()}
+            <button
+              onClick={() => navigate('messages', yourTurn.kind === 'deal' ? { focusMatchId: yourTurn.deal.id } : undefined)}
+              className="btn-signal w-full">
+              {yourTurn.action}
+            </button>
+          </div>
+        ) : (
+          <div className="card p-5 text-center">
+            <CheckCircle size={20} className="text-ink-300 mx-auto mb-2" />
+            <p className="text-body-s text-ink-muted">Nothing needs you right now.</p>
+          </div>
+        )}
+
+        {comingUp.length > 0 && (
+          <div>
+            <p className="font-mono text-overline uppercase text-ink-subtle mb-2">Coming up</p>
+            <div className="space-y-2">
+              {comingUp.map((item, i) => {
+                const isDeal = !!item.status && activeDeals.includes(item);
+                const stageInfo = isDeal ? getDealStageLabel(item) : null;
+                return (
+                  <button key={item.id || i}
+                    onClick={() => navigate(isDeal ? 'messages' : 'matches', isDeal ? { focusMatchId: item.id } : undefined)}
+                    className="w-full flex items-center gap-3 p-3 rounded-md border border-line hover:bg-surface-sunken transition text-left">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-body-s font-semibold text-ink-900">
+                        {item.flight?.from_code} → {item.flight?.to_code}
+                      </p>
+                      <p className="text-label text-ink-subtle truncate">{item.request?.item_name}</p>
+                    </div>
+                    <p className={`text-label font-semibold flex-shrink-0 ${isDeal ? stageInfo.color : 'text-ink-muted'}`}>
+                      {isDeal ? stageInfo.label : `${item.match_score}% match`}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => navigate('add-flight')}
+            className="card p-4 flex flex-col items-center gap-2 text-center hover:border-line-strong transition">
+            <Plane size={18} className="text-ink-700" />
+            <span className="text-body-s font-semibold text-ink-900">Add a flight</span>
+          </button>
+          <button onClick={() => navigate('new-request')}
+            className="card p-4 flex flex-col items-center gap-2 text-center hover:border-line-strong transition">
+            <Package size={18} className="text-ink-700" />
+            <span className="text-body-s font-semibold text-ink-900">Post a request</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Desktop — stat grid + full detail ──────────────────────── */}
+      <div className="hidden md:block space-y-6">
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -612,34 +735,22 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           )}
         </div>
       </div>
+      </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="flex h-screen bg-ground overflow-hidden">
 
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-[rgba(20,24,31,0.5)] z-backdrop md:hidden"
-          onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Sidebar */}
-      <aside className={`
-        fixed md:relative inset-y-0 left-0 z-sheet
-        w-60 bg-surface border-r border-line
-        flex flex-col overflow-y-auto
-        transform transition-transform duration-300 ease-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
+      {/* Sidebar — desktop only; mobile navigation is the bottom nav */}
+      <aside className="hidden md:flex md:relative inset-y-0 left-0 w-60 bg-surface border-r border-line
+        flex-col overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-5 border-b border-line">
           <div className="flex items-center gap-2">
             <BareGlyph size={20} />
             <span className="font-display font-extrabold text-title-m tracking-[-0.05em] text-ink-900">fetchr</span>
           </div>
-          <button onClick={() => setSidebarOpen(false)}
-            className="md:hidden text-ink-400 hover:text-ink-600 p-1">
-            <X size={18} />
-          </button>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-5">
@@ -709,9 +820,9 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
         <header className="bg-surface border-b border-line px-4 md:px-6 py-3.5 flex items-center justify-between sticky top-0 z-sticky flex-shrink-0">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)}
-              className="md:hidden w-9 h-9 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-500">
-              <Menu size={20} />
+            <button onClick={() => navigate('dashboard')} className="md:hidden flex items-center gap-2">
+              <BareGlyph size={20} />
+              <span className="font-display font-extrabold text-title-s tracking-[-0.05em] text-ink-900">fetchr</span>
             </button>
             <div className="hidden md:block">
               <p className="font-display font-semibold text-title-s text-ink-900">
@@ -738,6 +849,11 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           </div>
 
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('wallet')}
+              className="md:hidden flex items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition">
+              <Wallet size={15} />
+              <span className="font-mono text-num-m font-semibold">${stats.walletBalance.toFixed(2)}</span>
+            </button>
             <button onClick={() => navigate('messages')}
               className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-500">
               <Bell size={18} />
@@ -764,41 +880,39 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-24 md:pb-6">
+          <div className={`max-w-6xl mx-auto md:p-6 ${mobileThreadOpen ? 'pb-0' : 'p-4 pb-24'} md:pb-6`}>
             {renderMain()}
           </div>
         </main>
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 py-2">
-        <div className="flex items-center justify-around">
-          {bottomNavItems.map(item => (
-            <button key={item.id} onClick={() => navigate(item.id)}
-              className={`relative flex flex-col items-center gap-1 px-3 py-1.5 min-w-[44px] min-h-[44px] justify-center rounded-md transition-all ${
-                activeNav === item.id ? 'text-ink-900' : 'text-ink-400'
-              }`}>
-              {activeNav === item.id && (
-                <span className="absolute top-0 left-2 right-2 h-0.5 bg-ink-900 rounded-full" />
-              )}
-              <div className="relative">
-                <item.icon size={22} strokeWidth={activeNav === item.id ? 2.5 : 1.8} />
-                {item.badge > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-signal-500 rounded-full" />
+      {/* Mobile bottom nav — exactly the 5 items the design spec fixes; hidden
+          while a chat thread owns the screen (§ ui_kits/fetchr-mobile). */}
+      {!mobileThreadOpen && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 py-2">
+          <div className="flex items-center justify-around">
+            {bottomNavItems.map(item => (
+              <button key={item.id} onClick={() => navigate(item.id)}
+                className={`relative flex flex-col items-center gap-1 px-3 py-1.5 min-w-[44px] min-h-[44px] justify-center rounded-md transition-all ${
+                  activeNav === item.id ? 'text-ink-900' : 'text-ink-400'
+                }`}>
+                {activeNav === item.id && (
+                  <span className="absolute top-0 left-2 right-2 h-0.5 bg-ink-900 rounded-full" />
                 )}
-              </div>
-              <span className={`text-micro ${activeNav === item.id ? 'font-bold' : 'font-medium'}`}>
-                {item.label}
-              </span>
-            </button>
-          ))}
-          <button onClick={async () => { await supabase.auth.signOut(); }}
-            className="flex flex-col items-center gap-1 px-3 py-1.5 min-w-[44px] min-h-[44px] justify-center rounded-md transition text-ink-400">
-            <LogOut size={22} strokeWidth={1.8} />
-            <span className="text-micro font-medium">Logout</span>
-          </button>
-        </div>
-      </nav>
+                <div className="relative">
+                  <item.icon size={22} strokeWidth={activeNav === item.id ? 2.5 : 1.8} />
+                  {item.badge > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-signal-500 rounded-full" />
+                  )}
+                </div>
+                <span className={`text-micro ${activeNav === item.id ? 'font-bold' : 'font-medium'}`}>
+                  {item.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
     </div>
   );
 };

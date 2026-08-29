@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Send, Package, Plane, DollarSign, CheckCircle, Shield,
-  XCircle, AlertTriangle, ChevronDown, MessageCircle,
+  XCircle, AlertTriangle, ChevronDown, ChevronLeft, MessageCircle,
   Camera, Lock, Info, X, Edit2, ShoppingBag, MapPin, Phone,
   Circle, Zap
 } from 'lucide-react';
@@ -25,6 +25,30 @@ const SYSTEM_MSG_PREFIXES = [
   'Proof uploaded:', '🎉', '✅', '⏳', '⚠️', '❌', '🔒', '📸', '✏️',
 ];
 const isSystemMessage = (content) => SYSTEM_MSG_PREFIXES.some(p => content?.startsWith(p));
+
+// Deal-event styling for system messages — a tone + icon per event family,
+// mirroring the handoff's DealEvent card instead of a plain grey bubble.
+const getSystemEventStyle = (content) => {
+  if (content?.startsWith('Deal amended') || content?.startsWith('✏️')) return { icon: Edit2, tone: 'neutral' };
+  if (content?.startsWith('Deal completed') || content?.startsWith('Delivery confirmed by') || content?.startsWith('🎉'))
+    return { icon: CheckCircle, tone: 'success' };
+  if (content?.startsWith('Match accepted') || content?.startsWith('Terms agreed') || content?.startsWith('✅'))
+    return { icon: CheckCircle, tone: 'success' };
+  if (content?.startsWith('Cancellation request:') || content?.startsWith('⚠️'))
+    return { icon: AlertTriangle, tone: 'warning' };
+  if (content?.startsWith('Cancellation agreed:') || content?.startsWith('Cancellation declined:') || content?.startsWith('❌'))
+    return { icon: XCircle, tone: 'danger' };
+  if (content?.startsWith('🔒')) return { icon: Lock, tone: 'success' };
+  if (content?.startsWith('⏳')) return { icon: Circle, tone: 'neutral' };
+  return { icon: Info, tone: 'neutral' };
+};
+
+const EVENT_TONE_CLASSES = {
+  neutral: 'bg-ink-100 text-ink-700',
+  success: 'bg-success-tint text-success',
+  warning: 'bg-warning-tint text-warning',
+  danger: 'bg-danger-tint text-danger',
+};
 
 // ── Deal Details Modal ──
 const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
@@ -365,7 +389,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 };
 
 // ── Main Messages Component ──
-const Messages = ({ session }) => {
+const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
   const [acceptedMatches, setAcceptedMatches] = useState([]);
   const [activeMatch, setActiveMatch] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -383,7 +407,27 @@ const Messages = ({ session }) => {
   const [uploadingProof, setUploadingProof] = useState(false);
   const [showDealDetails, setShowDealDetails] = useState(false);
   const [showProofModal, setShowProofModal] = useState(false);
+  const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
   const messagesEndRef = useRef(null);
+  const consumedFocusIdRef = useRef(null);
+
+  // Mobile — the thread owns the whole screen while it's open, so the
+  // bottom nav and its screen padding hide (Dashboard.jsx owns that UI).
+  useEffect(() => {
+    onThreadOpenChange?.(!!activeMatch);
+    return () => onThreadOpenChange?.(false);
+  }, [activeMatch, onThreadOpenChange]);
+
+  // Deep-link from Home's "your turn" hero ticket straight into its thread.
+  useEffect(() => {
+    if (!focusMatchId || consumedFocusIdRef.current === focusMatchId) return;
+    const match = acceptedMatches.find(m => m.id === focusMatchId);
+    if (match) {
+      consumedFocusIdRef.current = focusMatchId;
+      setActiveMatch(match);
+      setMobileComposerOpen(false);
+    }
+  }, [focusMatchId, acceptedMatches]);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
@@ -758,6 +802,23 @@ const Messages = ({ session }) => {
   const myCompleted = activeMatch ? (isTraveler(activeMatch) ? activeMatch.traveler_completed : activeMatch.shipper_completed) : false;
   const otherCompleted = activeMatch ? (isTraveler(activeMatch) ? activeMatch.shipper_completed : activeMatch.traveler_completed) : false;
 
+  // The single action blocked on this user — same precedence as the header
+  // buttons above, surfaced instead as a sticky bar on mobile (§3 handoff).
+  const getBlockedAction = () => {
+    if (!activeMatch) return null;
+    if (activeMatch.status === 'accepted' && !myTermsAgreed)
+      return { label: 'Agree terms', icon: CheckCircle, onClick: agreeToTerms };
+    if (isShipper(activeMatch) && activeMatch.status === 'terms_agreed')
+      return { label: `Pay escrow · $${calcFees(activeMatch).totalShipperPays.toFixed(2)}`, icon: Lock,
+        onClick: () => { setShowPayment(true); setShowCancelRequest(false); } };
+    if (isTraveler(activeMatch) && activeMatch.status === 'in_escrow')
+      return { label: 'Upload proof', icon: Camera, onClick: () => setShowProofModal(true) };
+    if (['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && !myCompleted && flightHasDeparted(activeMatch))
+      return { label: otherCompleted ? 'Confirm & release' : 'Confirm delivery', icon: CheckCircle, onClick: handleCompleteDeal };
+    return null;
+  };
+  const blockedAction = getBlockedAction();
+
   if (loading) return (
     <div className="flex items-center justify-center py-24">
       <div className="w-8 h-8 border-2 border-ink-900 border-t-transparent rounded-full animate-spin" />
@@ -775,7 +836,9 @@ const Messages = ({ session }) => {
   );
 
   return (
-    <div className="flex h-[calc(100vh-120px)] bg-surface rounded-lg border border-line overflow-hidden animate-fade-in">
+    <div className={`flex bg-surface overflow-hidden animate-fade-in
+      ${activeMatch ? 'h-[calc(100dvh-56px)] rounded-none border-0' : 'h-[calc(100dvh-176px)] rounded-lg border border-line'}
+      md:h-[calc(100vh-120px)] md:rounded-lg md:border md:border-line`}>
 
       {showDealDetails && activeMatch && (
         <DealDetailsModal match={activeMatch} session={session}
@@ -796,8 +859,9 @@ const Messages = ({ session }) => {
         />
       )}
 
-      {/* Sidebar */}
-      <div className={`${showSidebar ? 'w-64' : 'w-0'} border-r border-line flex flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
+      {/* Sidebar — full-screen list on mobile until a thread is opened */}
+      <div className={`${activeMatch ? 'hidden md:flex' : 'flex'} w-full md:w-auto
+        ${showSidebar ? 'md:w-64' : 'md:w-0'} border-r border-line flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
         <div className="p-4 border-b border-line flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="font-display font-semibold text-title-s text-ink-900">Messages</h2>
@@ -843,9 +907,9 @@ const Messages = ({ session }) => {
         </div>
       </div>
 
-      {/* Chat area */}
+      {/* Chat area — full-screen on mobile once a thread is active */}
       {activeMatch ? (
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 w-full">
 
           {/* Stage bar — tracking timeline, §7.15 */}
           <div className="bg-surface border-b border-line px-4 py-2.5 flex-shrink-0">
@@ -873,8 +937,12 @@ const Messages = ({ session }) => {
           {/* Chat header */}
           <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 flex-shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
+              <button onClick={() => setActiveMatch(null)}
+                className="md:hidden w-8 h-8 -ml-1 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-700 flex-shrink-0">
+                <ChevronLeft size={20} />
+              </button>
               <button onClick={() => setShowSidebar(!showSidebar)}
-                className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-400 flex-shrink-0">
+                className="hidden md:flex w-7 h-7 items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-400 flex-shrink-0">
                 <ChevronDown size={14} className={`transition-transform ${showSidebar ? 'rotate-90' : '-rotate-90'}`} />
               </button>
               <div className="w-8 h-8 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 flex-shrink-0">
@@ -897,9 +965,10 @@ const Messages = ({ session }) => {
                 <Info size={12} /> Deal
               </button>
 
-              {/* Agree Terms — the pending action is the one Signal button on this screen */}
+              {/* Agree Terms — the pending action is the one Signal button on this screen.
+                  Mobile surfaces this same action via the sticky bar below the thread. */}
               {activeMatch.status === 'accepted' && !myTermsAgreed && (
-                <button onClick={agreeToTerms} className="btn-signal px-3 text-label">
+                <button onClick={agreeToTerms} className="hidden md:inline-flex btn-signal px-3 text-label">
                   <CheckCircle size={12} /> Agree terms
                 </button>
               )}
@@ -907,14 +976,14 @@ const Messages = ({ session }) => {
               {/* Pay Escrow — SENDER ONLY */}
               {isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
                 <button onClick={() => { setShowPayment(!showPayment); setShowCancelRequest(false); }}
-                  className={showPayment ? 'btn-secondary px-3 text-label' : 'btn-signal px-3 text-label'}>
+                  className={`hidden md:inline-flex ${showPayment ? 'btn-secondary px-3 text-label' : 'btn-signal px-3 text-label'}`}>
                   <Shield size={12} /> Pay escrow
                 </button>
               )}
 
               {/* Upload Proof — traveller only */}
               {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
-                <button onClick={() => setShowProofModal(true)} className="btn-signal px-3 text-label">
+                <button onClick={() => setShowProofModal(true)} className="hidden md:inline-flex btn-signal px-3 text-label">
                   <Camera size={12} /> Upload proof
                 </button>
               )}
@@ -924,11 +993,11 @@ const Messages = ({ session }) => {
                 <button onClick={handleCompleteDeal}
                   disabled={submittingComplete || myCompleted || !flightHasDeparted(activeMatch)}
                   title={!flightHasDeparted(activeMatch) ? `Available once the flight on ${new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} has taken place` : undefined}
-                  className={
+                  className={`hidden md:inline-flex ${
                     myCompleted || !flightHasDeparted(activeMatch)
-                      ? 'inline-flex items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
+                      ? 'items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
                       : 'btn-signal px-3 text-label'
-                  }>
+                  }`}>
                   <CheckCircle size={12} />
                   {myCompleted ? 'Waiting' : !flightHasDeparted(activeMatch) ? 'Not yet flown' : otherCompleted ? 'Confirm & release' : 'Confirm delivery'}
                 </button>
@@ -940,6 +1009,24 @@ const Messages = ({ session }) => {
               </button>
             </div>
           </div>
+
+          {/* Pinned deal stub — mobile only; route, amount, escrow state, tap for the full ticket */}
+          <button onClick={() => setShowDealDetails(true)}
+            className="md:hidden flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left">
+            <div className="flex-1 min-w-0">
+              <p className="font-mono text-body-s font-semibold text-ink-900">
+                {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
+              </p>
+              <p className="text-label text-ink-subtle truncate">
+                {isShipper(activeMatch) ? 'You pay' : 'You receive'} $
+                {(isShipper(activeMatch) ? calcFees(activeMatch).totalShipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
+              </p>
+            </div>
+            <span className={`badge flex-shrink-0 ${blockedAction ? 'badge-indigo' : activeMatch.status === 'completed' ? 'badge-green' : 'badge-gray'}`}>
+              {blockedAction ? `Your turn · ${blockedAction.label.split(' · ')[0]}`
+                : (STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
+            </span>
+          </button>
 
           {/* Safety notice — §7.9 advisory banner */}
           {activeMatch.status === 'accepted' && (
@@ -1070,10 +1157,19 @@ const Messages = ({ session }) => {
                 );
               }
               if (isSystemMessage(msg.content)) {
+                const { icon: EventIcon, tone } = getSystemEventStyle(msg.content);
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    <div className="bg-surface-sunken border border-line rounded-lg px-4 py-2.5 max-w-sm text-center">
-                      <p className="text-micro text-ink-muted leading-relaxed">{msg.content}</p>
+                    <div className="flex items-start gap-2.5 bg-surface-sunken border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
+                      <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${EVENT_TONE_CLASSES[tone]}`}>
+                        <EventIcon size={14} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-body-s text-ink-900 leading-relaxed">{msg.content}</p>
+                        <p className="font-mono text-micro text-ink-subtle mt-0.5">
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1099,22 +1195,42 @@ const Messages = ({ session }) => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
-          <div className="border-t border-line p-3 flex-shrink-0">
-            <div className="flex items-end gap-2">
-              <textarea value={newMessage} onChange={e => setNewMessage(e.target.value)}
-                onKeyDown={handleKeyDown} placeholder="Type a message (Enter to send)"
-                rows={1} className="flex-1 input-field resize-none py-2.5 text-body-m min-h-[42px] max-h-24"
-                onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }} />
-              <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
-                className="w-11 h-11 bg-brand rounded-md flex items-center justify-center hover:bg-brand-hover transition disabled:opacity-50 flex-shrink-0">
-                {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send size={16} className="text-white" />}
-              </button>
+          {/* Input — mobile replaces this with the single blocked action while one
+              exists, per the handoff; desktop always shows the composer. */}
+          <div className="border-t border-line flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            {blockedAction && !mobileComposerOpen ? (
+              <div className="md:hidden p-3 space-y-2">
+                <button onClick={blockedAction.onClick} className="btn-signal w-full">
+                  <blockedAction.icon size={16} /> {blockedAction.label}
+                </button>
+                <button onClick={() => setMobileComposerOpen(true)}
+                  className="w-full text-center text-body-s text-ink-muted">
+                  Message instead
+                </button>
+              </div>
+            ) : null}
+            <div className={`${blockedAction && !mobileComposerOpen ? 'hidden' : ''} md:block p-3`}>
+              {blockedAction && (
+                <button onClick={() => setMobileComposerOpen(false)}
+                  className="md:hidden mb-2 flex items-center gap-1.5 text-label text-ink-muted">
+                  <blockedAction.icon size={12} /> Back to {blockedAction.label}
+                </button>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea value={newMessage} onChange={e => setNewMessage(e.target.value)}
+                  onKeyDown={handleKeyDown} placeholder="Type a message (Enter to send)"
+                  rows={1} className="flex-1 input-field resize-none py-2.5 text-body-m min-h-[42px] max-h-24"
+                  onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }} />
+                <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
+                  className="w-11 h-11 bg-brand rounded-md flex items-center justify-center hover:bg-brand-hover transition disabled:opacity-50 flex-shrink-0">
+                  {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send size={16} className="text-white" />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-8">
           <div className="w-16 h-16 bg-ink-100 rounded-lg flex items-center justify-center mb-4">
             <MessageCircle size={28} className="text-ink-300" />
           </div>

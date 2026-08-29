@@ -6,8 +6,8 @@ import {
   User, Mail, Phone, Globe, Star, Edit2,
   Check, X, Award, Package, Plane, DollarSign, Camera,
   CreditCard, CheckCircle, Trash2, AlertTriangle,
-  ChevronDown, ChevronUp, Building, Lock, BadgeCheck,
-  AlertCircle, Info
+  ChevronDown, ChevronUp, ChevronRight, Building, Lock, BadgeCheck,
+  AlertCircle, Info, LogOut, TrendingUp, PlusCircle, Shield
 } from 'lucide-react';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
@@ -279,7 +279,7 @@ const SaveBankForm = ({ profile, onSuccess, onCancel }) => {
 };
 
 // ── Main Profile Component ──
-const Profile = ({ session, userRole }) => {
+const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -577,39 +577,69 @@ const Profile = ({ session, userRole }) => {
           )}
         </div>
 
-        {/* ── Stats ── */}
+        {/* ── Stats — also this account's quick links now the mobile sidebar is gone ── */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            { title: 'Flights', icon: Plane,
+            { title: 'Flights', icon: Plane, nav: 'flights',
               rows: [{ label: 'Active / upcoming', val: stats.flightsActive }, { label: 'Completed', val: stats.flightsCompleted }] },
-            { title: 'Requests', icon: Package,
+            { title: 'Requests', icon: Package, nav: 'my-requests',
               rows: [{ label: 'Open', val: stats.requestsActive }, { label: 'Matched', val: stats.requestsCompleted }] },
-            { title: 'Deals', icon: Award,
+            { title: 'Deals', icon: Award, nav: 'active-deals',
               rows: [{ label: 'Ongoing', val: stats.dealsOngoing }, { label: 'Completed', val: stats.dealsCompleted }] },
-            { title: 'Wallet', icon: DollarSign, balance: true },
-          ].map((card, i) => (
-            <div key={i} className="card p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 bg-ink-100 rounded-md flex items-center justify-center">
-                  <card.icon size={15} className="text-ink-600" />
+            { title: 'Wallet', icon: DollarSign, nav: 'wallet', balance: true },
+          ].map((card, i) => {
+            const Tag = onNavigate ? 'button' : 'div';
+            return (
+              <Tag key={i} onClick={onNavigate ? () => onNavigate(card.nav) : undefined}
+                className={`card p-4 text-left ${onNavigate ? 'hover:border-line-strong transition-colors' : ''}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 bg-ink-100 rounded-md flex items-center justify-center">
+                    <card.icon size={15} className="text-ink-600" />
+                  </div>
+                  <p className="text-label text-content-muted uppercase tracking-wide">{card.title}</p>
                 </div>
-                <p className="text-label text-content-muted uppercase tracking-wide">{card.title}</p>
-              </div>
-              {card.balance ? (
-                <p className="font-mono text-title-m font-bold text-ink-900">${(profile?.wallet_balance || 0).toFixed(2)}</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {card.rows.map((r, j) => (
-                    <div key={j} className="flex justify-between text-body-s">
-                      <span className="text-content-subtle">{r.label}</span>
-                      <span className="font-mono font-semibold text-content">{r.val}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                {card.balance ? (
+                  <p className="font-mono text-title-m font-bold text-ink-900">${(profile?.wallet_balance || 0).toFixed(2)}</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {card.rows.map((r, j) => (
+                      <div key={j} className="flex justify-between text-body-s">
+                        <span className="text-content-subtle">{r.label}</span>
+                        <span className="font-mono font-semibold text-content">{r.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Tag>
+            );
+          })}
         </div>
+
+        {/* ── Quick links — Add flight/New request/Earnings/Admin only ever
+              lived in the desktop sidebar; this is now their mobile home too ── */}
+        {onNavigate && (
+          <div className="card overflow-hidden">
+            {[
+              { id: 'add-flight', icon: PlusCircle, label: 'Add a flight' },
+              { id: 'new-request', icon: PlusCircle, label: 'Post a request' },
+              { id: 'earnings', icon: TrendingUp, label: 'Earnings' },
+              ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Admin dashboard' }] : []),
+            ].map((item, i, arr) => (
+              <button key={item.id} onClick={() => onNavigate(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-sunken transition ${i < arr.length - 1 ? 'border-b border-line' : ''}`}>
+                <item.icon size={16} className="text-ink-600 flex-shrink-0" />
+                <span className="flex-1 text-body-s font-medium text-content">{item.label}</span>
+                <ChevronRight size={16} className="text-ink-300 flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Sign out ── */}
+        <button onClick={async () => { await supabase.auth.signOut(); }}
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-md border border-line-strong text-body-m font-display font-semibold text-content hover:bg-surface-sunken transition">
+          <LogOut size={15} /> Sign out
+        </button>
 
         {/* ── Completed Deals / Reviews ── */}
         {reviews.length > 0 && (
