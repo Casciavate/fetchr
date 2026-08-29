@@ -595,8 +595,19 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
   const getTxnIcon = (txn) => TXN_ICON[txn.type] || DollarSign;
 
   const isCredit = (txn) => ['topup', 'credit', 'escrow_release'].includes(txn.type);
+  // "Total withdrawn" must only reflect money that actually left the wallet
+  // balance. escrow_hold covers BOTH card-paid and wallet-paid escrow (same
+  // type either way) — only the wallet-funded ones (escrow_from_wallet,
+  // tagged metadata.payment_method: 'wallet') ever touched the wallet. A
+  // card-paid escrow_hold never debited it, so it must not count here (a
+  // partial wallet contribution already gets its own separate 'debit' row).
+  const isWalletDebit = (txn) => {
+    if (txn.type === 'withdrawal' || txn.type === 'debit') return true;
+    if (txn.type === 'escrow_hold' && txn.metadata?.payment_method === 'wallet') return true;
+    return false;
+  };
   const totalCredits = transactions.filter(t => isCredit(t) && t.status === 'completed').reduce((s, t) => s + (t.amount || 0), 0);
-  const totalDebits = transactions.filter(t => !isCredit(t) && t.type !== 'fetchr_fee' && t.status !== 'refunded').reduce((s, t) => s + (t.amount || 0), 0);
+  const totalDebits = transactions.filter(t => isWalletDebit(t) && t.status !== 'refunded').reduce((s, t) => s + (t.amount || 0), 0);
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">

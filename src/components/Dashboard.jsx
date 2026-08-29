@@ -625,7 +625,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
       {/* Sidebar */}
       <aside className={`
-        fixed md:relative inset-y-0 left-0 z-nav
+        fixed md:relative inset-y-0 left-0 z-sheet
         w-60 bg-surface border-r border-line
         flex flex-col overflow-y-auto
         transform transition-transform duration-300 ease-out
