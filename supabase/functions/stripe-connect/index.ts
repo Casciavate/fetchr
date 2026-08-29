@@ -66,7 +66,13 @@ Deno.serve(async (req) => {
       return customer.id
     }
 
-    const verifyWithdrawalEligibility = async (userId, requestedAmount) => {
+    // The ledger (transactions), not profiles.wallet_balance, is the source
+    // of truth: wallet_balance is just a cache. This is what stands between
+    // an attacker and free money — without it, anything that trusted
+    // profiles.wallet_balance directly would be exploitable the moment that
+    // column stops being fully protected (belt-and-braces alongside the DB
+    // trigger that now blocks clients from writing it directly).
+    const getVerifiedBalance = async (userId) => {
       const [{ data: credits }, { data: debits }, { data: profile }] = await Promise.all([
         adminClient.from('transactions').select('amount').eq('user_id', userId).in('type', ['topup', 'credit', 'escrow_release']).eq('status', 'completed'),
         adminClient.from('transactions').select('amount').eq('user_id', userId).in('type', ['withdrawal', 'debit']).in('status', ['completed', 'pending']),
@@ -76,7 +82,11 @@ Deno.serve(async (req) => {
       const totalDebits = (debits || []).reduce((sum, t) => sum + (t.amount || 0), 0)
       const verifiedBalance = Math.max(0, totalCredits - totalDebits)
       const profileBalance = Math.max(0, profile?.wallet_balance || 0)
-      const safeBalance = Math.min(verifiedBalance, profileBalance)
+      return Math.min(verifiedBalance, profileBalance)
+    }
+
+    const verifyWithdrawalEligibility = async (userId, requestedAmount) => {
+      const safeBalance = await getVerifiedBalance(userId)
       if (requestedAmount > safeBalance + 0.01) {
         throw new Error(`Withdrawal of $${requestedAmount.toFixed(2)} exceeds verified balance of $${safeBalance.toFixed(2)}.`)
       }
@@ -158,9 +168,22 @@ Deno.serve(async (req) => {
 
     // ── Confirm top up ──
     if (action === 'confirm_top_up') {
-      const { paymentIntentId, amount } = data
+      const { paymentIntentId } = data
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
       if (paymentIntent.status !== 'succeeded') throw new Error(`Payment not completed. Status: ${paymentIntent.status}`)
+
+      // Credit exactly what Stripe actually collected, never a client-
+      // supplied `amount` — otherwise anyone could top up $0.50 for real and
+      // claim any amount here. Also verify this PI belongs to this user's
+      // Stripe customer, and that it hasn't already been credited (calling
+      // this twice for the same successful PI would otherwise double it).
+      const customerId = await getOrCreateCustomer(user.id, user.email)
+      if (paymentIntent.customer !== customerId) throw new Error('Forbidden: payment does not belong to this account')
+      const { data: existing } = await adminClient.from('transactions')
+        .select('id').eq('type', 'topup').contains('metadata', { payment_intent_id: paymentIntentId }).maybeSingle()
+      if (existing) throw new Error('This payment has already been credited')
+
+      const amount = paymentIntent.amount / 100
       const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', user.id).single()
       const newBalance = (profile?.wallet_balance || 0) + amount
       await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
@@ -227,29 +250,34 @@ Deno.serve(async (req) => {
     // Stripe holds full amount as uncaptured — this is correct escrow behavior
     // Fetchr fee deducted from traveler payout at capture time
     if (action === 'create_payment_intent') {
-      const { matchId, amount, currency = 'usd', paymentMethodId, walletContribution = 0 } = data
+      const { matchId, currency = 'usd', paymentMethodId, walletContribution = 0 } = data
       if (!matchId) throw new Error('matchId required')
-      if (!amount || amount <= 0) throw new Error('Invalid amount')
 
       const { data: match } = await adminClient
         .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
         .eq('id', matchId).single()
       if (!match) throw new Error('Match not found')
 
-      const fees = calcFees(match)
+      // Only the shipper pays escrow (CLAUDE.md) — without this check, any
+      // authenticated user could pay into (and thereby advance) a deal that
+      // isn't theirs. The client no longer gets a say in the amount either:
+      // it used to send its own `amount` for the card charge, which meant a
+      // malicious client could authorize a token amount while the app still
+      // recorded and later released the full deal value from escrow.
+      if (user.id !== match.shipper_id) throw new Error('Forbidden: only the sender can pay escrow for this deal')
+      if (match.status !== 'terms_agreed') throw new Error('This deal is not ready for escrow payment')
 
-      // amount = card portion (may be less than total if wallet contribution)
-      const cardAmountDollars = amount
+      const fees = calcFees(match)
       const totalDollars = fees.totalShipperPays
       const totalCents = Math.round(totalDollars * 100)
-      const cardCents = Math.round(cardAmountDollars * 100)
 
-      // Deduct wallet contribution if any
+      // Deduct wallet contribution if any — checked against the ledger, not
+      // the (now-protected, but still worth double-checking) cached balance.
       if (walletContribution > 0) {
+        const safeBalance = await getVerifiedBalance(user.id)
+        if (walletContribution > safeBalance + 0.01) throw new Error('Insufficient wallet balance')
         const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', user.id).single()
-        const currentBalance = profile?.wallet_balance || 0
-        if (walletContribution > currentBalance + 0.01) throw new Error('Insufficient wallet balance')
-        await adminClient.from('profiles').update({ wallet_balance: currentBalance - walletContribution }).eq('id', user.id)
+        await adminClient.from('profiles').update({ wallet_balance: (profile?.wallet_balance || 0) - walletContribution }).eq('id', user.id)
         await adminClient.from('transactions').insert({
           user_id: user.id, type: 'debit', amount: walletContribution,
           description: `Wallet contribution to escrow: ${match.request?.item_name}`,
@@ -257,6 +285,13 @@ Deno.serve(async (req) => {
           metadata: { type: 'escrow_wallet_contribution' },
         })
       }
+
+      // Card is charged exactly the remainder — derived server-side, never
+      // trusting a client-supplied amount for the actual charge.
+      const cardAmountDollars = Math.round((totalDollars - walletContribution) * 100) / 100
+      const cardCents = Math.round(cardAmountDollars * 100)
+      if (cardCents < 0) throw new Error('Wallet contribution exceeds the deal total')
+      if (cardCents > 0 && cardCents < 50) throw new Error('Remaining card amount is below the $0.50 minimum — pay the rest from your wallet instead')
 
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const piParams: any = {
@@ -346,18 +381,22 @@ Deno.serve(async (req) => {
 
     // ── Escrow from wallet only (no card) ──
     if (action === 'escrow_from_wallet') {
-      const { matchId, amount } = data
+      const { matchId } = data
       if (!matchId) throw new Error('matchId required')
       const { data: match } = await adminClient
         .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
         .eq('id', matchId).single()
       if (!match) throw new Error('Match not found')
 
+      if (user.id !== match.shipper_id) throw new Error('Forbidden: only the sender can pay escrow for this deal')
+      if (match.status !== 'terms_agreed') throw new Error('This deal is not ready for escrow payment')
+
       const fees = calcFees(match)
-      const { data: profile } = await adminClient.from('profiles').select('wallet_balance, full_name').eq('id', user.id).single()
-      if ((profile?.wallet_balance || 0) < fees.totalShipperPays - 0.01) {
-        throw new Error(`Insufficient wallet balance. Available: $${(profile?.wallet_balance || 0).toFixed(2)}`)
+      const safeBalance = await getVerifiedBalance(user.id)
+      if (safeBalance < fees.totalShipperPays - 0.01) {
+        throw new Error(`Insufficient wallet balance. Available: $${safeBalance.toFixed(2)}`)
       }
+      const { data: profile } = await adminClient.from('profiles').select('wallet_balance, full_name').eq('id', user.id).single()
 
       const newBalance = (profile?.wallet_balance || 0) - fees.totalShipperPays
       await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
@@ -409,16 +448,55 @@ Deno.serve(async (req) => {
       const { data: match } = await adminClient
         .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
         .eq('id', matchId).maybeSingle()
+      if (!match) throw new Error('Match not found for capture')
+
+      // Only a party to the deal can trigger release, and only once both
+      // sides have actually confirmed — this used to be enforced purely by
+      // the client waiting to call this action at the "right" time, which
+      // meant anyone with a valid token could call it directly (e.g. via
+      // curl) the moment escrow was created and release funds before any
+      // proof of delivery existed.
+      const isTrav = user.id === match.traveler_id
+      const isShip = user.id === match.shipper_id
+      if (!isTrav && !isShip) throw new Error('Forbidden: not a party to this match')
+      const otherAlreadyConfirmed = isTrav ? match.shipper_completed : match.traveler_completed
+      if (match.status !== 'proof_uploaded' || !otherAlreadyConfirmed) {
+        throw new Error('Delivery cannot be released yet — both parties must confirm delivery first')
+      }
+
+      // Atomically flip status, guarded on the expected prior state, so a
+      // repeated/replayed call (or a second confirmer racing the first)
+      // can't release the same escrow twice — the second call finds no row
+      // still in 'proof_uploaded' and aborts before touching Stripe or any
+      // wallet balance.
+      const { data: transitioned } = await adminClient
+        .from('matches')
+        .update({ status: 'completed', deal_stage: 'completed', traveler_completed: true, shipper_completed: true })
+        .eq('id', matchId).eq('status', 'proof_uploaded')
+        .select().maybeSingle()
+      if (!transitioned) throw new Error('This deal has already been completed')
 
       // Check if this is a wallet-only escrow (no Stripe PI)
       const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
 
-      let fees
-      if (match) {
-        fees = calcFees(match)
-      } else {
-        throw new Error('Match not found for capture')
+      // The amount released is whatever was actually recorded as held at
+      // escrow-creation time (the escrow_hold transaction), never a fresh
+      // calcFees(match) — match.agreed_price_per_kg etc. are editable by
+      // either party via the client SDK, so recomputing here would let a
+      // shipper quietly lower the price after the real charge went through
+      // and have the difference simply vanish (or a traveler inflate it).
+      const { data: escrowTx } = await adminClient.from('transactions')
+        .select('metadata').eq('match_id', matchId).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
+      if (!escrowTx?.metadata) throw new Error('No pending escrow found for this match')
+      const fees = {
+        transportFee: Number(escrowTx.metadata.transport_fee) || 0,
+        shopFee: Number(escrowTx.metadata.shop_fee) || 0,
+        purchasePrice: Number(escrowTx.metadata.purchase_price) || 0,
+        fetchrFee: Number(escrowTx.metadata.fetchr_fee) || 0,
+        travelerReceives: Number(escrowTx.metadata.traveler_receives) || 0,
       }
+      fees.fetchrPct = (fees.transportFee + fees.shopFee) > 0
+        ? fees.fetchrFee / (fees.transportFee + fees.shopFee) : 0
 
       if (!isWalletEscrow) {
         await stripe.paymentIntents.capture(paymentIntentId)
@@ -488,6 +566,11 @@ Deno.serve(async (req) => {
     // ── Cancel escrow ──
     if (action === 'cancel_payment') {
       const { paymentIntentId, matchId } = data
+      if (!matchId) throw new Error('matchId required')
+      const { data: callerMatch } = await adminClient.from('matches').select('traveler_id, shipper_id').eq('id', matchId).maybeSingle()
+      if (!callerMatch || (user.id !== callerMatch.traveler_id && user.id !== callerMatch.shipper_id)) {
+        throw new Error('Forbidden: not a party to this match')
+      }
       const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
 
       if (!isWalletEscrow) {
