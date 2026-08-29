@@ -24,6 +24,32 @@ const STAGE_INFO = {
   disputed: { label: 'Disputed', desc: 'This deal is on hold.' },
 };
 
+// Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — decorative
+// today, encodes match id + route + date as text only (no scanner reads
+// this yet; it's specified so a real handover code can replace it later
+// without a redesign).
+const Barcode = ({ deal }) => {
+  const ref = deal.id.slice(0, 6).toUpperCase();
+  const route = `${deal.flight?.from_code || '???'}${deal.flight?.to_code || '???'}`;
+  const ddmmyy = deal.flight?.flight_date
+    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '')
+    : '------';
+  // Deterministic bar widths from the ref, so the pattern is stable per deal
+  const bars = Array.from(ref).map(c => (c.charCodeAt(0) % 3) + 1);
+  return (
+    <div className="pt-3 mt-3 border-t border-line-perf border-dashed">
+      <div className="h-[26px] flex items-stretch gap-[2px]" aria-hidden="true">
+        {bars.map((w, i) => (
+          <div key={i} className="bg-ink-900" style={{ width: `${w * 2}px`, opacity: 0.82 }} />
+        ))}
+      </div>
+      <p className="mt-1.5 text-center font-mono text-overline text-ink-muted tracking-[0.28em]">
+        {ref}·{route}·{ddmmyy}
+      </p>
+    </div>
+  );
+};
+
 const stepIndex = (statusKey) => {
   const i = STEPS.findIndex(s => s.key === statusKey);
   return i === -1 ? 0 : i;
@@ -101,8 +127,8 @@ const ActiveDeals = ({ session, onNavigate }) => {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchDeals = async () => {
-    setLoading(true);
+  const fetchDeals = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const { data } = await supabase
       .from('matches')
       .select(`
@@ -116,7 +142,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
       .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
       .order('created_at', { ascending: false });
     if (data) setDeals(data);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
@@ -124,9 +150,19 @@ const ActiveDeals = ({ session, onNavigate }) => {
     // Real-time updates
     const sub = supabase.channel('active-deals-rt')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' },
-        () => fetchDeals())
+        () => fetchDeals(false))
       .subscribe();
-    return () => supabase.removeChannel(sub);
+    // Polling fallback — every 5 seconds, in case a realtime event is missed
+    // (same resilience pattern as Matches.jsx / Dashboard.jsx). This is what
+    // was missing: escrow payment updates the DB correctly, but a tab left
+    // open on this screen before payment could stay stale if the realtime
+    // event didn't land, showing "Terms agreed" after the sender had already
+    // paid into escrow.
+    const pollInterval = setInterval(() => fetchDeals(false), 5000);
+    return () => {
+      supabase.removeChannel(sub);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   const isTraveler = (deal) => deal.traveler_id === session.user.id;
@@ -363,6 +399,8 @@ const ActiveDeals = ({ session, onNavigate }) => {
                     Open chat
                     <ChevronRight size={15} />
                   </button>
+
+                  <Barcode deal={deal} />
                 </div>
               </div>
             );
