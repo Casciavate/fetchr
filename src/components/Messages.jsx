@@ -1174,7 +1174,11 @@ const Messages = ({ session, focusMatchId }) => {
                     </div>
                   )}
                   <div className={`max-w-xs lg:max-w-sm flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-surface-inverse text-ink-inverse rounded-br-[3px]' : 'bg-surface-sunken text-content rounded-bl-[3px]'}`}>
+                    {/* Literal ink-scale classes, not the semantic surface-inverse/
+                        text-content tokens — those swap under system dark mode
+                        (never verified for chat), which was collapsing both
+                        bubble colors together and losing text contrast. */}
+                    <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-ink-900 text-white rounded-br-[3px]' : 'bg-ink-50 text-ink-900 rounded-bl-[3px]'}`}>
                       {msg.content}
                     </div>
                     <p className={`font-mono text-micro text-ink-subtle mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>

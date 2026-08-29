@@ -44,12 +44,16 @@ const Barcode = ({ deal }) => {
   // Deterministic bar weights from the ref (repeated to fill a full row of
   // bars), stable per deal. Bars use flex so the strip spans the card
   // width instead of staying a small fixed-width cluster.
+  // Real boarding-pass barcodes (Code128-style) are packed with many thin
+  // bars of varying width, not a handful of thick blocks — that's what
+  // was reading as "stretched/unrealistic". More bars, 1px each at most,
+  // 1px gaps, shorter height.
   const code = ref + route + ddmmyy;
-  const bars = Array.from({ length: 40 }, (_, i) => (code.charCodeAt(i % code.length) % 3) + 1);
+  const bars = Array.from({ length: 70 }, (_, i) => (code.charCodeAt(i % code.length) % 2) + 1);
   return (
     <div className="pt-4 mt-1 -mx-2">
       <div className="perf mb-3 mx-2" />
-      <div className="h-[26px] flex items-stretch gap-[2px] px-2" aria-hidden="true">
+      <div className="h-[22px] flex items-stretch gap-px px-2" aria-hidden="true">
         {bars.map((w, i) => (
           <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
         ))}
