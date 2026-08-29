@@ -8,8 +8,8 @@ const EmptyState = ({ icon: Icon, title, body, action, compact = false }) => {
     return (
       <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
         <Icon size={22} className="text-ink-300 mx-auto mb-2" />
-        <p className="text-body-s text-ink-muted font-medium mb-1">{title}</p>
-        {body && <p className="text-label text-ink-subtle mb-3">{body}</p>}
+        <p className="text-body-s text-content-muted font-medium mb-1">{title}</p>
+        {body && <p className="text-label text-content-subtle mb-3">{body}</p>}
         {action}
       </div>
     );
@@ -20,7 +20,7 @@ const EmptyState = ({ icon: Icon, title, body, action, compact = false }) => {
         <Icon size={32} className="text-ink-300" />
       </div>
       <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">{title}</h2>
-      {body && <p className="text-body-m text-ink-muted max-w-xs mx-auto mb-4">{body}</p>}
+      {body && <p className="text-body-m text-content-muted max-w-xs mx-auto mb-4">{body}</p>}
       {action}
     </div>
   );

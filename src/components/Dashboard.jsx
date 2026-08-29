@@ -65,7 +65,7 @@ const AirlineLogo = ({ airline }) => {
 const PostChooser = ({ onNavigate }) => (
   <div className="max-w-xl mx-auto mt-6 animate-fade-in">
     <h1 className="font-display font-bold text-title-l text-ink-900">What do you want to do?</h1>
-    <p className="text-body-s text-ink-muted mt-1 mb-6">
+    <p className="text-body-s text-content-muted mt-1 mb-6">
       Add space you have, or find someone already flying.
     </p>
     <div className="space-y-3">
@@ -80,7 +80,7 @@ const PostChooser = ({ onNavigate }) => (
           </span>
           <span className="flex-1">
             <p className="font-display font-semibold text-title-s text-ink-900">{opt.title}</p>
-            <p className="text-body-s text-ink-muted mt-0.5">{opt.sub}</p>
+            <p className="text-body-s text-content-muted mt-0.5">{opt.sub}</p>
           </span>
           <ChevronRight size={22} className="text-ink-400 flex-shrink-0" />
         </button>
@@ -444,7 +444,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               </div>
             </div>
 
-            <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 truncate">
+            <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 truncate">
               {deal.flight?.flight_date
                 ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
                 : '—'}
@@ -466,25 +466,25 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               </div>
             </div>
 
-            <p className="text-body-s text-ink-subtle truncate">{deal.request?.item_name}</p>
+            <p className="text-body-s text-content-subtle truncate">{deal.request?.item_name}</p>
 
             {isExpanded && fees && (
               <div className="border-t border-line pt-3 space-y-1.5">
-                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>Transport{deal.agreed_weight_kg || deal.request?.weight_kg ? ` · ${deal.agreed_weight_kg || deal.request?.weight_kg} kg` : ''}</span>
                   <span>${fees.transportFee.toFixed(2)}</span>
                 </div>
                 {fees.isPurchase && (
-                  <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
                     <span>Shop fee</span><span>${fees.shopFee.toFixed(2)}</span>
                   </div>
                 )}
                 {fees.isPurchase && fees.purchasePrice > 0 && (
-                  <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
                     <span>Item</span><span>${fees.purchasePrice.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span><span>−${fees.fetchrFee.toFixed(2)}</span>
                 </div>
               </div>
@@ -496,7 +496,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           <div className="px-4 py-3.5 space-y-3">
             {amount != null && (
               <div className="flex items-baseline justify-between">
-                <span className="font-mono text-body-m text-ink-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
+                <span className="font-mono text-body-m text-content-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
                 <span className="font-mono font-bold text-num-l text-ink-900">${amount.toFixed(2)}</span>
               </div>
             )}
@@ -507,12 +507,12 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               {yourTurn.action}
             </button>
             <button onClick={() => setExpandedHeroKey(isExpanded ? null : cardKey)}
-              className="w-full flex items-center justify-center gap-1 text-body-s text-ink-muted font-medium">
+              className="w-full flex items-center justify-center gap-1 text-body-s text-content-muted font-medium">
               {isExpanded ? 'Hide details' : 'View details'}
               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
             {yourTurn.kind === 'deal' && (
-              <p className="text-body-s text-ink-muted text-center">We hold it until you both confirm delivery.</p>
+              <p className="text-body-s text-content-muted text-center">We hold it until you both confirm delivery.</p>
             )}
           </div>
         </div>
@@ -527,7 +527,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         <h1 className="font-display font-bold text-title-l text-ink-900 tracking-tight">
           Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {userName}
         </h1>
-        <p className="text-body-s text-ink-muted mt-1">
+        <p className="text-body-s text-content-muted mt-1">
           Here's what's happening with your deliveries today.
         </p>
       </div>
@@ -541,13 +541,13 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         ) : (
           <div className="card p-5 text-center">
             <CheckCircle size={20} className="text-ink-300 mx-auto mb-2" />
-            <p className="text-body-s text-ink-muted">Nothing needs you right now.</p>
+            <p className="text-body-s text-content-muted">Nothing needs you right now.</p>
           </div>
         )}
 
         {comingUp.length > 0 && (
           <div>
-            <p className="font-mono text-overline uppercase text-ink-subtle mb-2">Coming up</p>
+            <p className="font-mono text-overline uppercase text-content-subtle mb-2">Coming up</p>
             <div className="space-y-2">
               {comingUp.map((item, i) => {
                 const isDeal = !!item.status && activeDeals.includes(item);
@@ -563,10 +563,10 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                       <p className="font-mono text-body-s font-semibold text-ink-900">
                         {item.flight?.from_code} → {item.flight?.to_code}
                       </p>
-                      <p className="text-micro text-ink-subtle truncate">{item.request?.item_name}</p>
+                      <p className="text-micro text-content-subtle truncate">{item.request?.item_name}</p>
                     </div>
                     <p className={`ml-auto text-label font-semibold flex-shrink-0 ${
-                      stubState === 'secured' ? 'text-success' : isDeal ? stageInfo.color : 'text-ink-muted'
+                      stubState === 'secured' ? 'text-success' : isDeal ? stageInfo.color : 'text-content-muted'
                     }`}>
                       {isDeal ? stageInfo.label : `${item.match_score}% match`}
                     </p>
@@ -611,7 +611,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               {stat.prefix || ''}{typeof stat.value === 'number' && stat.prefix === '$'
                 ? stat.value.toFixed(2) : stat.value}
             </p>
-            <p className="text-label text-ink-muted mt-0.5">{stat.label}</p>
+            <p className="text-label text-content-muted mt-0.5">{stat.label}</p>
           </button>
         ))}
       </div>
@@ -624,7 +624,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-display font-semibold text-title-s text-ink-900">Recommended matches</h2>
-              <p className="text-label text-ink-subtle mt-0.5">Based on your flights & requests</p>
+              <p className="text-label text-content-subtle mt-0.5">Based on your flights & requests</p>
             </div>
             <div className="flex items-center gap-2">
               <StatusPill tone="success" dot>Live</StatusPill>
@@ -642,8 +642,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           ) : recentMatches.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
               <Search size={22} className="text-ink-300 mx-auto mb-2" />
-              <p className="text-body-s text-ink-muted font-medium mb-1">No matches yet</p>
-              <p className="text-label text-ink-subtle mb-3">Add a flight or request to start matching</p>
+              <p className="text-body-s text-content-muted font-medium mb-1">No matches yet</p>
+              <p className="text-label text-content-subtle mb-3">Add a flight or request to start matching</p>
               <button onClick={() => navigate('matches')} className="btn-primary text-label px-4 py-2 min-h-0">
                 Find matches
               </button>
@@ -662,7 +662,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                       <p className="font-mono text-body-s font-semibold text-ink-900">
                         {match.flight?.from_code} → {match.flight?.to_code}
                       </p>
-                      <p className="text-label text-ink-subtle truncate">
+                      <p className="text-label text-content-subtle truncate">
                         {match.request?.item_name} · {other?.full_name}
                       </p>
                     </div>
@@ -689,7 +689,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-display font-semibold text-title-s text-ink-900">Active deals</h2>
-              <p className="text-label text-ink-subtle mt-0.5">Deals currently in progress</p>
+              <p className="text-label text-content-subtle mt-0.5">Deals currently in progress</p>
             </div>
             <div className="flex items-center gap-2">
               <StatusPill tone="success" dot>Live</StatusPill>
@@ -707,8 +707,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           ) : activeDeals.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
               <Zap size={22} className="text-ink-300 mx-auto mb-2" />
-              <p className="text-body-s text-ink-muted font-medium mb-1">No active deals</p>
-              <p className="text-label text-ink-subtle mb-3">Accept a match to start a deal</p>
+              <p className="text-body-s text-content-muted font-medium mb-1">No active deals</p>
+              <p className="text-label text-content-subtle mb-3">Accept a match to start a deal</p>
               <button onClick={() => navigate('matches')} className="btn-primary text-label px-4 py-2 min-h-0">
                 Browse matches
               </button>
@@ -733,7 +733,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                       <p className="text-body-s font-semibold text-ink-900 truncate">
                         {deal.request?.item_name}
                       </p>
-                      <p className="font-mono text-label text-ink-subtle">
+                      <p className="font-mono text-label text-content-subtle">
                         {deal.flight?.from_code} → {deal.flight?.to_code}
                       </p>
                     </div>
@@ -759,7 +759,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-display font-semibold text-title-s text-ink-900">Upcoming flights</h2>
-              <p className="text-label text-ink-subtle mt-0.5">Your listed flights</p>
+              <p className="text-label text-content-subtle mt-0.5">Your listed flights</p>
             </div>
             <div className="flex items-center gap-2">
               <StatusPill tone="success" dot>Live</StatusPill>
@@ -777,8 +777,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           ) : upcomingFlights.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
               <Plane size={22} className="text-ink-300 mx-auto mb-2" />
-              <p className="text-body-s text-ink-muted font-medium mb-1">No upcoming flights</p>
-              <p className="text-label text-ink-subtle mb-3">List a flight to start earning</p>
+              <p className="text-body-s text-content-muted font-medium mb-1">No upcoming flights</p>
+              <p className="text-label text-content-subtle mb-3">List a flight to start earning</p>
               <button onClick={() => navigate('add-flight')} className="btn-primary text-label px-4 py-2 min-h-0">
                 Add a flight
               </button>
@@ -795,11 +795,11 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                     <p className="font-mono text-body-s font-semibold text-ink-900">
                       {flight.from_code} → {flight.to_code}
                     </p>
-                    <p className="text-label text-ink-subtle">{flight.airline}</p>
+                    <p className="text-label text-content-subtle">{flight.airline}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="font-mono text-label font-semibold text-ink-700">${flight.price_per_kg}/kg</p>
-                    <p className="text-label text-ink-subtle">
+                    <p className="text-label text-content-subtle">
                       {new Date(flight.flight_date).toLocaleDateString('en-GB', {
                         day: '2-digit', month: 'short'
                       })}
@@ -816,7 +816,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-display font-semibold text-title-s text-ink-900">Ongoing requests</h2>
-              <p className="text-label text-ink-subtle mt-0.5">Your open shipment requests</p>
+              <p className="text-label text-content-subtle mt-0.5">Your open shipment requests</p>
             </div>
             <div className="flex items-center gap-2">
               <StatusPill tone="success" dot>Live</StatusPill>
@@ -834,8 +834,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           ) : ongoingRequests.length === 0 ? (
             <div className="text-center py-8 bg-surface-sunken rounded-md border border-line">
               <Package size={22} className="text-ink-300 mx-auto mb-2" />
-              <p className="text-body-s text-ink-muted font-medium mb-1">No open requests</p>
-              <p className="text-label text-ink-subtle mb-3">Post a request to find a traveller</p>
+              <p className="text-body-s text-content-muted font-medium mb-1">No open requests</p>
+              <p className="text-label text-content-subtle mb-3">Post a request to find a traveller</p>
               <button onClick={() => navigate('new-request')} className="btn-primary text-label px-4 py-2 min-h-0">
                 Post a request
               </button>
@@ -850,7 +850,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-body-s font-semibold text-ink-900 truncate">{req.item_name}</p>
-                    <p className="font-mono text-label text-ink-subtle">
+                    <p className="font-mono text-label text-content-subtle">
                       {req.from_code} → {req.to_code} · {req.weight_kg}kg
                     </p>
                   </div>
@@ -862,7 +862,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                           ? `$${req.max_budget} max`
                           : '—'}
                     </p>
-                    <p className="text-label text-ink-subtle">{req.category}</p>
+                    <p className="text-label text-content-subtle">{req.category}</p>
                   </div>
                 </button>
               ))}
@@ -897,14 +897,14 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
             className={`w-full flex items-center gap-3 px-3 h-10 rounded-md text-body-m font-medium transition-all ${
               activeNav === 'dashboard'
                 ? 'bg-surface-sunken text-ink-900 font-semibold border-l-[3px] border-ink-900'
-                : 'text-ink-muted hover:bg-surface-sunken'
+                : 'text-content-muted hover:bg-surface-sunken'
             }`}>
             <Home size={16} /> Dashboard
           </button>
 
           {navGroups.map(group => (
             <div key={group.label}>
-              <p className="font-mono text-overline uppercase text-ink-subtle px-3 mb-2">
+              <p className="font-mono text-overline uppercase text-content-subtle px-3 mb-2">
                 {group.label}
               </p>
               <div className="space-y-0.5">
@@ -913,7 +913,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                     className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-body-m font-medium transition-all ${
                       activeNav === item.id
                         ? 'bg-surface-sunken text-ink-900 font-semibold border-l-[3px] border-ink-900'
-                        : 'text-ink-muted hover:bg-surface-sunken'
+                        : 'text-content-muted hover:bg-surface-sunken'
                     }`}>
                     <span className="flex items-center gap-3">
                       <item.icon size={15} /> {item.label}
@@ -929,7 +929,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           {isAdmin && (
             <div>
-              <p className="font-mono text-overline uppercase text-ink-subtle px-3 mb-2">
+              <p className="font-mono text-overline uppercase text-content-subtle px-3 mb-2">
                 Admin
               </p>
               <div className="space-y-0.5">
@@ -937,7 +937,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                   className={`w-full flex items-center gap-3 px-3 h-10 rounded-md text-body-m font-medium transition-all ${
                     activeNav === 'admin'
                       ? 'bg-surface-sunken text-ink-900 font-semibold border-l-[3px] border-ink-900'
-                      : 'text-ink-muted hover:bg-surface-sunken'
+                      : 'text-content-muted hover:bg-surface-sunken'
                   }`}>
                   <Lock size={15} /> Admin dashboard
                 </button>
@@ -948,7 +948,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
         <div className="px-3 pb-4 border-t border-line pt-4">
           <button onClick={async () => { await supabase.auth.signOut(); }}
-            className="w-full flex items-center gap-3 px-3 h-10 rounded-md text-body-m text-ink-muted hover:bg-surface-sunken hover:text-ink-900 transition font-medium">
+            className="w-full flex items-center gap-3 px-3 h-10 rounded-md text-body-m text-content-muted hover:bg-surface-sunken hover:text-ink-900 transition font-medium">
             <LogOut size={15} /> Sign out
           </button>
         </div>
@@ -981,7 +981,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                  activeNav === 'wallet' ? 'Wallet' :
                  activeNav === 'admin' ? 'Admin dashboard' : 'fetchr'}
               </p>
-              <p className="text-label text-ink-subtle">
+              <p className="text-label text-content-subtle">
                 {new Date().toLocaleDateString('en-GB', {
                   weekday: 'long', day: 'numeric', month: 'long'
                 })}
@@ -1023,7 +1023,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               )}
               <div className="hidden sm:block text-left">
                 <p className="text-body-s font-semibold text-ink-900 leading-tight">{userName}</p>
-                <p className="text-label text-ink-subtle leading-tight">{getUserRole()}</p>
+                <p className="text-label text-content-subtle leading-tight">{getUserRole()}</p>
               </div>
             </button>
           </div>

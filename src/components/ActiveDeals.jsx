@@ -58,7 +58,7 @@ const Barcode = ({ deal }) => {
           <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
         ))}
       </div>
-      <p className="mt-1.5 text-center font-mono text-overline text-ink-muted tracking-[0.28em]">
+      <p className="mt-1.5 text-center font-mono text-overline text-content-muted tracking-[0.28em]">
         {ref}·{route}·{ddmmyy}
       </p>
     </div>
@@ -116,7 +116,7 @@ const Timeline = ({ currentKey, waitingOnMe, isFailed }) => {
                   {step.label}
                 </p>
                 {s.kind.startsWith('current') && (
-                  <p className="text-label text-ink-subtle">{waitingOnMe ? 'Waiting on you' : 'Waiting on the other party'}</p>
+                  <p className="text-label text-content-subtle">{waitingOnMe ? 'Waiting on you' : 'Waiting on the other party'}</p>
                 )}
               </div>
             </li>
@@ -277,7 +277,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display font-bold text-title-l text-ink-900">Active deals</h1>
-          <p className="text-body-s text-ink-muted mt-0.5">
+          <p className="text-body-s text-content-muted mt-0.5">
             {deals.length} deal{deals.length !== 1 ? 's' : ''} in progress
           </p>
         </div>
@@ -320,7 +320,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                       ? <StatusPill tone="danger">{stage.label}</StatusPill>
                       : <StatusPill tone={pill.tone}>{pill.label}</StatusPill>}
                   </div>
-                  <span className="font-mono text-overline uppercase text-ink-muted">
+                  <span className="font-mono text-overline uppercase text-content-muted">
                     {myRole}
                   </span>
                 </div>
@@ -334,11 +334,11 @@ const ActiveDeals = ({ session, onNavigate }) => {
                     <p className="font-mono text-body-m font-semibold text-ink-900 truncate">
                       {deal.flight?.from_code} → {deal.flight?.to_code}
                     </p>
-                    <p className="text-body-s text-ink-subtle truncate">{deal.request?.item_name}</p>
+                    <p className="text-body-s text-content-subtle truncate">{deal.request?.item_name}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="font-mono font-semibold text-num-m text-ink-900">${amount.toFixed(2)}</p>
-                    <p className="text-label text-ink-subtle">{isTrav ? 'you receive' : 'you pay'}</p>
+                    <p className="text-label text-content-subtle">{isTrav ? 'you receive' : 'you pay'}</p>
                   </div>
                   {isExpanded ? <ChevronUp size={18} className="text-ink-400 flex-shrink-0" /> : <ChevronDown size={18} className="text-ink-400 flex-shrink-0" />}
                 </button>
@@ -354,7 +354,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                       <p className="text-body-m font-semibold text-ink-900 truncate">
                         {deal.request?.item_name}
                       </p>
-                      <p className="text-body-s text-ink-muted">
+                      <p className="text-body-s text-content-muted">
                         {deal.agreed_weight_kg || deal.request?.weight_kg} kg
                       </p>
                     </div>
@@ -365,7 +365,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                       <p className="font-mono font-semibold text-num-m text-ink-900">
                         ${(isTrav ? fees.travelerReceives : fees.totalShipperPays).toFixed(2)}
                       </p>
-                      <p className="text-body-s text-ink-muted">
+                      <p className="text-body-s text-content-muted">
                         ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
                       </p>
                     </div>
@@ -384,7 +384,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                         <VerificationBadge verified={other?.verified} />
                       </div>
                       <div className="flex items-center gap-2">
-                        <p className="text-body-s text-ink-subtle">
+                        <p className="text-body-s text-content-subtle">
                           {isTrav ? 'Sender' : 'Traveller'}
                         </p>
                         {other?.id && (

@@ -42,10 +42,10 @@ const ReviewsSheet = ({ userId, userName, onClose }) => {
                 <span className="font-mono text-label font-semibold text-ink-900">{r.rating.toFixed(1)}</span>
               </span>
             </div>
-            <p className="text-micro text-ink-subtle mb-1">
+            <p className="text-micro text-content-subtle mb-1">
               {new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
             </p>
-            {r.comment && <p className="text-body-s text-ink-muted italic">"{r.comment}"</p>}
+            {r.comment && <p className="text-body-s text-content-muted italic">"{r.comment}"</p>}
           </div>
         ))}
       </div>

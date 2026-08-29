@@ -490,7 +490,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   <img src={avatarUrl} alt="Profile"
                     className="w-24 h-24 rounded-avatar object-cover border border-line" />
                 ) : (
-                  <div className="w-24 h-24 rounded-avatar bg-surface-inverse flex items-center justify-center text-ink-inverse text-title-l font-mono font-semibold">
+                  <div className="w-24 h-24 rounded-avatar bg-surface-inverse flex items-center justify-center text-content-inverse text-title-l font-mono font-semibold">
                     {getInitials(profile?.full_name)}
                   </div>
                 )}
@@ -526,9 +526,9 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   ) : (
                     <RatingDisplay rating={0} totalReviews={0} />
                   )}
-                  {memberSince && <span className="text-micro text-ink-subtle">Member since {memberSince}</span>}
+                  {memberSince && <span className="text-micro text-content-subtle">Member since {memberSince}</span>}
                 </div>
-                <p className="text-micro text-ink-muted mt-1.5">{userRole || 'New member'}</p>
+                <p className="text-micro text-content-muted mt-1.5">{userRole || 'New member'}</p>
               </div>
             </div>
             <button
@@ -624,7 +624,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   return (
                     <button key={i} onClick={() => onNavigate && onNavigate('completed', { focusDealId: deal.id })}
                       className="w-full flex items-center gap-3 p-3 bg-surface-sunken rounded-md border border-line hover:border-line-strong transition text-left">
-                      <div className="w-9 h-9 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-ink-inverse flex-shrink-0">
+                      <div className="w-9 h-9 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-content-inverse flex-shrink-0">
                         {getInitials(other?.full_name)}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -666,7 +666,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 {receivedReviews.map(review => (
                   <div key={review.id} className="p-3 bg-surface-sunken rounded-md border border-line">
                     <div className="flex items-center gap-3 mb-1.5">
-                      <div className="w-8 h-8 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-ink-inverse flex-shrink-0">
+                      <div className="w-8 h-8 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-content-inverse flex-shrink-0">
                         {getInitials(review.reviewer?.full_name)}
                       </div>
                       <div className="flex-1 min-w-0">

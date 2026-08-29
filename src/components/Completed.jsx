@@ -33,7 +33,7 @@ const Barcode = ({ deal }) => {
           <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
         ))}
       </div>
-      <p className="mt-1.5 text-center font-mono text-overline text-ink-muted tracking-[0.28em]">
+      <p className="mt-1.5 text-center font-mono text-overline text-content-muted tracking-[0.28em]">
         {ref}·{route}·{ddmmyy}
       </p>
     </div>

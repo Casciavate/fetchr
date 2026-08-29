@@ -11,6 +11,7 @@ import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
+import Toast from './shared/Toast';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
 // where the tile would double up on the surface-inverse fill.
@@ -35,6 +36,7 @@ const Matches = ({ session, onNavigate }) => {
   const [acting, setActing] = useState({});
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchDeclinedIds = async (userId) => {
     const { data } = await supabase
@@ -133,6 +135,7 @@ const Matches = ({ session, onNavigate }) => {
 
   const handleAccept = async (matchId) => {
     setActing(prev => ({ ...prev, [matchId]: 'accepting' }));
+    setError('');
 
     // Always fetch fresh from DB to avoid stale local state
     const { data: freshMatch } = await supabase
@@ -166,6 +169,10 @@ const Matches = ({ session, onNavigate }) => {
 
       if (error) {
         console.error('Accept error:', error);
+        setError(error.message?.includes('capacity')
+          ? "This flight doesn't have enough remaining luggage capacity for this deal."
+          : 'Could not accept this match. Please try again.');
+        setTimeout(() => setError(''), 4000);
         setActing(prev => ({ ...prev, [matchId]: null }));
         return;
       }
@@ -189,11 +196,16 @@ const Matches = ({ session, onNavigate }) => {
 
     } else {
       // I am first to accept — mark my acceptance and wait for other party
-      await supabase.from('matches').update({
+      const { error } = await supabase.from('matches').update({
         [myField]: true,
         status: 'awaiting_other',
       }).eq('id', matchId);
 
+      if (error) {
+        console.error('Accept error:', error);
+        setError('Could not accept this match. Please try again.');
+        setTimeout(() => setError(''), 4000);
+      }
       await fetchMatches(false);
       setActing(prev => ({ ...prev, [matchId]: null }));
     }
@@ -239,8 +251,8 @@ const Matches = ({ session, onNavigate }) => {
       <div className="w-14 h-14 bg-ink-100 rounded-lg flex items-center justify-center mb-4 animate-pulse">
         <Search size={24} className="text-ink-400" />
       </div>
-      <p className="text-body-m text-ink-muted font-medium">Finding your matches</p>
-      <p className="text-body-s text-ink-subtle mt-1">This updates every 2 seconds</p>
+      <p className="text-body-m text-content-muted font-medium">Finding your matches</p>
+      <p className="text-body-s text-content-subtle mt-1">This updates every 2 seconds</p>
     </div>
   );
 
@@ -299,7 +311,7 @@ const Matches = ({ session, onNavigate }) => {
               <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">
                 {match.flight?.from_code || '—'}
               </p>
-              <p className="text-body-s text-ink-muted truncate" title={match.flight?.from_city}>
+              <p className="text-body-s text-content-muted truncate" title={match.flight?.from_city}>
                 {match.flight?.from_city}
               </p>
             </div>
@@ -311,14 +323,14 @@ const Matches = ({ session, onNavigate }) => {
               <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">
                 {match.flight?.to_code || '—'}
               </p>
-              <p className="text-body-s text-ink-muted truncate" title={match.flight?.to_city}>
+              <p className="text-body-s text-content-muted truncate" title={match.flight?.to_city}>
                 {match.flight?.to_city}
               </p>
             </div>
           </div>
 
           {/* Data strip — single micro line, §7.8 */}
-          <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
+          <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
             {match.flight?.flight_date
               ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
               : '—'}
@@ -370,7 +382,7 @@ const Matches = ({ session, onNavigate }) => {
 
           {/* Expandable full deal details */}
           <button onClick={() => setExpandedId(isExpanded ? null : match.id)}
-            className="w-full flex items-center justify-center gap-1 text-label text-ink-muted font-semibold py-1">
+            className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-1">
             {isExpanded ? 'Hide deal details' : 'View deal details'}
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
@@ -381,30 +393,30 @@ const Matches = ({ session, onNavigate }) => {
               )}
               <div className="grid grid-cols-2 gap-2 text-body-s">
                 <div>
-                  <p className="text-micro text-ink-subtle">Category</p>
+                  <p className="text-micro text-content-subtle">Category</p>
                   <p className="font-medium text-content">{match.request?.category || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-micro text-ink-subtle">Weight</p>
+                  <p className="text-micro text-content-subtle">Weight</p>
                   <p className="font-mono font-medium text-content">{match.request?.weight_kg} kg</p>
                 </div>
                 {match.request?.dimensions && (
                   <div>
-                    <p className="text-micro text-ink-subtle">Dimensions</p>
+                    <p className="text-micro text-content-subtle">Dimensions</p>
                     <p className="font-medium text-content">{match.request.dimensions}</p>
                   </div>
                 )}
                 <div>
-                  <p className="text-micro text-ink-subtle">Airline</p>
+                  <p className="text-micro text-content-subtle">Airline</p>
                   <p className="font-medium text-content">{match.flight?.airline || '—'}</p>
                 </div>
               </div>
               <div className="border-t border-line pt-2 space-y-1">
-                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>{match.request?.weight_kg}kg × ${match.flight?.price_per_kg}/kg</span>
                   <span>${fees.agreedPrice.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span>
                   <span>−${fees.fetchrFee.toFixed(2)}</span>
                 </div>
@@ -418,7 +430,7 @@ const Matches = ({ session, onNavigate }) => {
         {/* Coupon — one money line + one action, §7.8 */}
         <div className="px-4 pt-3.5 pb-4 space-y-3">
           <div className="flex items-baseline justify-between">
-            <span className="font-mono text-body-m text-ink-muted">
+            <span className="font-mono text-body-m text-content-muted">
               {iAmTraveler ? 'You receive' : 'You pay'}
             </span>
             <span className="font-mono font-bold text-num-l text-ink-900">
@@ -470,10 +482,11 @@ const Matches = ({ session, onNavigate }) => {
 
   return (
     <div className="max-w-3xl mx-auto animate-fade-in">
+      <Toast message={error} tone="error" />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display font-bold text-title-l text-ink-900">Your matches</h1>
-          <p className="text-body-s text-ink-muted mt-0.5">
+          <p className="text-body-s text-content-muted mt-0.5">
             {matches.length} pending match{matches.length !== 1 ? 'es' : ''}
           </p>
         </div>
@@ -488,8 +501,8 @@ const Matches = ({ session, onNavigate }) => {
               <button key={f} onClick={() => setFilter(f)}
                 className={`flex-shrink-0 h-9 px-3.5 rounded-full text-label font-medium border transition ${
                   filter === f
-                    ? 'bg-surface-inverse text-ink-inverse border-surface-inverse'
-                    : 'bg-surface text-ink-muted border-line-strong'
+                    ? 'bg-surface-inverse text-content-inverse border-surface-inverse'
+                    : 'bg-surface text-content-muted border-line-strong'
                 }`}>
                 {f}
               </button>
@@ -497,11 +510,11 @@ const Matches = ({ session, onNavigate }) => {
           </div>
           <div className="flex-shrink-0 flex border border-line-strong rounded-md overflow-hidden mb-3">
             <button onClick={() => setViewMode('list')} aria-label="List view"
-              className={`w-9 h-9 flex items-center justify-center ${viewMode === 'list' ? 'bg-surface-inverse text-ink-inverse' : 'bg-surface text-ink-muted'}`}>
+              className={`w-9 h-9 flex items-center justify-center ${viewMode === 'list' ? 'bg-surface-inverse text-content-inverse' : 'bg-surface text-content-muted'}`}>
               <List size={16} />
             </button>
             <button onClick={() => setViewMode('carousel')} aria-label="Carousel view"
-              className={`w-9 h-9 flex items-center justify-center ${viewMode === 'carousel' ? 'bg-surface-inverse text-ink-inverse' : 'bg-surface text-ink-muted'}`}>
+              className={`w-9 h-9 flex items-center justify-center ${viewMode === 'carousel' ? 'bg-surface-inverse text-content-inverse' : 'bg-surface text-content-muted'}`}>
               <LayoutGrid size={16} />
             </button>
           </div>

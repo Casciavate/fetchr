@@ -107,7 +107,7 @@ const LuggageEditCard = ({ opt, index, onChange, onRemove }) => {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-label text-ink-muted mb-1">
+          <label className="block text-label text-content-muted mb-1">
             kg available
           </label>
           <div className="relative">
@@ -120,7 +120,7 @@ const LuggageEditCard = ({ opt, index, onChange, onRemove }) => {
           </div>
         </div>
         <div>
-          <label className="block text-label text-ink-muted mb-1">
+          <label className="block text-label text-content-muted mb-1">
             Price/kg ($)
           </label>
           <div className="relative">
@@ -135,10 +135,10 @@ const LuggageEditCard = ({ opt, index, onChange, onRemove }) => {
 
       {earnings && (
         <div className="bg-surface rounded-md p-2.5 text-body-s space-y-1 border border-line font-mono">
-          <div className="flex justify-between text-ink-muted">
+          <div className="flex justify-between text-content-muted">
             <span>Gross</span><span>${earnings.gross.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-ink-muted">
+          <div className="flex justify-between text-content-muted">
             <span>fetchr fee ({earnings.pct}%)</span>
             <span>&minus;${earnings.fee.toFixed(2)}</span>
           </div>
@@ -319,7 +319,7 @@ const MyFlights = ({ session, onAddFlight }) => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display font-bold text-title-l text-ink-900">My flights</h1>
-          <p className="text-body-s text-ink-muted mt-0.5">
+          <p className="text-body-s text-content-muted mt-0.5">
             {flights.length} flight{flights.length !== 1 ? 's' : ''} listed
           </p>
         </div>
@@ -370,7 +370,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                         <p className="font-mono font-semibold text-code-l text-ink-900">
                           {flight.from_code} <span className="text-ink-400">&rarr;</span> {flight.to_code}
                         </p>
-                        <p className="text-body-s text-ink-muted truncate">
+                        <p className="text-body-s text-content-muted truncate">
                           {flight.from_city} &rarr; {flight.to_city}
                         </p>
                       </div>
@@ -379,7 +379,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                   </div>
 
                   {/* Data strip — Date · Flight · Free, §7.7 */}
-                  <div className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 flex flex-wrap gap-x-1">
+                  <div className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 flex flex-wrap gap-x-1">
                     <span>{new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                     <span>&middot;</span>
                     <span>{flight.airline}{flight.flight_number ? ` ${flight.flight_number}` : ''}</span>
@@ -425,7 +425,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                                   <p className="text-body-s font-semibold text-ink-900">
                                     {isCarryOn ? 'Hand luggage' : 'Check-in luggage'}
                                   </p>
-                                  <p className="text-body-s text-ink-muted font-mono">
+                                  <p className="text-body-s text-content-muted font-mono">
                                     {opt.available_kg}kg @ ${opt.price_per_kg}/kg
                                   </p>
                                 </div>
@@ -433,7 +433,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                               {e && (
                                 <div className="text-right font-mono">
                                   <p className="text-body-s font-bold text-success">${e.net.toFixed(2)}</p>
-                                  <p className="text-micro text-ink-subtle">net ({e.pct}% fee)</p>
+                                  <p className="text-micro text-content-subtle">net ({e.pct}% fee)</p>
                                 </div>
                               )}
                             </div>
@@ -462,12 +462,12 @@ const MyFlights = ({ session, onAddFlight }) => {
                       )}
 
                       {flight.handover_location_departure && (
-                        <p className="text-body-s text-ink-subtle flex items-center gap-1">
+                        <p className="text-body-s text-content-subtle flex items-center gap-1">
                           <MapPin size={11} /> Dep: {flight.handover_location_departure}
                         </p>
                       )}
                       {flight.handover_location_arrival && (
-                        <p className="text-body-s text-ink-subtle flex items-center gap-1">
+                        <p className="text-body-s text-content-subtle flex items-center gap-1">
                           <MapPin size={11} /> Arr: {flight.handover_location_arrival}
                         </p>
                       )}
@@ -480,7 +480,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       )}
 
                       {editForm.notes && (
-                        <p className="text-body-s text-ink-subtle italic">"{editForm.notes}"</p>
+                        <p className="text-body-s text-content-subtle italic">"{editForm.notes}"</p>
                       )}
                     </>
                   )}
@@ -499,7 +499,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
                       <div>
-                        <p className="text-label text-ink-muted mb-2">Luggage options</p>
+                        <p className="text-label text-content-muted mb-2">Luggage options</p>
 
                         <div className="flex gap-2 mb-3">
                           <button
@@ -548,7 +548,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       </div>
 
                       <div>
-                        <label className="block text-label text-ink-muted mb-2">
+                        <label className="block text-label text-content-muted mb-2">
                           Categories (required)
                         </label>
                         <div className="flex flex-wrap gap-1.5">
@@ -566,7 +566,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       </div>
 
                       <div>
-                        <label className="block text-label text-ink-muted mb-2">
+                        <label className="block text-label text-content-muted mb-2">
                           Delivery service
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -589,7 +589,7 @@ const MyFlights = ({ session, onAddFlight }) => {
 
                       {editForm.delivery_type === 'both' && (
                         <div>
-                          <label className="block text-label text-ink-muted mb-1.5">
+                          <label className="block text-label text-content-muted mb-1.5">
                             Shop & Ship fee ($)
                           </label>
                           <div className="relative">
@@ -603,7 +603,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       )}
 
                       <div>
-                        <label className="block text-label text-ink-muted mb-1.5">
+                        <label className="block text-label text-content-muted mb-1.5">
                           Departure handover location
                         </label>
                         <input type="text"
@@ -614,7 +614,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       </div>
 
                       <div>
-                        <label className="block text-label text-ink-muted mb-1.5">
+                        <label className="block text-label text-content-muted mb-1.5">
                           Arrival handover location
                         </label>
                         <input type="text"
@@ -625,7 +625,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                       </div>
 
                       <div>
-                        <label className="block text-label text-ink-muted mb-1.5">
+                        <label className="block text-label text-content-muted mb-1.5">
                           Notes
                         </label>
                         <textarea placeholder="Any special conditions..."
@@ -652,7 +652,7 @@ const MyFlights = ({ session, onAddFlight }) => {
                     <div className="perf" />
                     <div className="px-4 pt-3.5 pb-4 space-y-3">
                       <div className="flex items-baseline justify-between">
-                        <span className="font-mono text-body-m text-ink-muted">Max net earnings</span>
+                        <span className="font-mono text-body-m text-content-muted">Max net earnings</span>
                         <span className="font-mono font-bold text-num-l text-ink-900">${totalNet.toFixed(2)}</span>
                       </div>
                       <div className="flex gap-2">

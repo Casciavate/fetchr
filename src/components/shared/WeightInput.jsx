@@ -22,7 +22,7 @@ const WeightInput = ({ label, value, onChange, min = 0.5, max = 50, step = 0.5, 
           flex items-center justify-center gap-1.5">
           <Weight size={14} className="text-ink-400" />
           <span className="font-mono text-num-l font-semibold text-ink-900">{num.toFixed(1)}</span>
-          <span className="text-body-s text-ink-muted">kg</span>
+          <span className="text-body-s text-content-muted">kg</span>
         </div>
         <button type="button" onClick={() => set(num + step)} disabled={num >= max}
           aria-label="Increase weight"
@@ -31,7 +31,7 @@ const WeightInput = ({ label, value, onChange, min = 0.5, max = 50, step = 0.5, 
           <Plus size={16} className="text-ink-700" />
         </button>
       </div>
-      {helper && <p className="text-micro text-ink-subtle mt-1.5">{helper}</p>}
+      {helper && <p className="text-micro text-content-subtle mt-1.5">{helper}</p>}
     </div>
   );
 };

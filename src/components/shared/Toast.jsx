@@ -14,7 +14,7 @@ const Toast = ({ message, tone = 'success' }) => {
         max-w-sm w-[calc(100%-2rem)] md:w-auto animate-toast-in"
       role={isError ? 'alert' : 'status'}
       aria-live="polite">
-      <div className="flex items-center gap-2 bg-surface-inverse text-ink-inverse rounded-md px-4 py-3 shadow-elev-2 text-body-s font-medium">
+      <div className="flex items-center gap-2 bg-surface-inverse text-content-inverse rounded-md px-4 py-3 shadow-elev-2 text-body-s font-medium">
         {isError ? <AlertTriangle size={16} className="flex-shrink-0" /> : <Check size={16} className="flex-shrink-0" />}
         <span>{message}</span>
       </div>

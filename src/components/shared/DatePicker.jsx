@@ -57,7 +57,7 @@ const DatePicker = ({ label, value, onChange, min, helper }) => {
           </div>
           <div className="grid grid-cols-7 gap-1 mb-1">
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-              <div key={i} className="w-9 h-6 flex items-center justify-center text-micro text-ink-subtle font-mono">{d}</div>
+              <div key={i} className="w-9 h-6 flex items-center justify-center text-micro text-content-subtle font-mono">{d}</div>
             ))}
           </div>
           <div className="grid grid-cols-7 gap-1">
@@ -78,7 +78,7 @@ const DatePicker = ({ label, value, onChange, min, helper }) => {
           </div>
         </div>
       )}
-      {helper && <p className="text-micro text-ink-subtle mt-1.5">{helper}</p>}
+      {helper && <p className="text-micro text-content-subtle mt-1.5">{helper}</p>}
     </div>
   );
 };

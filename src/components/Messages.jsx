@@ -127,24 +127,24 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 
           {/* Route */}
           <div className="bg-surface-sunken rounded-lg p-4 border border-line">
-            <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+            <p className="font-mono text-overline uppercase text-content-muted mb-3 flex items-center gap-1.5">
               <Plane size={13} /> Flight route
             </p>
             <div className="grid grid-cols-2 gap-3 text-body-s">
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">From</p>
+                <p className="text-micro text-content-subtle mb-0.5">From</p>
                 <p className="font-semibold text-ink-900">{match.flight?.from_city} ({match.flight?.from_code})</p>
               </div>
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">To</p>
+                <p className="text-micro text-content-subtle mb-0.5">To</p>
                 <p className="font-semibold text-ink-900">{match.flight?.to_city} ({match.flight?.to_code})</p>
               </div>
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">Airline</p>
+                <p className="text-micro text-content-subtle mb-0.5">Airline</p>
                 <p className="font-medium text-content">{match.flight?.airline}</p>
               </div>
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">Date</p>
+                <p className="text-micro text-content-subtle mb-0.5">Date</p>
                 <p className="font-mono font-medium text-content">
                   {match.flight?.flight_date
                     ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -156,33 +156,33 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 
           {/* Item */}
           <div className="bg-surface-sunken rounded-lg p-4 border border-line">
-            <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+            <p className="font-mono text-overline uppercase text-content-muted mb-3 flex items-center gap-1.5">
               <Package size={13} /> Shipment details
             </p>
             <div className="grid grid-cols-2 gap-3 text-body-s">
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">Item</p>
+                <p className="text-micro text-content-subtle mb-0.5">Item</p>
                 <p className="font-semibold text-ink-900">{match.request?.item_name}</p>
               </div>
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">Category</p>
+                <p className="text-micro text-content-subtle mb-0.5">Category</p>
                 <p className="font-medium text-content">{match.request?.category}</p>
               </div>
               <div>
-                <p className="text-micro text-ink-subtle mb-0.5">Weight</p>
+                <p className="text-micro text-content-subtle mb-0.5">Weight</p>
                 <p className="font-mono font-semibold text-ink-900">{match.agreed_weight_kg || match.request?.weight_kg} kg</p>
               </div>
               {match.request?.item_dimensions && (
                 <div>
-                  <p className="text-micro text-ink-subtle mb-0.5">Dimensions</p>
+                  <p className="text-micro text-content-subtle mb-0.5">Dimensions</p>
                   <p className="font-medium text-content">{match.request.item_dimensions}</p>
                 </div>
               )}
             </div>
             {match.request?.description && (
               <div className="mt-3 pt-3 border-t border-line">
-                <p className="text-micro text-ink-subtle mb-1">Description</p>
-                <p className="text-body-s text-ink-muted">{match.request.description}</p>
+                <p className="text-micro text-content-subtle mb-1">Description</p>
+                <p className="text-body-s text-content-muted">{match.request.description}</p>
               </div>
             )}
           </div>
@@ -198,28 +198,28 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                   <div className="flex items-start gap-2">
                     <MapPin size={13} className="text-info-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-micro text-ink-subtle">Store</p>
+                      <p className="text-micro text-content-subtle">Store</p>
                       <p className="font-medium text-content">{match.request.purchase_store}</p>
                     </div>
                   </div>
                 )}
                 {match.request?.purchase_price && (
                   <div className="flex justify-between">
-                    <span className="text-ink-muted">Item purchase price</span>
+                    <span className="text-content-muted">Item purchase price</span>
                     <span className="font-mono font-semibold text-ink-900">${parseFloat(match.request.purchase_price).toFixed(2)}</span>
                   </div>
                 )}
                 {match.request?.purchase_url && (
                   <div>
-                    <p className="text-micro text-ink-subtle mb-0.5">Product link</p>
+                    <p className="text-micro text-content-subtle mb-0.5">Product link</p>
                     <a href={match.request.purchase_url} target="_blank" rel="noreferrer"
                       className="text-micro text-info-500 underline break-all">{match.request.purchase_url}</a>
                   </div>
                 )}
                 {match.request?.purchase_details && (
                   <div>
-                    <p className="text-micro text-ink-subtle mb-0.5">Specifications</p>
-                    <p className="text-micro text-ink-muted">{match.request.purchase_details}</p>
+                    <p className="text-micro text-content-subtle mb-0.5">Specifications</p>
+                    <p className="text-micro text-content-muted">{match.request.purchase_details}</p>
                   </div>
                 )}
               </div>
@@ -229,33 +229,33 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
           {/* Handover details */}
           {(match.flight?.handover_location_departure || match.flight?.handover_location_arrival || match.request?.trusted_person_name) && (
             <div className="bg-surface-sunken rounded-lg p-4 border border-line">
-              <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+              <p className="font-mono text-overline uppercase text-content-muted mb-3 flex items-center gap-1.5">
                 <MapPin size={13} /> Handover details
               </p>
               <div className="space-y-2 text-body-s">
                 {match.flight?.handover_location_departure && (
                   <div>
-                    <p className="text-micro text-ink-subtle">Departure handover</p>
+                    <p className="text-micro text-content-subtle">Departure handover</p>
                     <p className="font-medium text-content">{match.flight.handover_location_departure}</p>
                   </div>
                 )}
                 {match.flight?.handover_location_arrival && (
                   <div>
-                    <p className="text-micro text-ink-subtle">Arrival handover</p>
+                    <p className="text-micro text-content-subtle">Arrival handover</p>
                     <p className="font-medium text-content">{match.flight.handover_location_arrival}</p>
                   </div>
                 )}
                 {match.request?.trusted_person_name && (
                   <div className="pt-2 border-t border-line space-y-1">
-                    <p className="font-mono text-overline uppercase text-ink-muted">Handover contact</p>
+                    <p className="font-mono text-overline uppercase text-content-muted">Handover contact</p>
                     <p className="text-body-s font-semibold text-ink-900">{match.request.trusted_person_name}</p>
                     {match.request.trusted_person_phone && (
-                      <p className="text-micro text-ink-muted flex items-center gap-1">
+                      <p className="text-micro text-content-muted flex items-center gap-1">
                         <Phone size={11} /> {match.request.trusted_person_phone}
                       </p>
                     )}
                     {match.request.trusted_person_location && (
-                      <p className="text-micro text-ink-muted flex items-center gap-1">
+                      <p className="text-micro text-content-muted flex items-center gap-1">
                         <MapPin size={11} /> {match.request.trusted_person_location}
                       </p>
                     )}
@@ -275,14 +275,14 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Price/kg ($)</label>
+                  <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">Price/kg ($)</label>
                   <input type="number" min="0" step="0.5" inputMode="decimal"
                     value={form.agreed_price_per_kg}
                     onChange={e => setForm({ ...form, agreed_price_per_kg: e.target.value })}
                     className="input-field font-mono" />
                 </div>
                 <div>
-                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Weight (kg)</label>
+                  <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">Weight (kg)</label>
                   <input type="number" min="0" step="0.1" inputMode="decimal"
                     value={form.agreed_weight_kg}
                     onChange={e => setForm({ ...form, agreed_weight_kg: e.target.value })}
@@ -291,18 +291,18 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
               </div>
               {isPurchase && (
                 <div>
-                  <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">
+                  <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">
                     Shop & Ship service fee ($) <span className="text-info-500 font-normal normal-case">— the traveller's fee for purchasing the item</span>
                   </label>
                   <input type="number" min="0" step="0.5" inputMode="decimal" placeholder="e.g. 15.00"
                     value={form.agreed_shop_fee}
                     onChange={e => setForm({ ...form, agreed_shop_fee: e.target.value })}
                     className="input-field font-mono" />
-                  <p className="text-micro text-ink-subtle mt-1">This is the traveller's service fee for going to the store and buying the item. The fetchr fee applies to this amount too.</p>
+                  <p className="text-micro text-content-subtle mt-1">This is the traveller's service fee for going to the store and buying the item. The fetchr fee applies to this amount too.</p>
                 </div>
               )}
               <div>
-                <label className="block text-label text-ink-muted mb-1 uppercase tracking-wide">Notes</label>
+                <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">Notes</label>
                 <textarea rows={2} placeholder="Any agreed conditions..."
                   value={form.agreed_notes}
                   onChange={e => setForm({ ...form, agreed_notes: e.target.value })}
@@ -326,25 +326,25 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
             </div>
           ) : (
             <div className="bg-surface-sunken rounded-lg p-4 border border-line">
-              <p className="font-mono text-overline uppercase text-ink-muted mb-3 flex items-center gap-1.5">
+              <p className="font-mono text-overline uppercase text-content-muted mb-3 flex items-center gap-1.5">
                 <DollarSign size={13} /> Financial summary
               </p>
               <div className="space-y-2 text-body-s">
                 {/* 1. Transport */}
-                <div className="flex justify-between text-ink-muted font-mono">
+                <div className="flex justify-between text-content-muted font-mono">
                   <span>{match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
                   <span className="font-semibold text-ink-900">${dealValue.toFixed(2)}</span>
                 </div>
                 {/* 2. Shop & ship fee */}
                 {isPurchase && (
-                  <div className="flex justify-between text-ink-muted">
+                  <div className="flex justify-between text-content-muted">
                     <span>Shop & ship service fee</span>
                     <span className="font-mono font-semibold">{shopFee > 0 ? `$${shopFee.toFixed(2)}` : <span className="text-warning">TBD — set in Amend</span>}</span>
                   </div>
                 )}
                 {/* 3. Item purchase price */}
                 {isPurchase && purchasePrice > 0 && (
-                  <div className="flex justify-between text-ink-muted">
+                  <div className="flex justify-between text-content-muted">
                     <span>Item purchase price</span>
                     <span className="font-mono font-semibold text-ink-900">${purchasePrice.toFixed(2)}</span>
                   </div>
@@ -358,13 +358,13 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                 </div>
                 {/* 5. Fetchr fee (on transport + shop only) */}
                 <div className="bg-surface rounded-md p-3 space-y-1.5 text-micro mt-1 border border-line">
-                  <p className="text-ink-subtle font-mono uppercase tracking-wide">Distribution</p>
-                  <div className="flex justify-between font-mono text-ink-muted">
+                  <p className="text-content-subtle font-mono uppercase tracking-wide">Distribution</p>
+                  <div className="flex justify-between font-mono text-content-muted">
                     <span>fetchr fee ({Math.round(fetchrPct * 100)}%) on ${fetchrBase.toFixed(2)}</span>
                     <span>−${fetchrFee.toFixed(2)}</span>
                   </div>
                   {isPurchase && purchasePrice > 0 && (
-                    <div className="flex justify-between font-mono text-ink-muted">
+                    <div className="flex justify-between font-mono text-content-muted">
                       <span>Item purchase reimbursement</span>
                       <span>+${purchasePrice.toFixed(2)}</span>
                     </div>
@@ -377,8 +377,8 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
               </div>
               {match.agreed_notes && (
                 <div className="mt-3 pt-3 border-t border-line">
-                  <p className="text-micro text-ink-subtle mb-1">Agreed notes</p>
-                  <p className="text-body-s text-ink-muted italic">"{match.agreed_notes}"</p>
+                  <p className="text-micro text-content-subtle mb-1">Agreed notes</p>
+                  <p className="text-body-s text-content-muted italic">"{match.agreed_notes}"</p>
                 </div>
               )}
             </div>
@@ -825,7 +825,7 @@ const Messages = ({ session, focusMatchId }) => {
         <MessageCircle size={32} className="text-ink-300" />
       </div>
       <h2 className="font-display font-bold text-title-m text-ink-900 mb-1">No conversations</h2>
-      <p className="text-body-m text-ink-muted">Chat opens once both sides accept a match</p>
+      <p className="text-body-m text-content-muted">Chat opens once both sides accept a match</p>
     </div>
   );
 
@@ -859,7 +859,7 @@ const Messages = ({ session, focusMatchId }) => {
         <div className="p-4 border-b border-line flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="font-display font-semibold text-title-s text-ink-900">Messages</h2>
-            <p className="text-micro text-ink-subtle mt-0.5">{acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}</p>
+            <p className="text-micro text-content-subtle mt-0.5">{acceptedMatches.length} active deal{acceptedMatches.length !== 1 ? 's' : ''}</p>
           </div>
           {totalUnread > 0 && (
             <span className="bg-accent-fill text-white font-mono text-micro font-bold rounded-full w-5 h-5 flex items-center justify-center">{totalUnread}</span>
@@ -892,7 +892,7 @@ const Messages = ({ session, focusMatchId }) => {
                       <p className={`text-body-s truncate ${unread > 0 ? 'font-semibold text-ink-900' : 'font-medium text-content'}`}>{other?.full_name || 'User'}</p>
                       <StageIcon size={13} className="text-ink-400 flex-shrink-0" />
                     </div>
-                    <p className="text-micro text-ink-subtle truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
+                    <p className="text-micro text-content-subtle truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
                   </div>
                 </div>
               </button>
@@ -919,7 +919,7 @@ const Messages = ({ session, focusMatchId }) => {
                       <div className={`w-6 h-6 rounded-sm flex items-center justify-center transition-all ${isDone ? 'bg-success text-white' : isCurrent ? 'bg-accent-fill text-white' : 'bg-ink-200 text-ink-400'}`}>
                         {isDone ? <CheckCircle size={13} /> : <StageIcon size={12} />}
                       </div>
-                      <p className={`hidden sm:block text-center font-mono ${isCurrent ? 'text-accent font-semibold' : 'text-ink-subtle'}`} style={{ fontSize: '9px' }}>{stage.label}</p>
+                      <p className={`hidden sm:block text-center font-mono ${isCurrent ? 'text-accent font-semibold' : 'text-content-subtle'}`} style={{ fontSize: '9px' }}>{stage.label}</p>
                     </div>
                     {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 rounded-full transition-all ${isDone ? 'bg-success' : 'bg-ink-100'}`} />}
                   </React.Fragment>
@@ -947,7 +947,7 @@ const Messages = ({ session, focusMatchId }) => {
                   <p className="font-display font-semibold text-title-s text-ink-900 truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
                   <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
                 </div>
-                <p className="text-micro text-ink-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
+                <p className="text-micro text-content-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
               </div>
             </div>
 
@@ -996,7 +996,7 @@ const Messages = ({ session, focusMatchId }) => {
               )}
 
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
-                className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-ink-muted hover:bg-danger-tint hover:text-danger transition">
+                className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
                 <XCircle size={12} /> Cancel
               </button>
             </div>
@@ -1009,7 +1009,7 @@ const Messages = ({ session, focusMatchId }) => {
               <p className="font-mono text-body-s font-semibold text-ink-900">
                 {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
               </p>
-              <p className="text-label text-ink-subtle truncate">
+              <p className="text-label text-content-subtle truncate">
                 {isShipper(activeMatch) ? 'You pay' : 'You receive'} $
                 {(isShipper(activeMatch) ? calcFees(activeMatch).totalShipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
               </p>
@@ -1038,14 +1038,14 @@ const Messages = ({ session, focusMatchId }) => {
           {/* Terms status */}
           {activeMatch.status === 'accepted' && (
             <div className="bg-surface-sunken px-4 py-2 flex items-center gap-4 text-body-s border-b border-line flex-shrink-0">
-              <p className="text-ink-muted font-semibold">Terms:</p>
+              <p className="text-content-muted font-semibold">Terms:</p>
               <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_traveler ? 'text-success' : 'text-ink-300'}`}>
                 {activeMatch.terms_agreed_traveler ? <CheckCircle size={13} /> : <Circle size={13} />} Traveller
               </span>
               <span className={`flex items-center gap-1 font-semibold ${activeMatch.terms_agreed_shipper ? 'text-success' : 'text-ink-300'}`}>
                 {activeMatch.terms_agreed_shipper ? <CheckCircle size={13} /> : <Circle size={13} />} Sender
               </span>
-              <p className="text-ink-subtle ml-auto text-right">{!myTermsAgreed ? 'Tap "Agree terms" to proceed' : 'Waiting for other party'}</p>
+              <p className="text-content-subtle ml-auto text-right">{!myTermsAgreed ? 'Tap "Agree terms" to proceed' : 'Waiting for other party'}</p>
             </div>
           )}
 
@@ -1143,7 +1143,7 @@ const Messages = ({ session, focusMatchId }) => {
                         ))}
                       </div>
                       {notes && <p className="text-micro text-info-500 italic">"{notes}"</p>}
-                      <p className="text-micro text-ink-subtle mt-1">Tap photos to view full size</p>
+                      <p className="text-micro text-content-subtle mt-1">Tap photos to view full size</p>
                     </div>
                   </div>
                 );
@@ -1184,7 +1184,7 @@ const Messages = ({ session, focusMatchId }) => {
                     <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-ink-900 text-white rounded-br-[3px]' : 'bg-ink-50 text-ink-900 rounded-bl-[3px]'}`}>
                       {msg.content}
                     </div>
-                    <p className={`font-mono text-micro text-ink-subtle mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
+                    <p className={`font-mono text-micro text-content-subtle mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
                       {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                     </p>
                   </div>
@@ -1203,7 +1203,7 @@ const Messages = ({ session, focusMatchId }) => {
                   <blockedAction.icon size={16} /> {blockedAction.label}
                 </button>
                 <button onClick={() => setMobileComposerOpen(true)}
-                  className="w-full text-center text-body-s text-ink-muted">
+                  className="w-full text-center text-body-s text-content-muted">
                   Message instead
                 </button>
               </div>
@@ -1211,7 +1211,7 @@ const Messages = ({ session, focusMatchId }) => {
             <div className={`${blockedAction && !mobileComposerOpen ? 'hidden' : ''} md:block p-3`}>
               {blockedAction && (
                 <button onClick={() => setMobileComposerOpen(false)}
-                  className="md:hidden mb-2 flex items-center gap-1.5 text-label text-ink-muted">
+                  className="md:hidden mb-2 flex items-center gap-1.5 text-label text-content-muted">
                   <blockedAction.icon size={12} /> Back to {blockedAction.label}
                 </button>
               )}
@@ -1234,7 +1234,7 @@ const Messages = ({ session, focusMatchId }) => {
             <MessageCircle size={28} className="text-ink-300" />
           </div>
           <p className="font-display font-semibold text-title-s text-ink-900 mb-1">Select a conversation</p>
-          <p className="text-body-m text-ink-muted">Choose a deal from the sidebar to start chatting</p>
+          <p className="text-body-m text-content-muted">Choose a deal from the sidebar to start chatting</p>
         </div>
       )}
     </div>

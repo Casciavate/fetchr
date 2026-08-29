@@ -129,7 +129,7 @@ const MyRequests = ({ session, onNewRequest }) => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display font-bold text-title-l text-ink-900">My requests</h1>
-          <p className="text-body-s text-ink-muted mt-0.5">
+          <p className="text-body-s text-content-muted mt-0.5">
             {requests.length} active request{requests.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -190,7 +190,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                       )}
                       <div className="min-w-0">
                         <p className="font-display font-semibold text-title-s text-ink-900 truncate">{req.item_name}</p>
-                        <p className="text-body-s text-ink-subtle mt-0.5">{req.category}</p>
+                        <p className="text-body-s text-content-subtle mt-0.5">{req.category}</p>
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           <span className="badge badge-gray">
                             {req.from_code} &rarr; {req.to_code}
@@ -207,7 +207,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                   </div>
 
                   {/* Data strip — Needed by · Weight · Value · Offers, §7.7 */}
-                  <div className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 flex flex-wrap gap-x-1">
+                  <div className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 flex flex-wrap gap-x-1">
                     <span>{req.needed_by ? `by ${new Date(req.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : 'no deadline'}</span>
                     <span>&middot;</span>
                     <span>{req.weight_kg}kg</span>
@@ -241,35 +241,35 @@ const MyRequests = ({ session, onNewRequest }) => {
                     <div className="bg-surface-sunken p-4 space-y-4">
 
                       <div>
-                        <p className="text-label text-ink-muted mb-3">Item details</p>
+                        <p className="text-label text-content-muted mb-3">Item details</p>
 
                         {req.description && (
                           <div className="bg-surface rounded-md p-4 border border-line mb-3">
-                            <p className="text-body-s text-ink-subtle mb-1">Description</p>
+                            <p className="text-body-s text-content-subtle mb-1">Description</p>
                             <p className="text-body-m text-ink-900 leading-relaxed">{req.description}</p>
                           </div>
                         )}
 
                         <div className="grid grid-cols-2 gap-3">
                           <div className="bg-surface rounded-md p-3 border border-line">
-                            <p className="text-body-s text-ink-subtle mb-1 flex items-center gap-1">
+                            <p className="text-body-s text-content-subtle mb-1 flex items-center gap-1">
                               <MapPin size={10} /> Route
                             </p>
                             <p className="text-body-s font-semibold text-ink-900">
                               {req.from_city || req.from_code}
                             </p>
-                            <p className="text-body-s text-ink-subtle">&rarr; {req.to_city || req.to_code}</p>
+                            <p className="text-body-s text-content-subtle">&rarr; {req.to_city || req.to_code}</p>
                           </div>
                           <div className="bg-surface rounded-md p-3 border border-line">
-                            <p className="text-body-s text-ink-subtle mb-1 flex items-center gap-1">
+                            <p className="text-body-s text-content-subtle mb-1 flex items-center gap-1">
                               <Weight size={10} /> Weight & budget
                             </p>
                             <p className="text-body-s font-semibold text-ink-900 font-mono">{req.weight_kg}kg</p>
-                            <p className="text-body-s text-ink-subtle font-mono">${req.budget_per_kg}/kg</p>
+                            <p className="text-body-s text-content-subtle font-mono">${req.budget_per_kg}/kg</p>
                           </div>
                           {req.needed_by && (
                             <div className="bg-surface rounded-md p-3 border border-line">
-                              <p className="text-body-s text-ink-subtle mb-1 flex items-center gap-1">
+                              <p className="text-body-s text-content-subtle mb-1 flex items-center gap-1">
                                 <Calendar size={10} /> Needed by
                               </p>
                               <p className="text-body-s font-semibold text-ink-900 font-mono">
@@ -280,7 +280,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                             </div>
                           )}
                           <div className="bg-surface rounded-md p-3 border border-line">
-                            <p className="text-body-s text-ink-subtle mb-1">Posted</p>
+                            <p className="text-body-s text-content-subtle mb-1">Posted</p>
                             <p className="text-body-s font-semibold text-ink-900 font-mono">
                               {new Date(req.created_at).toLocaleDateString('en-GB', {
                                 day: '2-digit', month: '2-digit', year: 'numeric'
@@ -291,14 +291,14 @@ const MyRequests = ({ session, onNewRequest }) => {
 
                         {req.notes && (
                           <div className="bg-surface rounded-md p-3 border border-line mt-3">
-                            <p className="text-body-s text-ink-subtle mb-1">Notes</p>
+                            <p className="text-body-s text-content-subtle mb-1">Notes</p>
                             <p className="text-body-m text-ink-900 italic">"{req.notes}"</p>
                           </div>
                         )}
                       </div>
 
                       <div className="bg-surface rounded-md p-4 border border-line">
-                        <p className="text-label text-ink-muted mb-3">Budget & size</p>
+                        <p className="text-label text-content-muted mb-3">Budget & size</p>
                         <div className="space-y-1.5 text-body-s font-mono">
                           <div className="flex justify-between text-ink-600">
                             <span>Total weight</span>
@@ -316,7 +316,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                               <span>{req.budget_currency || 'USD'} {parseFloat(req.max_budget).toFixed(2)}</span>
                             </div>
                           ) : (
-                            <div className="flex justify-between text-ink-subtle italic border-t border-line pt-1.5">
+                            <div className="flex justify-between text-content-subtle italic border-t border-line pt-1.5">
                               <span>Budget</span>
                               <span>Open to offers — negotiate in chat</span>
                             </div>
@@ -330,7 +330,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                             </div>
                           )}
                         </div>
-                        <p className="text-body-s text-ink-subtle italic mt-3">
+                        <p className="text-body-s text-content-subtle italic mt-3">
                           Final deal price agreed between you and the traveller in chat.
                         </p>
                       </div>
@@ -389,7 +389,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                         </div>
                       ) : deal ? (
                         <div>
-                          <p className="text-label text-ink-muted mb-3">
+                          <p className="text-label text-content-muted mb-3">
                             Current deal
                           </p>
                           <div className="bg-surface rounded-md border border-line overflow-hidden">
@@ -431,13 +431,13 @@ const MyRequests = ({ session, onNewRequest }) => {
                               {deal.flight && (
                                 <div className="grid grid-cols-2 gap-3">
                                   <div className="bg-surface-sunken rounded-md p-3 border border-line">
-                                    <p className="text-body-s text-ink-subtle mb-1 flex items-center gap-1">
+                                    <p className="text-body-s text-content-subtle mb-1 flex items-center gap-1">
                                       <Plane size={10} /> Flight
                                     </p>
                                     <p className="text-body-s font-semibold text-ink-900 font-mono">
                                       {deal.flight.from_code} &rarr; {deal.flight.to_code}
                                     </p>
-                                    <p className="text-body-s text-ink-muted">{deal.flight.airline}</p>
+                                    <p className="text-body-s text-content-muted">{deal.flight.airline}</p>
                                     <p className="text-body-s text-ink-900 font-mono font-semibold mt-1">
                                       {new Date(deal.flight.flight_date).toLocaleDateString('en-GB', {
                                         day: '2-digit', month: '2-digit', year: 'numeric'
@@ -445,13 +445,13 @@ const MyRequests = ({ session, onNewRequest }) => {
                                     </p>
                                   </div>
                                   <div className="bg-ink-100 rounded-md p-3">
-                                    <p className="text-body-s text-ink-subtle mb-1 flex items-center gap-1">
+                                    <p className="text-body-s text-content-subtle mb-1 flex items-center gap-1">
                                       <DollarSign size={10} /> Agreed deal
                                     </p>
                                     <p className="text-body-s font-bold text-ink-900 font-mono">
                                       ${((deal.agreed_price_per_kg || deal.flight.price_per_kg) * req.weight_kg).toFixed(2)}
                                     </p>
-                                    <p className="text-body-s text-ink-muted font-mono">
+                                    <p className="text-body-s text-content-muted font-mono">
                                       ${deal.agreed_price_per_kg || deal.flight.price_per_kg}/kg
                                     </p>
                                   </div>
@@ -460,7 +460,7 @@ const MyRequests = ({ session, onNewRequest }) => {
 
                               {deal.agreed_notes && (
                                 <div className="bg-surface-sunken rounded-md p-3 border border-line">
-                                  <p className="text-body-s text-ink-subtle mb-1">Deal notes</p>
+                                  <p className="text-body-s text-content-subtle mb-1">Deal notes</p>
                                   <p className="text-body-s text-ink-900 italic">"{deal.agreed_notes}"</p>
                                 </div>
                               )}
@@ -472,14 +472,14 @@ const MyRequests = ({ session, onNewRequest }) => {
                                   </p>
                                   <div className="space-y-1 text-body-s">
                                     <p className="text-ink-900 font-semibold">{req.trusted_person_name}</p>
-                                    <p className="text-ink-muted flex items-center gap-1"><Phone size={10} /> {req.trusted_person_phone}</p>
+                                    <p className="text-content-muted flex items-center gap-1"><Phone size={10} /> {req.trusted_person_phone}</p>
                                     {req.trusted_person_location && (
-                                      <p className="text-ink-muted flex items-center gap-1">
+                                      <p className="text-content-muted flex items-center gap-1">
                                         <MapPin size={10} /> {req.trusted_person_location}
                                       </p>
                                     )}
                                     {req.trusted_person_notes && (
-                                      <p className="text-ink-subtle italic">{req.trusted_person_notes}</p>
+                                      <p className="text-content-subtle italic">{req.trusted_person_notes}</p>
                                     )}
                                   </div>
                                 </div>
@@ -503,7 +503,7 @@ const MyRequests = ({ session, onNewRequest }) => {
                           </div>
                         </div>
                       ) : hasMatch ? (
-                        <div className="bg-surface rounded-md p-4 text-center text-body-s text-ink-subtle border border-line">
+                        <div className="bg-surface rounded-md p-4 text-center text-body-s text-content-subtle border border-line">
                           Loading deal details…
                         </div>
                       ) : null}

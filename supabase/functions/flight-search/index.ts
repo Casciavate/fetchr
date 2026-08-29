@@ -95,6 +95,8 @@ Deno.serve(async (req) => {
       const { flightNumber, date } = data
       if (!flightNumber || !date) throw new Error('flightNumber and date required')
       const clean = flightNumber.replace(/\s/g, '').toUpperCase()
+      if (!/^[A-Z0-9]{2,8}$/.test(clean)) throw new Error('Invalid flight number format')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid date format')
       const cacheKey = `num:${clean}:${date}`
 
       let flights = await getCached(supabase, cacheKey)
@@ -118,6 +120,8 @@ Deno.serve(async (req) => {
     if (action === 'by_route') {
       const { fromIata, toIata, date } = data
       if (!fromIata || !toIata || !date) throw new Error('fromIata, toIata and date required')
+      if (!/^[A-Z]{3}$/.test(fromIata) || !/^[A-Z]{3}$/.test(toIata)) throw new Error('Invalid IATA code format')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid date format')
       const cacheKey = `route:${fromIata}:${toIata}:${date}`
 
       let flights = await getCached(supabase, cacheKey)

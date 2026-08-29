@@ -7,7 +7,7 @@ import { Star } from 'lucide-react';
 // your own overall standing on Profile) — pass it explicitly.
 const RatingDisplay = ({ rating, totalReviews = 0, size = 14, qualifier = 'New member', onClick }) => {
   if (!rating || rating <= 0) {
-    return <span className="text-micro text-ink-subtle">No ratings yet</span>;
+    return <span className="text-micro text-content-subtle">No ratings yet</span>;
   }
   const lowRep = totalReviews < 3;
   const content = (
@@ -16,8 +16,8 @@ const RatingDisplay = ({ rating, totalReviews = 0, size = 14, qualifier = 'New m
       <span className={`font-mono text-num-m font-semibold ${rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
         {rating.toFixed(1)}
       </span>
-      <span className={`text-micro ${onClick ? 'underline underline-offset-2' : ''} text-ink-subtle`}>({totalReviews})</span>
-      {lowRep && <span className="text-micro text-ink-subtle">· {qualifier}</span>}
+      <span className={`text-micro ${onClick ? 'underline underline-offset-2' : ''} text-content-subtle`}>({totalReviews})</span>
+      {lowRep && <span className="text-micro text-content-subtle">· {qualifier}</span>}
     </>
   );
   return onClick ? (
