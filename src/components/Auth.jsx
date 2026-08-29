@@ -83,19 +83,27 @@ const Auth = () => {
     }
 
     setLoading(true);
-    if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: fullName, terms_accepted_at: new Date().toISOString() } }
-      });
-      if (error) setError(error.message);
-      else setSuccess('Account created! Please check your email to verify your account.');
+    try {
+      if (mode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) setError(error.message);
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName, terms_accepted_at: new Date().toISOString() } }
+        });
+        if (error) setError(error.message);
+        else setSuccess('Account created! Please check your email to verify your account.');
+      }
+    } catch (err) {
+      // A thrown network error (rather than a returned `error` field) used to
+      // leave `loading` stuck true forever — the button would spin and never
+      // become clickable again, with no message telling the user why.
+      setError(err.message || 'Something went wrong. Check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // No T&C gate here: Google can be reached from either tab, and the OAuth
@@ -106,14 +114,19 @@ const Auth = () => {
   // must accept before it can use the app.
   const handleGoogle = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: 'https://fetchr-zeta.vercel.app',
-        queryParams: { access_type: 'offline', prompt: 'consent' }
-      }
-    });
-    if (error) { setError(error.message); setLoading(false); }
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: 'https://fetchr-zeta.vercel.app',
+          queryParams: { access_type: 'offline', prompt: 'consent' }
+        }
+      });
+      if (error) { setError(error.message); setLoading(false); }
+    } catch (err) {
+      setError(err.message || 'Something went wrong. Check your connection and try again.');
+      setLoading(false);
+    }
   };
 
   return (
