@@ -5,8 +5,9 @@ import { supabase } from '../supabaseClient';
 import {
   WalletCards, DollarSign, ArrowDownCircle, ArrowUpCircle,
   CreditCard, CheckCircle, Clock, Lock, AlertTriangle,
-  X, ChevronRight, Building, Plus
+  ChevronRight, Building, Plus
 } from 'lucide-react';
+import BottomSheet from './shared/BottomSheet';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -14,7 +15,7 @@ const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
       fontSize: '14px',
-      fontFamily: '"IBM Plex Sans", sans-serif',
+      fontFamily: '"IBM Plex Mono", monospace',
       color: '#14181F',
       '::placeholder': { color: '#7F8794' },
       iconColor: '#14181F',
@@ -172,10 +173,6 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 
   return (
     <div className="p-5 space-y-4">
-      <h3 className="font-display font-bold text-title-s text-ink-900 flex items-center gap-2">
-        <ArrowDownCircle size={18} className="text-ink-600" /> Top up wallet
-      </h3>
-
       {/* Amount */}
       <div>
         <label className="block text-label text-content-muted mb-1.5 uppercase">
@@ -427,9 +424,6 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
   return (
     <div className="p-5 space-y-4">
-      <h3 className="font-display font-bold text-title-s text-ink-900 flex items-center gap-2">
-        <ArrowUpCircle size={18} className="text-ink-600" /> Withdraw to bank account
-      </h3>
       <p className="text-micro text-content-subtle">
         {WITHDRAWAL_FEE_PCT}% fee · {forceWithdrawAll ? 'No minimum (account closure)' : 'Min $10'} · 3-5 business days
       </p>
@@ -683,9 +677,9 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           </button>
         </div>
 
-        {/* Top Up panel */}
+        {/* Top up sheet */}
         {activePanel === 'topup' && (
-          <div className="ticket mb-4">
+          <BottomSheet title="Top up wallet" onClose={() => setActivePanel(null)}>
             <TopUpForm
               profile={profile}
               onSuccess={(amt) => {
@@ -696,12 +690,12 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
               }}
               onClose={() => setActivePanel(null)}
             />
-          </div>
+          </BottomSheet>
         )}
 
-        {/* Withdraw panel */}
+        {/* Withdraw sheet */}
         {activePanel === 'withdraw' && (
-          <div className="ticket mb-4">
+          <BottomSheet title="Withdraw to bank account" onClose={() => setActivePanel(null)}>
             <WithdrawForm
               profile={profile}
               forceWithdrawAll={forceWithdrawAll}
@@ -713,7 +707,7 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
               }}
               onClose={() => setActivePanel(null)}
             />
-          </div>
+          </BottomSheet>
         )}
 
         {/* Transaction history */}
@@ -766,18 +760,11 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
           )}
         </div>
 
-        {/* Transaction detail modal */}
+        {/* Transaction detail sheet */}
         {selectedTxn && (
-          <div className="fixed inset-0 z-modal flex items-end md:items-center justify-center p-4" style={{ backgroundColor: 'var(--scrim)' }}>
-            <div className="bg-surface-raised rounded-xl w-full max-w-md shadow-elev-3 animate-slide-up">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-                <h3 className="font-display font-bold text-title-s text-ink-900">Transaction detail</h3>
-                <button onClick={() => setSelectedTxn(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
-                  <X size={18} className="text-ink-500" />
-                </button>
-              </div>
-              <div className="p-6 space-y-4">
+          <BottomSheet title="Transaction detail" onClose={() => setSelectedTxn(null)}
+            footer={<button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary">Close</button>}>
+            <div className="p-6 space-y-4">
                 <div className="text-center py-4">
                   <div className={`w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-3 ${
                     isCredit(selectedTxn) ? 'bg-success-tint' : 'bg-danger-tint'
@@ -834,10 +821,8 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
                     ))}
                   </div>
                 )}
-                <button onClick={() => setSelectedTxn(null)} className="w-full btn-secondary">Close</button>
-              </div>
             </div>
-          </div>
+          </BottomSheet>
         )}
       </div>
     </Elements>

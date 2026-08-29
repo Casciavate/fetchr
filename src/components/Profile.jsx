@@ -6,9 +6,13 @@ import {
   User, Mail, Phone, Globe, Star, Edit2,
   Check, X, Award, Package, Plane, DollarSign, Camera,
   CreditCard, CheckCircle, Trash2, AlertTriangle,
-  ChevronDown, ChevronUp, ChevronRight, Building, Lock, BadgeCheck,
-  AlertCircle, Info, LogOut, TrendingUp, PlusCircle, Shield
+  ChevronDown, ChevronUp, ChevronRight, Building, Lock,
+  Info, LogOut, TrendingUp, PlusCircle, Shield
 } from 'lucide-react';
+import VerificationBadge from './shared/VerificationBadge';
+import RatingDisplay from './shared/RatingDisplay';
+import AdvisoryBanner from './shared/AdvisoryBanner';
+import Toast from './shared/Toast';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -16,7 +20,7 @@ const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
       fontSize: '14px',
-      fontFamily: '"IBM Plex Sans", sans-serif',
+      fontFamily: '"IBM Plex Mono", monospace',
       color: '#14181F',
       '::placeholder': { color: '#7F8794' },
       iconColor: '#14181F',
@@ -24,36 +28,6 @@ const CARD_ELEMENT_OPTIONS = {
     invalid: { color: '#B0301C', iconColor: '#B0301C' },
   },
   hidePostalCode: true,
-};
-
-// Verification badge, docs/BRAND.md §7.10 / §9.3 — never icon-only, never
-// amber for "unverified" (that implies suspicion, which isn't being claimed).
-const VerificationBadge = ({ verified }) => verified ? (
-  <span className="inline-flex items-center gap-1 bg-success-tint text-success rounded-sm px-1.5 py-0.5 text-overline uppercase font-mono"
-    aria-label="Identity verified">
-    <BadgeCheck size={12} /> ID verified
-  </span>
-) : (
-  <span className="inline-flex items-center gap-1 text-ink-400 text-overline uppercase font-mono"
-    aria-label="Identity not verified">
-    <AlertCircle size={12} /> Not verified
-  </span>
-);
-
-// Rating display, docs/BRAND.md §7.11 — one star, never five, red below 3.0
-const RatingDisplay = ({ rating, totalReviews }) => {
-  if (!rating) return <span className="text-micro text-ink-subtle">No ratings yet</span>;
-  const lowRep = totalReviews < 3;
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Star size={14} className="text-ink-900 fill-ink-900" />
-      <span className={`font-mono text-num-m font-semibold ${rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
-        {rating.toFixed(1)}
-      </span>
-      <span className="text-micro text-ink-subtle">({totalReviews})</span>
-      {lowRep && <span className="text-micro text-ink-subtle">· New member</span>}
-    </span>
-  );
 };
 
 const LANGUAGES = [
@@ -157,12 +131,7 @@ const SaveCardForm = ({ session, onSuccess, onCancel }) => {
         </p>
       </div>
 
-      {error && (
-        <div className="bg-danger-tint rounded-md p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-          <p className="text-danger text-body-s">{error}</p>
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 btn-secondary py-2.5 text-sm">
@@ -255,12 +224,7 @@ const SaveBankForm = ({ profile, onSuccess, onCancel }) => {
         </p>
       </div>
 
-      {error && (
-        <div className="bg-danger-tint rounded-md p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-          <p className="text-danger text-body-s">{error}</p>
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>
@@ -511,14 +475,8 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
     <Elements stripe={stripePromise}>
       <div className="max-w-3xl mx-auto animate-fade-in space-y-4">
 
-        {(success || error) && (
-          <div className={`px-4 py-3 rounded-md text-body-s font-medium flex items-center gap-2 ${
-            success ? 'bg-success-tint text-success' : 'bg-danger-tint text-danger'
-          }`}>
-            {success ? <Check size={16} /> : <X size={16} />}
-            {success || error}
-          </div>
-        )}
+        <Toast message={success} tone="success" />
+        <Toast message={error} tone="error" />
 
         {/* ── Profile Header ── */}
         <div className="card p-6">
@@ -786,7 +744,6 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 ))}
               </div>
             </div>
-            {error && <p className="text-danger text-body-s bg-danger-tint p-3 rounded-md">{error}</p>}
             <button onClick={saveProfile} disabled={saving} className="w-full btn-primary disabled:opacity-50">
               <Check size={15} /> {saving ? 'Saving' : 'Save changes'}
             </button>
@@ -999,11 +956,6 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   onChange={e => setDeleteConfirmText(e.target.value)}
                   className="input-field" autoComplete="off" />
               </div>
-              {error && (
-                <div className="bg-void-100 rounded-md p-2.5">
-                  <p className="text-danger text-body-s">{error}</p>
-                </div>
-              )}
               <div className="flex gap-2">
                 <button onClick={() => { setShowDeleteAccount(false); setDeleteConfirmText(''); setError(''); }}
                   className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>

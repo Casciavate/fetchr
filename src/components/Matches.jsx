@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Search, Star, CheckCircle, XCircle,
+  Search, CheckCircle, XCircle,
   ChevronRight, X, Award, Globe,
-  AlertTriangle, BadgeCheck, AlertCircle, Info
+  AlertTriangle, Info
 } from 'lucide-react';
+import RatingDisplay from './shared/RatingDisplay';
+import VerificationBadge from './shared/VerificationBadge';
+import StatusPill from './shared/StatusPill';
+import EmptyState from './shared/EmptyState';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
 // where the tile would double up on the surface-inverse fill.
@@ -15,36 +19,6 @@ const BareGlyph = ({ size = 16 }) => (
     <rect x="10.5" y="21" width="16" height="4.6" rx="2.3" fill="#FBFAF8" />
     <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
   </svg>
-);
-
-// Rating display, docs/BRAND.md §7.11 — one star, never five, red below 3.0
-const RatingDisplay = ({ profile }) => {
-  if (!profile?.rating) return <span className="text-micro text-ink-subtle">No ratings yet</span>;
-  const lowRep = profile.total_reviews < 3;
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Star size={14} className="text-ink-900 fill-ink-900" />
-      <span className={`font-mono text-num-m font-semibold ${profile.rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
-        {profile.rating.toFixed(1)}
-      </span>
-      <span className="text-micro text-ink-subtle">({profile.total_reviews})</span>
-      {lowRep && <span className="text-micro text-ink-subtle">· New traveller</span>}
-    </span>
-  );
-};
-
-// Verification badge, docs/BRAND.md §7.10 — never icon-only, never a colour
-// below full ID verification
-const VerificationBadge = ({ verified }) => verified ? (
-  <span className="inline-flex items-center gap-1 bg-success-tint text-success rounded-sm px-1.5 py-0.5 text-overline uppercase font-mono"
-    aria-label="Identity verified">
-    <BadgeCheck size={12} /> ID verified
-  </span>
-) : (
-  <span className="inline-flex items-center gap-1 text-ink-400 text-overline uppercase font-mono"
-    aria-label="Identity not verified">
-    <AlertCircle size={12} /> Not verified
-  </span>
 );
 
 const Matches = ({ session, onNavigate }) => {
@@ -271,22 +245,12 @@ const Matches = ({ session, onNavigate }) => {
             {matches.length} pending match{matches.length !== 1 ? 'es' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 bg-success-tint text-success px-2.5 py-1 rounded-sm font-mono text-overline uppercase">
-          <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
-          Live
-        </div>
+        <StatusPill tone="success" dot>Live</StatusPill>
       </div>
 
       {matches.length === 0 ? (
-        <div className="text-center py-24 ticket">
-          <div className="w-20 h-20 bg-ink-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Search size={32} className="text-ink-300" />
-          </div>
-          <h2 className="font-display font-bold text-title-m text-ink-900 mb-2">No matches yet</h2>
-          <p className="text-body-m text-ink-muted max-w-xs mx-auto">
-            Add a flight or shipment request and we'll find your match automatically.
-          </p>
-        </div>
+        <EmptyState icon={Search} title="No matches yet"
+          body="Add a flight or shipment request and we'll find your match automatically." />
       ) : (
         <div className="space-y-4">
           {matches.map(match => {
@@ -411,7 +375,7 @@ const Matches = ({ session, onNavigate }) => {
                         </p>
                         <VerificationBadge verified={other?.verified} />
                       </div>
-                      <RatingDisplay profile={other} />
+                      <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller" />
                     </div>
                     <ChevronRight size={16} className="text-ink-400 flex-shrink-0 group-hover:text-ink-600 transition-colors" />
                   </button>
@@ -503,7 +467,7 @@ const Matches = ({ session, onNavigate }) => {
                       <VerificationBadge verified={viewingProfile?.verified} />
                     </div>
                     <div className="mt-1">
-                      <RatingDisplay profile={viewingProfile} />
+                      <RatingDisplay rating={viewingProfile?.rating} totalReviews={viewingProfile?.total_reviews} qualifier="New traveller" />
                     </div>
                   </div>
                 </div>

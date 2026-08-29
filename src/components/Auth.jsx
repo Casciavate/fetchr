@@ -171,27 +171,42 @@ const Auth = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
-              <input type="text" placeholder="Full name" value={fullName}
-                onChange={e => setFullName(e.target.value)} required
-                className="input-field" />
+              <div>
+                <label htmlFor="full-name" className="block text-label text-content-muted mb-1.5 uppercase">
+                  Full name
+                </label>
+                <input id="full-name" type="text" placeholder="Jonas Weber" value={fullName}
+                  onChange={e => setFullName(e.target.value)} required
+                  className="input-field" />
+              </div>
             )}
 
-            <div className="relative">
-              <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-              <input type="email" placeholder="Email address" value={email}
-                onChange={e => setEmail(e.target.value)} required
-                className="input-field pl-10" />
+            <div>
+              <label htmlFor="email" className="block text-label text-content-muted mb-1.5 uppercase">
+                Email address
+              </label>
+              <div className="relative">
+                <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+                <input id="email" type="email" placeholder="you@example.com" value={email}
+                  onChange={e => setEmail(e.target.value)} required
+                  className="input-field pl-10" />
+              </div>
             </div>
 
-            <div className="relative">
-              <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-              <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password}
-                onChange={e => setPassword(e.target.value)} required
-                className="input-field pl-10 pr-11" />
-              <button type="button" onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600">
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+            <div>
+              <label htmlFor="password" className="block text-label text-content-muted mb-1.5 uppercase">
+                Password
+              </label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+                <input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
+                  onChange={e => setPassword(e.target.value)} required
+                  className="input-field pl-10 pr-11" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
 
             {/* T&C — signup only */}
