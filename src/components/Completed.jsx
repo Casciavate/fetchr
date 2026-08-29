@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   CheckCircle, Star, Package, Plane, ChevronDown,
   ChevronUp, Award, TrendingUp
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
+import ReviewsSheet from './shared/ReviewsSheet';
 import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
@@ -18,13 +19,14 @@ const Barcode = ({ deal }) => {
   const ddmmyy = deal.flight?.flight_date
     ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '')
     : '------';
-  const bars = Array.from(ref).map(c => (c.charCodeAt(0) % 3) + 1);
+  const code = ref + route + ddmmyy;
+  const bars = Array.from({ length: 40 }, (_, i) => (code.charCodeAt(i % code.length) % 3) + 1);
   return (
-    <div className="pt-4">
-      <div className="perf mb-3" />
-      <div className="h-[26px] flex items-stretch gap-[2px]" aria-hidden="true">
+    <div className="pt-4 -mx-2">
+      <div className="perf mb-3 mx-2" />
+      <div className="h-[26px] flex items-stretch gap-[2px] px-2" aria-hidden="true">
         {bars.map((w, i) => (
-          <div key={i} className="bg-ink-900" style={{ width: `${w * 2}px`, opacity: 0.82 }} />
+          <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
         ))}
       </div>
       <p className="mt-1.5 text-center font-mono text-overline text-ink-muted tracking-[0.28em]">
@@ -34,7 +36,7 @@ const Barcode = ({ deal }) => {
   );
 };
 
-const Completed = ({ session }) => {
+const Completed = ({ session, focusDealId }) => {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -42,6 +44,19 @@ const Completed = ({ session }) => {
   const [comments, setComments] = useState({});
   const [submittingRating, setSubmittingRating] = useState({});
   const [ratedDeals, setRatedDeals] = useState({});
+  const [reviewsFor, setReviewsFor] = useState(null);
+
+  // Deep-link from Profile's "Completed deals" list straight into this
+  // deal's expanded boarding-pass detail — same one-shot pattern as
+  // Messages.jsx's focusMatchId.
+  const consumedFocusRef = useRef(null);
+  useEffect(() => {
+    if (!focusDealId || consumedFocusRef.current === focusDealId) return;
+    if (deals.some(d => d.id === focusDealId)) {
+      consumedFocusRef.current = focusDealId;
+      setExpandedId(focusDealId);
+    }
+  }, [focusDealId, deals]);
 
   const fetchCompleted = async () => {
     setLoading(true);
@@ -313,7 +328,8 @@ const Completed = ({ session }) => {
                           {isTraveler(deal) ? 'Sender' : 'Traveller'}
                         </p>
                         <div className="mt-0.5">
-                          <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} />
+                          <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews}
+                            onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
                         </div>
                       </div>
                       <StatusPill tone="success" icon={CheckCircle}>Completed</StatusPill>
@@ -384,6 +400,10 @@ const Completed = ({ session }) => {
             );
           })}
         </div>
+      )}
+
+      {reviewsFor && (
+        <ReviewsSheet userId={reviewsFor.id} userName={reviewsFor.name} onClose={() => setReviewsFor(null)} />
       )}
     </div>
   );

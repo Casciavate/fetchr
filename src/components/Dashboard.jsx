@@ -18,10 +18,12 @@ import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
+import ReviewsSheet from './shared/ReviewsSheet';
+import CardStack from './shared/CardStack';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
-  ChevronRight, LogOut, CheckCircle, Search,
+  ChevronRight, ChevronDown, ChevronUp, LogOut, CheckCircle, Search,
   Zap, ArrowUpRight, Lock, Camera
 } from 'lucide-react';
 
@@ -81,7 +83,9 @@ const PostChooser = ({ onNavigate }) => (
 const Dashboard = ({ session }) => {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [focusMatchId, setFocusMatchId] = useState(null);
-  const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
+  const [focusDealId, setFocusDealId] = useState(null);
+  const [expandedHeroKey, setExpandedHeroKey] = useState(null);
+  const [reviewsFor, setReviewsFor] = useState(null);
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [stats, setStats] = useState({
@@ -318,7 +322,11 @@ const Dashboard = ({ session }) => {
   const getOtherParty = (match) =>
     match.traveler_id === session.user.id ? match.shipper : match.traveler;
 
-  const navigate = (id, opts) => { setActiveNav(id); setFocusMatchId(opts?.focusMatchId ?? null); };
+  const navigate = (id, opts) => {
+    setActiveNav(id);
+    setFocusMatchId(opts?.focusMatchId ?? null);
+    setFocusDealId(opts?.focusDealId ?? null);
+  };
 
   const isAdmin = !!profile?.is_admin;
 
@@ -338,27 +346,27 @@ const Dashboard = ({ session }) => {
     return m.flight.flight_date <= new Date().toISOString().split('T')[0];
   };
 
-  const getYourTurnItem = () => {
+  // Every deal/match blocked on this user, not just the highest-priority
+  // one — rendered as a carousel when there's more than one.
+  const getYourTurnItems = () => {
+    const items = [];
     for (const deal of activeDeals) {
       const myTermsAgreed = isTraveler(deal) ? deal.terms_agreed_traveler : deal.terms_agreed_shipper;
       const myCompleted = isTraveler(deal) ? deal.traveler_completed : deal.shipper_completed;
       if (deal.status === 'accepted' && !myTermsAgreed) {
-        return { kind: 'deal', deal, action: 'Agree terms', icon: CheckCircle };
-      }
-      if (deal.status === 'terms_agreed' && isShipper(deal)) {
-        return { kind: 'deal', deal, action: 'Pay escrow', icon: Lock };
-      }
-      if (deal.status === 'in_escrow' && isTraveler(deal)) {
-        return { kind: 'deal', deal, action: 'Upload proof', icon: Camera };
-      }
-      if (deal.status === 'proof_uploaded' && !myCompleted && flightHasDeparted(deal)) {
-        return { kind: 'deal', deal, action: 'Confirm delivery', icon: CheckCircle };
+        items.push({ kind: 'deal', deal, action: 'Agree terms', icon: CheckCircle });
+      } else if (deal.status === 'terms_agreed' && isShipper(deal)) {
+        items.push({ kind: 'deal', deal, action: 'Pay escrow', icon: Lock });
+      } else if (deal.status === 'in_escrow' && isTraveler(deal)) {
+        items.push({ kind: 'deal', deal, action: 'Upload proof', icon: Camera });
+      } else if (deal.status === 'proof_uploaded' && !myCompleted && flightHasDeparted(deal)) {
+        items.push({ kind: 'deal', deal, action: 'Confirm delivery', icon: CheckCircle });
       }
     }
     if (recentMatches.length > 0) {
-      return { kind: 'match', deal: recentMatches[0], action: 'Review match', icon: Search };
+      items.push({ kind: 'match', deal: recentMatches[0], action: 'Review match', icon: Search });
     }
-    return null;
+    return items;
   };
 
   const renderMain = () => {
@@ -369,10 +377,9 @@ const Dashboard = ({ session }) => {
       case 'new-request': return <NewRequest session={session} />;
       case 'my-requests': return <MyRequests session={session} onNewRequest={() => navigate('new-request')} />;
 case 'matches': return <Matches session={session} onNavigate={navigate} />;
-      case 'messages': return <Messages session={session} focusMatchId={focusMatchId}
-        onThreadOpenChange={setMobileThreadOpen} />;
+      case 'messages': return <Messages session={session} focusMatchId={focusMatchId} />;
       case 'active-deals': return <ActiveDeals session={session} onNavigate={navigate} />;
-      case 'completed': return <Completed session={session} />;
+      case 'completed': return <Completed session={session} focusDealId={focusDealId} />;
       case 'profile': return <Profile session={session} userRole={getUserRole()}
         onNavigate={navigate} isAdmin={isAdmin} />;
       case 'earnings': return <Earnings session={session} />;
@@ -383,11 +390,125 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
   };
 
   const renderDashboard = () => {
-    const yourTurn = getYourTurnItem();
+    const yourTurnItems = getYourTurnItems();
+    const yourTurnKeys = new Set(yourTurnItems.map(it => `${it.kind}:${it.deal.id}`));
     const comingUp = [
-      ...activeDeals.filter(d => !(yourTurn?.kind === 'deal' && d.id === yourTurn.deal.id)),
-      ...recentMatches.filter(m => !(yourTurn?.kind === 'match' && m.id === yourTurn.deal.id)),
+      ...activeDeals.filter(d => !yourTurnKeys.has(`deal:${d.id}`)),
+      ...recentMatches.filter(m => !yourTurnKeys.has(`match:${m.id}`)),
     ].slice(0, 4);
+
+    const renderHeroCard = (yourTurn) => {
+      const deal = yourTurn.deal;
+      const other = getOtherParty(deal);
+      const ref = (deal.id || '').slice(0, 6).toUpperCase();
+      const fees = yourTurn.kind === 'deal' ? calcFees(deal) : null;
+      const amount = fees ? (isShipper(deal) ? fees.totalShipperPays : fees.travelerReceives) : null;
+      const cardKey = `${yourTurn.kind}:${deal.id}`;
+      const isExpanded = expandedHeroKey === cardKey;
+      return (
+        <div className="ticket">
+          {/* Header bar */}
+          <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
+            <div className="flex items-center gap-1.5">
+              <BareGlyph size={15} />
+              <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+            </div>
+            <span className="font-mono text-[10px] text-ink-300 uppercase">
+              {yourTurn.kind === 'deal' ? 'DEAL' : 'MATCH'}{deal.match_score != null ? ` · ${Math.min(deal.match_score, 100)}%` : ''} · #{ref}
+            </span>
+          </div>
+
+          <div className="px-4 py-3.5 space-y-3">
+            <StatusPill tone="signal" icon={yourTurn.icon}>Your turn · {yourTurn.action}</StatusPill>
+
+            <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-overline uppercase text-ink-400">From</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.from_code || '—'}</p>
+              </div>
+              <div className="flex items-center justify-center pt-4">
+                <div className="w-7 border-t border-dashed border-line-perf" />
+              </div>
+              <div className="min-w-0 text-right">
+                <p className="font-mono text-overline uppercase text-ink-400">To</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.to_code || '—'}</p>
+              </div>
+            </div>
+
+            <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 truncate">
+              {deal.flight?.flight_date
+                ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                : '—'}
+              {' · '}{deal.flight?.flight_number || deal.flight?.airline || '—'}
+              {' · '}{deal.agreed_weight_kg || deal.request?.weight_kg || '—'}kg
+            </p>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
+                {getInitials(other?.full_name)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
+                  <VerificationBadge verified={other?.verified} />
+                </div>
+                <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller"
+                  onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
+              </div>
+            </div>
+
+            <p className="text-body-s text-ink-subtle truncate">{deal.request?.item_name}</p>
+
+            {isExpanded && fees && (
+              <div className="border-t border-line pt-3 space-y-1.5">
+                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                  <span>Transport{deal.agreed_weight_kg || deal.request?.weight_kg ? ` · ${deal.agreed_weight_kg || deal.request?.weight_kg} kg` : ''}</span>
+                  <span>${fees.transportFee.toFixed(2)}</span>
+                </div>
+                {fees.isPurchase && (
+                  <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                    <span>Shop fee</span><span>${fees.shopFee.toFixed(2)}</span>
+                  </div>
+                )}
+                {fees.isPurchase && fees.purchasePrice > 0 && (
+                  <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                    <span>Item</span><span>${fees.purchasePrice.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-mono text-num-m text-ink-muted">
+                  <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span><span>−${fees.fetchrFee.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="perf mx-4" />
+
+          <div className="px-4 py-3.5 space-y-3">
+            {amount != null && (
+              <div className="flex items-baseline justify-between">
+                <span className="font-mono text-body-m text-ink-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
+                <span className="font-mono font-bold text-num-l text-ink-900">${amount.toFixed(2)}</span>
+              </div>
+            )}
+            <button
+              onClick={() => navigate(yourTurn.kind === 'deal' ? 'messages' : 'matches',
+                yourTurn.kind === 'deal' ? { focusMatchId: deal.id } : undefined)}
+              className="btn-signal w-full">
+              {yourTurn.action}
+            </button>
+            <button onClick={() => setExpandedHeroKey(isExpanded ? null : cardKey)}
+              className="w-full flex items-center justify-center gap-1 text-body-s text-ink-muted font-medium">
+              {isExpanded ? 'Hide details' : 'View details'}
+              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {yourTurn.kind === 'deal' && (
+              <p className="text-body-s text-ink-muted text-center">We hold it until you both confirm delivery.</p>
+            )}
+          </div>
+        </div>
+      );
+    };
 
     return (
     <div className="animate-fade-in space-y-6">
@@ -406,88 +527,9 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
             matching fetchr_design/ui_kits/fetchr-mobile/MobileApp.jsx's
             MHome ─────────────────────────────────────────────────── */}
       <div className="md:hidden space-y-5">
-        {yourTurn ? (() => {
-          const deal = yourTurn.deal;
-          const other = getOtherParty(deal);
-          const ref = (deal.id || '').slice(0, 6).toUpperCase();
-          const fees = yourTurn.kind === 'deal' ? calcFees(deal) : null;
-          const amount = fees ? (isShipper(deal) ? fees.totalShipperPays : fees.travelerReceives) : null;
-          return (
-            <div className="ticket">
-              {/* Header bar */}
-              <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
-                <div className="flex items-center gap-1.5">
-                  <BareGlyph size={15} />
-                  <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
-                </div>
-                <span className="font-mono text-[10px] text-ink-300 uppercase">
-                  {yourTurn.kind === 'deal' ? 'DEAL' : 'MATCH'}{deal.match_score != null ? ` · ${Math.min(deal.match_score, 100)}%` : ''} · #{ref}
-                </span>
-              </div>
-
-              <div className="px-4 py-3.5 space-y-3">
-                <StatusPill tone="signal" icon={yourTurn.icon}>Your turn · {yourTurn.action}</StatusPill>
-
-                <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-                  <div className="min-w-0">
-                    <p className="font-mono text-overline uppercase text-ink-400">From</p>
-                    <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.from_code || '—'}</p>
-                  </div>
-                  <div className="flex items-center justify-center pt-4">
-                    <div className="w-7 border-t border-dashed border-line-perf" />
-                  </div>
-                  <div className="min-w-0 text-right">
-                    <p className="font-mono text-overline uppercase text-ink-400">To</p>
-                    <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.to_code || '—'}</p>
-                  </div>
-                </div>
-
-                <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 truncate">
-                  {deal.flight?.flight_date
-                    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                    : '—'}
-                  {' · '}{deal.flight?.flight_number || deal.flight?.airline || '—'}
-                  {' · '}{deal.agreed_weight_kg || deal.request?.weight_kg || '—'}kg
-                </p>
-
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
-                    {getInitials(other?.full_name)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
-                      <VerificationBadge verified={other?.verified} />
-                    </div>
-                    <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller" />
-                  </div>
-                </div>
-
-                <p className="text-body-s text-ink-subtle truncate">{deal.request?.item_name}</p>
-              </div>
-
-              <div className="perf mx-4" />
-
-              <div className="px-4 py-3.5 space-y-3">
-                {amount != null && (
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-mono text-body-m text-ink-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
-                    <span className="font-mono font-bold text-num-l text-ink-900">${amount.toFixed(2)}</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => navigate(yourTurn.kind === 'deal' ? 'messages' : 'matches',
-                    yourTurn.kind === 'deal' ? { focusMatchId: deal.id } : undefined)}
-                  className="btn-signal w-full">
-                  {yourTurn.action}
-                </button>
-                {yourTurn.kind === 'deal' && (
-                  <p className="text-body-s text-ink-muted text-center">We hold it until you both confirm delivery.</p>
-                )}
-              </div>
-            </div>
-          );
-        })() : (
+        {yourTurnItems.length > 0 ? (
+          <CardStack items={yourTurnItems} keyFn={(it) => `${it.kind}:${it.deal.id}`} renderItem={renderHeroCard} />
+        ) : (
           <div className="card p-5 text-center">
             <CheckCircle size={20} className="text-ink-300 mx-auto mb-2" />
             <p className="text-body-s text-ink-muted">Nothing needs you right now.</p>
@@ -526,16 +568,18 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           </div>
         )}
 
+        {/* Existing flights/requests — creation lives behind the bottom
+            nav's Post tab; modify/cancel stays in MyFlights/MyRequests. */}
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => navigate('add-flight')}
+          <button onClick={() => navigate('flights')}
             className="card p-4 flex flex-col items-center gap-2 text-center hover:border-line-strong transition">
             <Plane size={18} className="text-ink-700" />
-            <span className="text-body-s font-semibold text-ink-900">Add a flight</span>
+            <span className="text-body-s font-semibold text-ink-900">My flights</span>
           </button>
-          <button onClick={() => navigate('new-request')}
+          <button onClick={() => navigate('my-requests')}
             className="card p-4 flex flex-col items-center gap-2 text-center hover:border-line-strong transition">
             <Package size={18} className="text-ink-700" />
-            <span className="text-body-s font-semibold text-ink-900">Post a request</span>
+            <span className="text-body-s font-semibold text-ink-900">My requests</span>
           </button>
         </div>
       </div>
@@ -818,6 +862,10 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         </div>
       </div>
       </div>
+
+      {reviewsFor && (
+        <ReviewsSheet userId={reviewsFor.id} userName={reviewsFor.name} onClose={() => setReviewsFor(null)} />
+      )}
     </div>
     );
   };
@@ -972,16 +1020,15 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className={`max-w-6xl mx-auto md:p-6 ${mobileThreadOpen ? 'pb-0' : 'p-4 pb-24'} md:pb-6`}>
+          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-24 md:pb-6">
             {renderMain()}
           </div>
         </main>
       </div>
 
-      {/* Mobile bottom nav — exactly the 5 items the design spec fixes; hidden
-          while a chat thread owns the screen (§ ui_kits/fetchr-mobile). */}
-      {!mobileThreadOpen && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 py-2">
+      {/* Mobile bottom nav — exactly the 5 items the design spec fixes;
+          stays visible at all times, including inside an open chat thread. */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 py-2">
           <div className="flex items-center justify-around">
             {bottomNavItems.map(item => (
               <button key={item.id} onClick={() => navigate(item.id)}
@@ -1004,7 +1051,6 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
             ))}
           </div>
         </nav>
-      )}
     </div>
   );
 };

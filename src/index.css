@@ -265,6 +265,9 @@ input, select, textarea {
 .animate-slide-up { animation: slideUp 0.3s ease-out; }
 .animate-fade-in { animation: fadeIn 0.2s ease-out; }
 
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* ── Component layer (docs/BRAND.md §7.1, §7.2, §7.13) ─────────────────── */
 /* @layer components places these BEFORE utilities in the cascade, so a
    utility class combined on the same element (e.g. `input-field pl-9`)

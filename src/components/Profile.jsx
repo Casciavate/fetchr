@@ -4,10 +4,10 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { supabase } from '../supabaseClient';
 import {
   User, Mail, Phone, Globe, Star, Edit2,
-  Check, Award, Package, Plane, DollarSign, Camera,
+  Check, Award, Package, Plane, Camera,
   CreditCard, CheckCircle, Trash2, AlertTriangle,
   ChevronDown, ChevronUp, ChevronRight, Building, Lock,
-  Info, LogOut, TrendingUp, PlusCircle, Shield
+  Info, LogOut, TrendingUp, Shield
 } from 'lucide-react';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
@@ -553,7 +553,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
               rows: [{ label: 'Open', val: stats.requestsActive }, { label: 'Matched', val: stats.requestsCompleted }] },
             { title: 'Deals', icon: Award, nav: 'active-deals',
               rows: [{ label: 'Ongoing', val: stats.dealsOngoing }, { label: 'Completed', val: stats.dealsCompleted }] },
-            { title: 'Wallet', icon: DollarSign, nav: 'wallet', balance: true },
+            { title: 'Earnings', icon: TrendingUp, nav: 'earnings' },
           ].map((card, i) => {
             const Tag = onNavigate ? 'button' : 'div';
             return (
@@ -567,7 +567,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                 </div>
                 {card.balance ? (
                   <p className="font-mono text-title-m font-bold text-ink-900">${(profile?.wallet_balance || 0).toFixed(2)}</p>
-                ) : (
+                ) : card.rows ? (
                   <div className="space-y-1.5">
                     {card.rows.map((r, j) => (
                       <div key={j} className="flex justify-between text-body-s">
@@ -576,22 +576,20 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <p className="text-body-s text-content-subtle">View your earnings</p>
                 )}
               </Tag>
             );
           })}
         </div>
 
-        {/* ── Quick links — Add flight/New request/Earnings/Admin only ever
-              lived in the desktop sidebar; this is now their mobile home too ── */}
-        {onNavigate && (
+        {/* ── Quick links — admin only now; My Flights/My Requests/Earnings
+              are stat tiles above, Add flight/Post a request live behind
+              the bottom nav's Post tab, Wallet is in the header. ── */}
+        {onNavigate && isAdmin && (
           <div className="card overflow-hidden">
-            {[
-              { id: 'add-flight', icon: PlusCircle, label: 'Add a flight' },
-              { id: 'new-request', icon: PlusCircle, label: 'Post a request' },
-              { id: 'earnings', icon: TrendingUp, label: 'Earnings' },
-              ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Admin dashboard' }] : []),
-            ].map((item, i, arr) => (
+            {[{ id: 'admin', icon: Shield, label: 'Admin dashboard' }].map((item, i, arr) => (
               <button key={item.id} onClick={() => onNavigate(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-sunken transition ${i < arr.length - 1 ? 'border-b border-line' : ''}`}>
                 <item.icon size={16} className="text-ink-600 flex-shrink-0" />
@@ -601,12 +599,6 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
             ))}
           </div>
         )}
-
-        {/* ── Sign out ── */}
-        <button onClick={async () => { await supabase.auth.signOut(); }}
-          className="w-full flex items-center justify-center gap-2 h-11 rounded-md border border-line-strong text-body-m font-display font-semibold text-content hover:bg-surface-sunken transition">
-          <LogOut size={15} /> Sign out
-        </button>
 
         {/* ── Completed Deals / Reviews ── */}
         {reviews.length > 0 && (
@@ -630,7 +622,8 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                   const isTraveler = deal.traveler?.id === session.user.id;
                   const other = isTraveler ? deal.shipper : deal.traveler;
                   return (
-                    <div key={i} className="flex items-center gap-3 p-3 bg-surface-sunken rounded-md border border-line">
+                    <button key={i} onClick={() => onNavigate && onNavigate('completed', { focusDealId: deal.id })}
+                      className="w-full flex items-center gap-3 p-3 bg-surface-sunken rounded-md border border-line hover:border-line-strong transition text-left">
                       <div className="w-9 h-9 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-ink-inverse flex-shrink-0">
                         {getInitials(other?.full_name)}
                       </div>
@@ -644,7 +637,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
                       <span className="badge-green flex-shrink-0">
                         <CheckCircle size={10} /> Done
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -929,6 +922,12 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
             </BottomSheet>
           )}
         </div>
+
+        {/* ── Sign out ── */}
+        <button onClick={async () => { await supabase.auth.signOut(); }}
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-md border border-line-strong text-body-m font-display font-semibold text-content hover:bg-surface-sunken transition">
+          <LogOut size={15} /> Sign out
+        </button>
 
         {/* ── Delete Account ── */}
         <div className="bg-surface rounded-lg border border-void-200 p-6">

@@ -392,7 +392,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 };
 
 // ── Main Messages Component ──
-const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
+const Messages = ({ session, focusMatchId }) => {
   const [acceptedMatches, setAcceptedMatches] = useState([]);
   const [activeMatch, setActiveMatch] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -413,13 +413,6 @@ const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
   const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const consumedFocusIdRef = useRef(null);
-
-  // Mobile — the thread owns the whole screen while it's open, so the
-  // bottom nav and its screen padding hide (Dashboard.jsx owns that UI).
-  useEffect(() => {
-    onThreadOpenChange?.(!!activeMatch);
-    return () => onThreadOpenChange?.(false);
-  }, [activeMatch, onThreadOpenChange]);
 
   // Deep-link from Home's "your turn" hero ticket straight into its thread.
   useEffect(() => {
@@ -837,9 +830,9 @@ const Messages = ({ session, focusMatchId, onThreadOpenChange }) => {
   );
 
   return (
-    <div className={`flex bg-surface overflow-hidden animate-fade-in
-      ${activeMatch ? 'h-[calc(100dvh-56px)] rounded-none border-0' : 'h-[calc(100dvh-176px)] rounded-lg border border-line'}
-      md:h-[calc(100vh-120px)] md:rounded-lg md:border md:border-line`}>
+    <div className="flex bg-surface overflow-hidden animate-fade-in
+      h-[calc(100dvh-176px)] rounded-lg border border-line
+      md:h-[calc(100vh-120px)] md:rounded-lg md:border md:border-line">
 
       {showDealDetails && activeMatch && (
         <DealDetailsModal match={activeMatch} session={session}
