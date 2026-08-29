@@ -40,6 +40,13 @@ const calcFees = (match, overrideAmount = null) => {
   return { transportFee, shopFee, purchasePrice, fetchrBase, fetchrFee, fetchrPct, totalShipperPays, travelerReceives, isPurchase }
 }
 
+// High-value deals require both parties to have completed Stripe Identity
+// verification first — trust matters more once real money is involved,
+// but making this mandatory for every deal (or every user) would be a
+// disproportionate privacy burden for a peer-to-peer marketplace. $500
+// matches the fee-tier breakpoint already used elsewhere in the app.
+const HIGH_VALUE_THRESHOLD = 500
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -83,6 +90,20 @@ Deno.serve(async (req) => {
       const verifiedBalance = Math.max(0, totalCredits - totalDebits)
       const profileBalance = Math.max(0, profile?.wallet_balance || 0)
       return Math.min(verifiedBalance, profileBalance)
+    }
+
+    const requireVerifiedForHighValue = async (match, totalDollars) => {
+      if (totalDollars < HIGH_VALUE_THRESHOLD) return
+      const { data: parties } = await adminClient.from('profiles')
+        .select('id, verified, full_name').in('id', [match.traveler_id, match.shipper_id])
+      const unverified = (parties || []).filter(p => !p.verified)
+      if (unverified.length > 0) {
+        const names = unverified.map(p => p.full_name || 'A party').join(' and ')
+        throw new Error(
+          `This deal is $${totalDollars.toFixed(2)}, above the $${HIGH_VALUE_THRESHOLD} threshold that requires ID verification. ` +
+          `${names} still need${unverified.length === 1 ? 's' : ''} to complete identity verification (Profile → Get verified) before escrow can be paid.`
+        )
+      }
     }
 
     const verifyWithdrawalEligibility = async (userId, requestedAmount) => {
@@ -270,6 +291,7 @@ Deno.serve(async (req) => {
       const fees = calcFees(match)
       const totalDollars = fees.totalShipperPays
       const totalCents = Math.round(totalDollars * 100)
+      await requireVerifiedForHighValue(match, totalDollars)
 
       // Deduct wallet contribution if any — checked against the ledger, not
       // the (now-protected, but still worth double-checking) cached balance.
@@ -392,6 +414,7 @@ Deno.serve(async (req) => {
       if (match.status !== 'terms_agreed') throw new Error('This deal is not ready for escrow payment')
 
       const fees = calcFees(match)
+      await requireVerifiedForHighValue(match, fees.totalShipperPays)
       const safeBalance = await getVerifiedBalance(user.id)
       if (safeBalance < fees.totalShipperPays - 0.01) {
         throw new Error(`Insufficient wallet balance. Available: $${safeBalance.toFixed(2)}`)

@@ -267,6 +267,8 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const [showReceivedReviews, setShowReceivedReviews] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
+  const [startingVerification, setStartingVerification] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [form, setForm] = useState({
@@ -462,6 +464,29 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
     } catch (e) { setError('Network error. Please try again.'); setDeletingAccount(false); }
   };
 
+  const startVerification = async () => {
+    setStartingVerification(true); setVerificationError('');
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession) { setVerificationError('Session expired. Please sign in again.'); setStartingVerification(false); return; }
+      const res = await fetch(
+        'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-identity',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authSession.access_token}` },
+          body: JSON.stringify({ action: 'create_session' }),
+        }
+      );
+      const result = await res.json();
+      if (!res.ok || result.error) { setVerificationError(result.error || 'Could not start verification.'); setStartingVerification(false); return; }
+      if (result.alreadyVerified) { setStartingVerification(false); return; }
+      // Stripe's hosted document+selfie flow — opened in a new tab/system
+      // browser rather than navigating the app away from itself.
+      window.open(result.url, '_blank');
+    } catch (e) { setVerificationError('Network error. Please try again.'); }
+    setStartingVerification(false);
+  };
+
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -510,13 +535,9 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="font-display font-bold text-title-m text-ink-900">{profile?.full_name || 'Your name'}</h2>
-                  {profile?.verified ? (
-                    <button onClick={() => setShowIdentity(true)}>
-                      <VerificationBadge verified />
-                    </button>
-                  ) : (
-                    <VerificationBadge verified={false} />
-                  )}
+                  <button onClick={() => setShowIdentity(true)}>
+                    <VerificationBadge verified={!!profile?.verified} />
+                  </button>
                 </div>
                 <p className="text-body-s text-content-subtle mt-0.5">{session.user.email}</p>
                 {/* Trust hierarchy, §9.1: verification (above) → completed deliveries → rating → member since */}
@@ -1012,13 +1033,34 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
 
         {showIdentity && (
           <BottomSheet title="Identity" onClose={() => setShowIdentity(false)}
-            footer={<button onClick={() => setShowIdentity(false)} className="w-full btn-secondary">Close</button>}>
+            footer={
+              profile?.verified ? (
+                <button onClick={() => setShowIdentity(false)} className="w-full btn-secondary">Close</button>
+              ) : (
+                <button onClick={startVerification} disabled={startingVerification} className="w-full btn-primary disabled:opacity-50">
+                  {startingVerification ? 'Starting…' : 'Get verified'}
+                </button>
+              )
+            }>
             <div className="p-5 space-y-3">
-              <VerificationBadge verified />
-              <p className="text-body-m text-content-muted leading-relaxed">
-                We checked a government ID against a selfie. Senders and travellers see the green badge
-                beside your name. Your document is not shown to anyone.
-              </p>
+              <VerificationBadge verified={!!profile?.verified} />
+              {profile?.verified ? (
+                <p className="text-body-m text-content-muted leading-relaxed">
+                  We checked a government ID against a selfie. Senders and travellers see the green badge
+                  beside your name. Your document is not shown to anyone.
+                </p>
+              ) : (
+                <>
+                  <p className="text-body-m text-content-muted leading-relaxed">
+                    Verify your identity with a government ID and a selfie, handled entirely by Stripe —
+                    fetchr never sees or stores the document itself, only whether it passed. Verification
+                    is optional, but required before paying or receiving escrow on deals over $500.
+                  </p>
+                  {verificationError && (
+                    <p className="text-body-s text-danger">{verificationError}</p>
+                  )}
+                </>
+              )}
             </div>
           </BottomSheet>
         )}
