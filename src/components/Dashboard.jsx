@@ -875,7 +875,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
       {/* Sidebar — desktop only; mobile navigation is the bottom nav */}
       <aside className="hidden md:flex md:relative inset-y-0 left-0 w-60 bg-surface border-r border-line
-        flex-col overflow-y-auto">
+        flex-col min-h-0 overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-5 border-b border-line">
           <div className="flex items-center gap-2">
             <BareGlyph size={20} />
@@ -946,9 +946,10 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
-        <header className="bg-surface border-b border-line px-4 md:px-6 py-3.5 flex items-center justify-between sticky top-0 z-sticky flex-shrink-0">
+        <header className="bg-surface border-b border-line px-4 md:px-6 pb-3.5 flex items-center justify-between sticky top-0 z-sticky flex-shrink-0"
+          style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top))' }}>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('dashboard')} className="md:hidden flex items-center gap-2">
               <BareGlyph size={20} />
@@ -1019,8 +1020,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-24 md:pb-6">
+        <main className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6">
             {renderMain()}
           </div>
         </main>
@@ -1028,7 +1029,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
       {/* Mobile bottom nav — exactly the 5 items the design spec fixes;
           stays visible at all times, including inside an open chat thread. */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 pt-2"
+        style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
           <div className="flex items-center justify-around">
             {bottomNavItems.map(item => (
               <button key={item.id} onClick={() => navigate(item.id)}
