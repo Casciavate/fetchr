@@ -42,3 +42,9 @@ entrypoint = "./functions/admin-dashboard/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/admin-dashboard/*.html" ]
+
+[functions.email-import]
+enabled = true
+verify_jwt = false # public webhook target for SendGrid Inbound Parse — no user session
+import_map = "./functions/email-import/deno.json"
+entrypoint = "./functions/email-import/index.ts"
