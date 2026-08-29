@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { Plane, Package, DollarSign, Mail, Lock, Eye, EyeOff, ArrowRight, Shield, X, AlertTriangle } from 'lucide-react';
 
-const TC_SECTIONS = [
+export const TC_SECTIONS = [
   {
     title: '1. Platform Role',
     body: 'fetchr is a peer-to-peer matchmaking platform that connects travellers with spare luggage capacity to individuals wishing to send items. fetchr acts solely as a facilitator and is not a courier, logistics provider, or shipping company. fetchr facilitates secure payment between parties but does not take possession of or responsibility for any items.'
@@ -90,7 +90,7 @@ const Auth = () => {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName } }
+        options: { data: { full_name: fullName, terms_accepted_at: new Date().toISOString() } }
       });
       if (error) setError(error.message);
       else setSuccess('Account created! Please check your email to verify your account.');
@@ -98,11 +98,13 @@ const Auth = () => {
     setLoading(false);
   };
 
+  // No T&C gate here: Google can be reached from either tab, and the OAuth
+  // redirect throws away this component's state anyway (a checkbox ticked
+  // here can't be reliably threaded through to the account that comes back).
+  // The real gate is enforced after the redirect, in App.js, based on
+  // profiles.terms_accepted_at — every account, however it was created,
+  // must accept before it can use the app.
   const handleGoogle = async () => {
-    if (mode === 'signup' && !tcAgreed) {
-      setError('You must accept the Terms & Conditions to create an account.');
-      return;
-    }
     setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

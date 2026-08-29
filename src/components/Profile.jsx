@@ -297,6 +297,8 @@ const Profile = ({ session, userRole }) => {
   });
   const [reviews, setReviews] = useState([]);
   const [showReviews, setShowReviews] = useState(false);
+  const [receivedReviews, setReceivedReviews] = useState([]);
+  const [showReceivedReviews, setShowReceivedReviews] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -376,14 +378,27 @@ const Profile = ({ session, userRole }) => {
     setReviews(data || []);
   };
 
+  // Reviews other people left about this user — separate from fetchReviews()
+  // above (which is actually just this user's own completed-deal history).
+  const fetchReceivedReviews = async () => {
+    const { data } = await supabase
+      .from('reviews')
+      .select(`id, rating, comment, created_at, reviewer:profiles!reviews_reviewer_id_fkey(full_name)`)
+      .eq('reviewee_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setReceivedReviews(data || []);
+  };
+
   useEffect(() => {
-    fetchProfile(); fetchStats(); fetchReviews();
+    fetchProfile(); fetchStats(); fetchReviews(); fetchReceivedReviews();
     const userId = session.user.id;
     const sub = supabase.channel(`profile-rt-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, fetchProfile)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, fetchStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'flights', filter: `user_id=eq.${userId}` }, fetchStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests', filter: `user_id=eq.${userId}` }, fetchStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews', filter: `reviewee_id=eq.${userId}` }, fetchReceivedReviews)
       .subscribe();
     return () => supabase.removeChannel(sub);
   }, []);
@@ -635,6 +650,53 @@ const Profile = ({ session, userRole }) => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Reviews received ── */}
+        {receivedReviews.length > 0 && (
+          <div className="ticket">
+            <button onClick={() => setShowReceivedReviews(!showReceivedReviews)}
+              className="w-full flex items-center justify-between p-5 hover:bg-surface-sunken transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-ink-100 rounded-md flex items-center justify-center">
+                  <Star size={16} className="text-ink-900" />
+                </div>
+                <div className="text-left">
+                  <p className="font-display font-semibold text-title-s text-ink-900">Reviews received</p>
+                  <p className="text-body-s text-content-subtle">{receivedReviews.length} review{receivedReviews.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              {showReceivedReviews ? <ChevronUp size={18} className="text-ink-400" /> : <ChevronDown size={18} className="text-ink-400" />}
+            </button>
+            {showReceivedReviews && (
+              <div className="border-t border-line p-5 space-y-3">
+                {receivedReviews.map(review => (
+                  <div key={review.id} className="p-3 bg-surface-sunken rounded-md border border-line">
+                    <div className="flex items-center gap-3 mb-1.5">
+                      <div className="w-8 h-8 rounded-avatar bg-surface-inverse flex items-center justify-center text-overline font-mono font-semibold text-ink-inverse flex-shrink-0">
+                        {getInitials(review.reviewer?.full_name)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-body-s font-semibold text-content">{review.reviewer?.full_name || 'User'}</p>
+                        <p className="text-micro text-content-subtle">
+                          {new Date(review.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 flex-shrink-0">
+                        <Star size={13} className="text-ink-900 fill-ink-900" />
+                        <span className={`font-mono text-num-m font-semibold ${review.rating < 3 ? 'text-danger' : 'text-ink-900'}`}>
+                          {review.rating}
+                        </span>
+                      </span>
+                    </div>
+                    {review.comment && (
+                      <p className="text-body-s text-content-muted italic pl-11">"{review.comment}"</p>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
