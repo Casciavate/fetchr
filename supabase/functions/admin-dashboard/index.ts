@@ -73,16 +73,106 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── Users list ──
+    // ── Users list, with per-user deal/earnings stats and ban status ──
     if (action === 'users') {
       const { limit = 200 } = data || {}
-      const { data: users, error } = await adminClient
-        .from('profiles')
-        .select('id, full_name, email, role, verified, rating, total_reviews, wallet_balance, completed_deals, is_admin, created_at')
-        .order('created_at', { ascending: false })
-        .limit(limit)
+      const [{ data: users, error }, { data: statsRows }, { data: authList }] = await Promise.all([
+        adminClient
+          .from('profiles')
+          .select('id, full_name, email, role, verified, rating, total_reviews, wallet_balance, completed_deals, is_admin, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit),
+        adminClient.rpc('admin_user_stats'),
+        adminClient.auth.admin.listUsers({ perPage: 1000 }),
+      ])
       if (error) throw error
-      return new Response(JSON.stringify({ users }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const statsById = Object.fromEntries((statsRows || []).map(s => [s.user_id, s]))
+      const bannedById = Object.fromEntries(
+        (authList?.users || []).map(u => [u.id, !!u.banned_until && new Date(u.banned_until) > new Date()])
+      )
+      const enriched = (users || []).map(u => ({
+        ...u,
+        stats: statsById[u.id] || null,
+        blocked: !!bannedById[u.id],
+      }))
+      return new Response(JSON.stringify({ users: enriched }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── KPI time series for the overview chart ──
+    if (action === 'kpi_timeseries') {
+      const { startDate, endDate } = data || {}
+      if (!startDate || !endDate) throw new Error('startDate and endDate required')
+      const { data: rows, error } = await adminClient.rpc('admin_kpi_timeseries', { start_date: startDate, end_date: endDate })
+      if (error) throw error
+      return new Response(JSON.stringify({ series: rows }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Block / unblock a user (native GoTrue ban — actually prevents
+    //    sign-in, not just an app-level flag) ──
+    if (action === 'block_user') {
+      const { userId } = data
+      if (!userId) throw new Error('userId required')
+      if (userId === user.id) throw new Error('Cannot block your own account')
+      const { error } = await adminClient.auth.admin.updateUserById(userId, { ban_duration: '87600h' })
+      if (error) throw error
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+    if (action === 'unblock_user') {
+      const { userId } = data
+      if (!userId) throw new Error('userId required')
+      const { error } = await adminClient.auth.admin.updateUserById(userId, { ban_duration: 'none' })
+      if (error) throw error
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Force-set a temporary password (email delivery isn't reliable
+    //    yet — the admin relays this to the user directly rather than a
+    //    reset-link email) ──
+    if (action === 'reset_password') {
+      const { userId } = data
+      if (!userId) throw new Error('userId required')
+      const tempPassword = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+      const { error } = await adminClient.auth.admin.updateUserById(userId, { password: tempPassword })
+      if (error) throw error
+      return new Response(JSON.stringify({ success: true, tempPassword }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Delete a user (admin-triggered). Same safety blockers as
+    //    self-service deletion — an admin forcing through a delete while
+    //    real escrow money is in flight would orphan it. ──
+    if (action === 'delete_user') {
+      const { userId } = data
+      if (!userId) throw new Error('userId required')
+      if (userId === user.id) throw new Error('Cannot delete your own account from here')
+
+      const { data: activeDeals } = await adminClient
+        .from('matches').select('id')
+        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+      if (activeDeals && activeDeals.length > 0) {
+        throw new Error(`This user has ${activeDeals.length} active deal(s) — resolve or cancel them first.`)
+      }
+      const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', userId).single()
+      if (profile && profile.wallet_balance > 0) {
+        throw new Error(`This user has $${parseFloat(profile.wallet_balance).toFixed(2)} in their wallet — must be withdrawn/zeroed first.`)
+      }
+
+      const { data: allMatches } = await adminClient
+        .from('matches').select('id')
+        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+      if (allMatches && allMatches.length > 0) {
+        const matchIds = allMatches.map(m => m.id)
+        await adminClient.from('messages').delete().in('match_id', matchIds)
+        await adminClient.from('cancellation_requests').delete().in('match_id', matchIds)
+        await adminClient.from('matches').delete().in('id', matchIds)
+      }
+      await adminClient.from('flights').delete().eq('user_id', userId)
+      await adminClient.from('shipment_requests').delete().eq('user_id', userId)
+      await adminClient.from('profiles').delete().eq('id', userId)
+      const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(userId)
+      if (deleteAuthError) console.error('Auth user deletion error:', deleteAuthError)
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── Transactions ledger, across all users ──

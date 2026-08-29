@@ -20,7 +20,9 @@ import Completed from './Completed';
 import Profile from './Profile';
 import Earnings from './Earnings';
 import WalletScreen from './Wallet';
-import AdminDashboard from './AdminDashboard';
+// Lazy-loaded: pulls in recharts, which only admins ever need — keeps that
+// weight out of the bundle every regular user downloads.
+const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
 import { AIRLINE_CODES } from './shared/airlines';
 import { calcFees } from './EscrowPayment';
 import StatusPill from './shared/StatusPill';
@@ -393,7 +395,11 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         onNavigate={navigate} isAdmin={isAdmin} />;
       case 'earnings': return <Earnings session={session} />;
       case 'wallet': return <WalletScreen session={session} />;
-      case 'admin': return isAdmin ? <AdminDashboard /> : renderDashboard();
+      case 'admin': return isAdmin ? (
+        <React.Suspense fallback={<div className="max-w-6xl mx-auto p-6 text-content-muted text-body-s">Loading admin dashboard…</div>}>
+          <AdminDashboard />
+        </React.Suspense>
+      ) : renderDashboard();
       default: return renderDashboard();
     }
   };

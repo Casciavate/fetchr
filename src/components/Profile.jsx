@@ -309,12 +309,17 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
     ] = await Promise.all([
       supabase.from('flights').select('id', { count: 'exact', head: true })
         .eq('user_id', userId).eq('status', 'active').gte('flight_date', today),
-      supabase.from('flights').select('id', { count: 'exact', head: true })
-        .eq('user_id', userId).eq('status', 'expired'),
+      // A flight only counts as "completed" if a real deal was executed on
+      // it — flights.status='expired' just means the date passed, matched
+      // or not, and was wrongly counted here before.
+      supabase.from('matches').select('id', { count: 'exact', head: true })
+        .eq('traveler_id', userId).eq('status', 'completed'),
       supabase.from('shipment_requests').select('id', { count: 'exact', head: true })
         .eq('user_id', userId).eq('status', 'open'),
-      supabase.from('shipment_requests').select('id', { count: 'exact', head: true })
-        .eq('user_id', userId).eq('status', 'matched'),
+      // Same fix on the shipper side — status='matched' is never actually
+      // set anywhere, so this was always zero; count real completed deals.
+      supabase.from('matches').select('id', { count: 'exact', head: true })
+        .eq('shipper_id', userId).eq('status', 'completed'),
       supabase.from('matches').select('id', { count: 'exact', head: true })
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`).eq('status', 'completed'),
       supabase.from('matches').select('id', { count: 'exact', head: true })
@@ -550,7 +555,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
             { title: 'Flights', icon: Plane, nav: 'flights',
               rows: [{ label: 'Active / upcoming', val: stats.flightsActive }, { label: 'Completed', val: stats.flightsCompleted }] },
             { title: 'Requests', icon: Package, nav: 'my-requests',
-              rows: [{ label: 'Open', val: stats.requestsActive }, { label: 'Matched', val: stats.requestsCompleted }] },
+              rows: [{ label: 'Open', val: stats.requestsActive }, { label: 'Completed', val: stats.requestsCompleted }] },
             { title: 'Deals', icon: Award, nav: 'active-deals',
               rows: [{ label: 'Ongoing', val: stats.dealsOngoing }, { label: 'Completed', val: stats.dealsCompleted }] },
             { title: 'Earnings', icon: TrendingUp, nav: 'earnings' },

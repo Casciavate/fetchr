@@ -31,11 +31,12 @@ const MyRequests = ({ session, onNewRequest }) => {
 
   const fetchRequests = async () => {
     setLoading(true);
+    await supabase.rpc('expire_old_flights');
     const { data, error } = await supabase
       .from('shipment_requests')
       .select('*')
       .eq('user_id', session.user.id)
-      .in('status', ['open', 'matched'])
+      .eq('status', 'open')
       .order('created_at', { ascending: false });
     if (!error && data) {
       setRequests(data);

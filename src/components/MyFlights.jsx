@@ -302,12 +302,6 @@ const MyFlights = ({ session, onAddFlight }) => {
     return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-success-tint text-success font-mono text-overline uppercase">Active</span>;
   };
 
-  const daysUntilRemoval = (flight) => {
-    return Math.max(0, 5 - Math.floor(
-      (new Date() - new Date(flight.flight_date)) / (1000 * 60 * 60 * 24)
-    ));
-  };
-
   if (loading) return (
     <div className="max-w-3xl mx-auto space-y-4">
       {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
@@ -339,6 +333,8 @@ const MyFlights = ({ session, onAddFlight }) => {
           {flights.map(flight => {
             const luggageOpts = getLuggageOptions(flight);
             const totalKg = luggageOpts.reduce((s, l) => s + parseFloat(l.available_kg || 0), 0);
+            const bookedKg = parseFloat(flight.booked_kg || 0);
+            const remainingKg = Math.max(0, totalKg - bookedKg);
             const totalNet = luggageOpts.reduce((s, l) => {
               const e = getNetEarnings(l.available_kg, l.price_per_kg);
               return s + (e?.net || 0);
@@ -384,14 +380,18 @@ const MyFlights = ({ session, onAddFlight }) => {
                     <span>&middot;</span>
                     <span>{flight.airline}{flight.flight_number ? ` ${flight.flight_number}` : ''}</span>
                     <span>&middot;</span>
-                    <span>{totalKg.toFixed(1)}kg free</span>
+                    <span>
+                      {bookedKg > 0
+                        ? `${remainingKg.toFixed(1)}kg free of ${totalKg.toFixed(1)}kg`
+                        : `${totalKg.toFixed(1)}kg free`}
+                    </span>
                   </div>
 
                   {flight.status === 'expired' && (
                     <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
                       <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
                       <p className="text-body-s text-warning">
-                        This flight left. Auto-removes in {daysUntilRemoval(flight)} day{daysUntilRemoval(flight) !== 1 ? 's' : ''}.
+                        This flight already departed. It's kept here because it has deal history.
                       </p>
                     </div>
                   )}
@@ -400,9 +400,11 @@ const MyFlights = ({ session, onAddFlight }) => {
                     <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
                       <AlertTriangle size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
                       <p className="text-body-s text-info-500">
-                        Active deal in progress — this flight can't be deleted or edited here.
-                        Any change to price or terms needs to go through the Messages tab for
-                        that deal.
+                        {bookedKg > 0
+                          ? `${bookedKg.toFixed(1)}kg already committed to an active deal — ${remainingKg.toFixed(1)}kg still free for other matches. `
+                          : 'Active deal in progress — '}
+                        This flight can't be deleted or edited here. Any change to price or
+                        terms needs to go through the Messages tab for that deal.
                       </p>
                     </div>
                   )}

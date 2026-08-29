@@ -1,10 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   DollarSign, Users, Receipt, CreditCard, ShieldCheck,
   TrendingUp, Lock, Wallet, RefreshCw, CheckCircle, XCircle,
+  Ban, KeyRound, Trash2, Search, ArrowUpDown,
 } from 'lucide-react';
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts';
 import StatusPill from './shared/StatusPill';
+import Toast from './shared/Toast';
 
 const ADMIN_FN_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/admin-dashboard';
 
@@ -39,11 +44,39 @@ const AdminDashboard = () => {
   const [transactions, setTransactions] = useState([]);
   const [txFilter, setTxFilter] = useState({ type: '', status: '' });
   const [paymentIntents, setPaymentIntents] = useState([]);
+  const [success, setSuccess] = useState('');
+
+  // Users tab — search, status filter, sort
+  const [userSearch, setUserSearch] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [sortKey, setSortKey] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+  const [actingOn, setActingOn] = useState(null);
+
+  // Overview tab — KPI period
+  const [kpiPeriod, setKpiPeriod] = useState('30d');
+  const [kpiSeries, setKpiSeries] = useState([]);
+
+  const periodRange = (period) => {
+    const end = new Date();
+    const start = new Date();
+    if (period === '7d') start.setDate(end.getDate() - 6);
+    else if (period === '30d') start.setDate(end.getDate() - 29);
+    else if (period === '90d') start.setDate(end.getDate() - 89);
+    else if (period === 'ytd') { start.setMonth(0, 1); }
+    else if (period === '1y') start.setFullYear(end.getFullYear() - 1);
+    const fmt = (d) => d.toISOString().split('T')[0];
+    return { startDate: fmt(start), endDate: fmt(end) };
+  };
 
   const load = useCallback(async (t = tab) => {
     setLoading(true); setError('');
     try {
-      if (t === 'overview') setOverview((await callAdmin('overview')));
+      if (t === 'overview') {
+        setOverview((await callAdmin('overview')));
+        const { startDate, endDate } = periodRange(kpiPeriod);
+        setKpiSeries((await callAdmin('kpi_timeseries', { startDate, endDate })).series || []);
+      }
       if (t === 'users') setUsers((await callAdmin('users')).users || []);
       if (t === 'transactions') {
         const filters = {};
@@ -56,7 +89,7 @@ const AdminDashboard = () => {
       setError(e.message);
     }
     setLoading(false);
-  }, [tab, txFilter]);
+  }, [tab, txFilter, kpiPeriod]);
 
   useEffect(() => { load(tab); }, [tab, load]);
 
@@ -69,8 +102,85 @@ const AdminDashboard = () => {
     }
   };
 
+  const flash = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 5000); };
+
+  const blockUser = async (u) => {
+    setActingOn(u.id);
+    try {
+      await callAdmin(u.blocked ? 'unblock_user' : 'block_user', { userId: u.id });
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, blocked: !u.blocked } : x));
+      flash(u.blocked ? `${u.full_name || u.email} unblocked.` : `${u.full_name || u.email} blocked — they can no longer sign in.`);
+    } catch (e) { setError(e.message); }
+    setActingOn(null);
+  };
+
+  const resetPassword = async (u) => {
+    if (!window.confirm(`Set a new temporary password for ${u.full_name || u.email}?`)) return;
+    setActingOn(u.id);
+    try {
+      const res = await callAdmin('reset_password', { userId: u.id });
+      window.prompt(`Temporary password for ${u.email} (share this with them securely):`, res.tempPassword);
+    } catch (e) { setError(e.message); }
+    setActingOn(null);
+  };
+
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Permanently delete ${u.full_name || u.email}? This cannot be undone.`)) return;
+    setActingOn(u.id);
+    try {
+      await callAdmin('delete_user', { userId: u.id });
+      setUsers(prev => prev.filter(x => x.id !== u.id));
+      flash(`${u.full_name || u.email} deleted.`);
+    } catch (e) { setError(e.message); }
+    setActingOn(null);
+  };
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const visibleUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    let rows = users.filter(u => {
+      if (q && !`${u.full_name || ''} ${u.email || ''}`.toLowerCase().includes(q)) return false;
+      if (userStatusFilter === 'verified' && !u.verified) return false;
+      if (userStatusFilter === 'unverified' && u.verified) return false;
+      if (userStatusFilter === 'blocked' && !u.blocked) return false;
+      if (userStatusFilter === 'admin' && !u.is_admin) return false;
+      return true;
+    });
+    const val = (u, key) => {
+      switch (key) {
+        case 'name': return (u.full_name || u.email || '').toLowerCase();
+        case 'wallet_balance': return u.wallet_balance || 0;
+        case 'completed_deals': return (u.stats?.completed_deals_traveler || 0) + (u.stats?.completed_deals_shipper || 0);
+        case 'completed_flights': return u.stats?.completed_flights || 0;
+        case 'total_earned': return u.stats?.total_earned || 0;
+        case 'total_spent': return u.stats?.total_spent || 0;
+        case 'fetchr_revenue': return u.stats?.fetchr_revenue || 0;
+        case 'rating': return u.rating || 0;
+        case 'created_at': return u.created_at || '';
+        default: return '';
+      }
+    };
+    rows = [...rows].sort((a, b) => {
+      const av = val(a, sortKey), bv = val(b, sortKey);
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return rows;
+  }, [users, userSearch, userStatusFilter, sortKey, sortDir]);
+
+  const SortHeader = ({ label, sortAs }) => (
+    <th className="px-4 py-3 font-semibold cursor-pointer select-none hover:text-content" onClick={() => toggleSort(sortAs)}>
+      <span className="flex items-center gap-1">{label}<ArrowUpDown size={11} className={sortKey === sortAs ? 'text-ink-900' : 'text-ink-300'} /></span>
+    </th>
+  );
+
   return (
     <div className="animate-fade-in space-y-6">
+      <Toast message={success} tone="success" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display font-bold text-title-l text-content flex items-center gap-2">
@@ -147,6 +257,44 @@ const AdminDashboard = () => {
             </div>
 
             <div className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-display font-semibold text-title-s text-content">KPIs over time</h2>
+                <div className="flex gap-1">
+                  {[['7d', '7D'], ['30d', '30D'], ['90d', '90D'], ['ytd', 'YTD'], ['1y', '1Y']].map(([id, label]) => (
+                    <button key={id} onClick={() => setKpiPeriod(id)}
+                      className={`px-2.5 py-1 rounded-md text-label font-semibold transition-all ${
+                        kpiPeriod === id ? 'bg-ink-900 text-white' : 'text-content-muted hover:bg-surface-sunken'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {kpiSeries.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-content-subtle text-body-s">
+                  {loading ? 'Loading…' : 'No data for this period.'}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={kpiSeries.map(r => ({
+                    ...r,
+                    label: new Date(r.day).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+                  }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line yAxisId="left" type="monotone" dataKey="revenue" name="Revenue ($)" stroke="#DC5518" strokeWidth={2} dot={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="completed_deals" name="Completed deals" stroke="#14181F" strokeWidth={2} dot={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="new_users" name="New users" stroke="#5B8DEF" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="card p-5">
               <h2 className="font-display font-semibold text-title-s text-content mb-3">Stripe account balance (test mode)</h2>
               {overview.stripeBalance?.error ? (
                 <p className="text-body-s text-danger">{overview.stripeBalance.error}</p>
@@ -182,52 +330,105 @@ const AdminDashboard = () => {
       )}
 
       {tab === 'users' && (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-body-s">
-              <thead>
-                <tr className="border-b border-line text-left text-overline uppercase text-content-subtle font-mono">
-                  <th className="px-4 py-3 font-semibold">Name</th>
-                  <th className="px-4 py-3 font-semibold">Email</th>
-                  <th className="px-4 py-3 font-semibold">Role</th>
-                  <th className="px-4 py-3 font-semibold">Wallet</th>
-                  <th className="px-4 py-3 font-semibold">Deals</th>
-                  <th className="px-4 py-3 font-semibold">Rating</th>
-                  <th className="px-4 py-3 font-semibold">Verified</th>
-                  <th className="px-4 py-3 font-semibold">Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && users.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-content-subtle">Loading users…</td></tr>
-                ) : users.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-content-subtle">No users found.</td></tr>
-                ) : users.map(u => (
-                  <tr key={u.id} className="border-b border-line hover:bg-surface-sunken">
-                    <td className="px-4 py-3 font-semibold text-content flex items-center gap-1.5">
-                      {u.full_name || '—'}
-                      {u.is_admin && <ShieldCheck size={13} className="text-ink-600" title="Admin" />}
-                    </td>
-                    <td className="px-4 py-3 text-content-muted">{u.email || '—'}</td>
-                    <td className="px-4 py-3 text-content-muted">{u.role || '—'}</td>
-                    <td className="px-4 py-3 font-mono text-content font-medium">{money(u.wallet_balance)}</td>
-                    <td className="px-4 py-3 font-mono text-content-muted">{u.completed_deals ?? 0}</td>
-                    <td className="px-4 py-3 font-mono text-content-muted">{u.rating ? `${u.rating.toFixed(1)} (${u.total_reviews})` : '—'}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => toggleVerified(u.id, u.verified)}>
-                        <StatusPill tone={u.verified ? 'success' : 'neutral'}>
-                          {u.verified ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                          {u.verified ? 'Verified' : 'Unverified'}
-                        </StatusPill>
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-content-subtle text-micro">
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                placeholder="Search name or email…" className="input-field pl-8 py-2 text-body-s" />
+            </div>
+            <select value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value)}
+              className="input-field w-auto py-2 text-body-s">
+              <option value="all">All users</option>
+              <option value="verified">Verified</option>
+              <option value="unverified">Unverified</option>
+              <option value="blocked">Blocked</option>
+              <option value="admin">Admins</option>
+            </select>
+            <span className="text-label text-content-subtle">{visibleUsers.length} of {users.length}</span>
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-body-s whitespace-nowrap">
+                <thead>
+                  <tr className="border-b border-line text-left text-overline uppercase text-content-subtle font-mono">
+                    <SortHeader label="Name" sortAs="name" />
+                    <th className="px-4 py-3 font-semibold">Email</th>
+                    <SortHeader label="Wallet" sortAs="wallet_balance" />
+                    <SortHeader label="Deals" sortAs="completed_deals" />
+                    <SortHeader label="Flights" sortAs="completed_flights" />
+                    <SortHeader label="Earned" sortAs="total_earned" />
+                    <SortHeader label="Spent" sortAs="total_spent" />
+                    <SortHeader label="fetchr rev." sortAs="fetchr_revenue" />
+                    <SortHeader label="Rating" sortAs="rating" />
+                    <th className="px-4 py-3 font-semibold">Verified</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <SortHeader label="Joined" sortAs="created_at" />
+                    <th className="px-4 py-3 font-semibold">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {loading && users.length === 0 ? (
+                    <tr><td colSpan={13} className="px-4 py-8 text-center text-content-subtle">Loading users…</td></tr>
+                  ) : visibleUsers.length === 0 ? (
+                    <tr><td colSpan={13} className="px-4 py-8 text-center text-content-subtle">No users found.</td></tr>
+                  ) : visibleUsers.map(u => (
+                    <tr key={u.id} className="border-b border-line hover:bg-surface-sunken">
+                      <td className="px-4 py-3 font-semibold text-content flex items-center gap-1.5">
+                        {u.full_name || '—'}
+                        {u.is_admin && <ShieldCheck size={13} className="text-ink-600" title="Admin" />}
+                      </td>
+                      <td className="px-4 py-3 text-content-muted">{u.email || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-content font-medium">{money(u.wallet_balance)}</td>
+                      <td className="px-4 py-3 font-mono text-content-muted">
+                        {(u.stats?.completed_deals_traveler || 0) + (u.stats?.completed_deals_shipper || 0)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-content-muted">{u.stats?.completed_flights || 0}</td>
+                      <td className="px-4 py-3 font-mono text-success font-medium">{money(u.stats?.total_earned)}</td>
+                      <td className="px-4 py-3 font-mono text-content-muted">{money(u.stats?.total_spent)}</td>
+                      <td className="px-4 py-3 font-mono text-content-muted">{money(u.stats?.fetchr_revenue)}</td>
+                      <td className="px-4 py-3 font-mono text-content-muted">{u.rating ? `${u.rating.toFixed(1)} (${u.total_reviews})` : '—'}</td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => toggleVerified(u.id, u.verified)}>
+                          <StatusPill tone={u.verified ? 'success' : 'neutral'}>
+                            {u.verified ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                            {u.verified ? 'Verified' : 'Unverified'}
+                          </StatusPill>
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill tone={u.blocked ? 'danger' : 'success'}>
+                          {u.blocked ? 'Blocked' : 'Active'}
+                        </StatusPill>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-content-subtle text-micro">
+                        {u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button title={u.blocked ? 'Unblock' : 'Block'} disabled={actingOn === u.id || u.is_admin}
+                            onClick={() => blockUser(u)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-sunken disabled:opacity-30 text-content-muted">
+                            <Ban size={14} />
+                          </button>
+                          <button title="Reset password" disabled={actingOn === u.id}
+                            onClick={() => resetPassword(u)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-sunken disabled:opacity-30 text-content-muted">
+                            <KeyRound size={14} />
+                          </button>
+                          <button title="Delete" disabled={actingOn === u.id || u.is_admin}
+                            onClick={() => deleteUser(u)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-danger-tint disabled:opacity-30 text-danger">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

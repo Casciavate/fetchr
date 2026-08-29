@@ -400,6 +400,14 @@ const Matches = ({ session, onNavigate }) => {
                   <p className="text-micro text-content-subtle">Weight</p>
                   <p className="font-mono font-medium text-content">{match.request?.weight_kg} kg</p>
                 </div>
+                {match.flight?.available_kg != null && (
+                  <div>
+                    <p className="text-micro text-content-subtle">Flight capacity free</p>
+                    <p className="font-mono font-medium text-content">
+                      {Math.max(0, (match.flight.available_kg || 0) - (match.flight.booked_kg || 0)).toFixed(1)} kg
+                    </p>
+                  </div>
+                )}
                 {match.request?.dimensions && (
                   <div>
                     <p className="text-micro text-content-subtle">Dimensions</p>
