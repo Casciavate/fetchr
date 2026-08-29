@@ -59,6 +59,7 @@ const Auth = () => {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -79,6 +80,10 @@ const Auth = () => {
     }
     if (mode === 'signup' && !fullName.trim()) {
       setError('Please enter your full name.');
+      return;
+    }
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
 
@@ -190,6 +195,7 @@ const Auth = () => {
                 </label>
                 <input id="full-name" type="text" placeholder="Jonas Weber" value={fullName}
                   onChange={e => setFullName(e.target.value)} required
+                  autoComplete="name"
                   className="input-field" />
               </div>
             )}
@@ -202,6 +208,7 @@ const Auth = () => {
                 <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
                 <input id="email" type="email" placeholder="you@example.com" value={email}
                   onChange={e => setEmail(e.target.value)} required
+                  autoComplete={mode === 'signup' ? 'email' : 'username'}
                   className="input-field pl-10" />
               </div>
             </div>
@@ -214,6 +221,7 @@ const Auth = () => {
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
                 <input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
                   onChange={e => setPassword(e.target.value)} required
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   className="input-field pl-10 pr-11" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600">
@@ -221,6 +229,27 @@ const Auth = () => {
                 </button>
               </div>
             </div>
+
+            {/* Confirm password — signup only. Same autoComplete="new-password"
+                as the field above so iOS/Safari recognizes the pair and offers
+                its native strong-password generator, filling both at once. */}
+            {mode === 'signup' && (
+              <div>
+                <label htmlFor="confirm-password" className="block text-label text-content-muted mb-1.5 uppercase">
+                  Repeat password
+                </label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+                  <input id="confirm-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)} required
+                    autoComplete="new-password"
+                    className="input-field pl-10 pr-11" />
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-micro text-danger mt-1">Passwords don't match.</p>
+                )}
+              </div>
+            )}
 
             {/* T&C — signup only */}
             {mode === 'signup' && (
@@ -258,7 +287,7 @@ const Auth = () => {
             )}
 
             <button type="submit"
-              disabled={loading || (mode === 'signup' && !tcAgreed)}
+              disabled={loading || (mode === 'signup' && (!tcAgreed || !confirmPassword || password !== confirmPassword))}
               className="btn-primary w-full mt-1">
               {loading
                 ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
