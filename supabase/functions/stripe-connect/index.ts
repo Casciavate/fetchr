@@ -571,6 +571,17 @@ Deno.serve(async (req) => {
       if (!callerMatch || (user.id !== callerMatch.traveler_id && user.id !== callerMatch.shipper_id)) {
         throw new Error('Forbidden: not a party to this match')
       }
+      // Being a party to the match isn't consent — without this check either
+      // side could cancel/refund escrow unilaterally at any time by calling
+      // this action directly, bypassing the cancellation_requests flow the
+      // UI implies entirely. A pending request not authored by the caller
+      // means the caller is the counterpart actually agreeing to someone
+      // else's request, which is the only legitimate way to reach this.
+      const { data: pendingCancelReq } = await adminClient.from('cancellation_requests')
+        .select('id, requested_by').eq('match_id', matchId).eq('status', 'pending').maybeSingle()
+      if (!pendingCancelReq || pendingCancelReq.requested_by === user.id) {
+        throw new Error('Forbidden: cancellation must be agreed to by the other party first')
+      }
       const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
 
       if (!isWalletEscrow) {
