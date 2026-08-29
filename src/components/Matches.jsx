@@ -21,9 +21,12 @@ const BareGlyph = ({ size = 16 }) => (
   </svg>
 );
 
+const FILTERS = ['All', 'As sender', 'As traveller', 'Best fit'];
+
 const Matches = ({ session, onNavigate }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('All');
   const [acting, setActing] = useState({});
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -248,12 +251,33 @@ const Matches = ({ session, onNavigate }) => {
         <StatusPill tone="success" dot>Live</StatusPill>
       </div>
 
+      {/* Filter chips, docs/BRAND.md — mobile-first list filtering */}
+      {matches.length > 0 && (
+        <div className="md:hidden flex gap-2 overflow-x-auto pb-4 -mx-4 px-4">
+          {FILTERS.map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`flex-shrink-0 h-9 px-3.5 rounded-full text-label font-medium border transition ${
+                filter === f
+                  ? 'bg-surface-inverse text-ink-inverse border-surface-inverse'
+                  : 'bg-surface text-ink-muted border-line-strong'
+              }`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       {matches.length === 0 ? (
         <EmptyState icon={Search} title="No matches yet"
           body="Add a flight or shipment request and we'll find your match automatically." />
       ) : (
         <div className="space-y-4">
-          {matches.map(match => {
+          {matches.filter(m => {
+            if (filter === 'As sender') return !isTraveler(m);
+            if (filter === 'As traveller') return isTraveler(m);
+            if (filter === 'Best fit') return m.match_score >= 80;
+            return true;
+          }).map(match => {
             const other = getOtherParty(match);
             const avatarUrl = getAvatarUrl(other);
             const fees = getFeePreview(match);

@@ -16,6 +16,8 @@ import { AIRLINE_CODES } from './shared/airlines';
 import { calcFees } from './EscrowPayment';
 import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
+import VerificationBadge from './shared/VerificationBadge';
+import RatingDisplay from './shared/RatingDisplay';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
@@ -289,12 +291,15 @@ const Dashboard = ({ session }) => {
     },
   ];
 
+  // Matches fetchr_design/ui_kits/fetchr-mobile/MobileApp.jsx's actual
+  // `items` array exactly — Post is the 5th tab, not Profile; Profile is
+  // reached from the Home header avatar (MHome's `right` slot) instead.
   const bottomNavItems = [
     { id: 'dashboard', icon: Home, label: 'Home' },
     { id: 'matches', icon: Search, label: 'Matches' },
     { id: 'messages', icon: MessageCircle, label: 'Chat', badge: stats.activeDeals },
     { id: 'active-deals', icon: Zap, label: 'Deals' },
-    { id: 'profile', icon: User, label: 'Profile' },
+    { id: 'post', icon: PlusCircle, label: 'Post' },
   ];
 
   const statCards = [
@@ -397,37 +402,92 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         </p>
       </div>
 
-      {/* ── Mobile — one decision per screen ───────────────────────── */}
+      {/* ── Mobile — one decision per screen, real TicketCard anatomy
+            matching fetchr_design/ui_kits/fetchr-mobile/MobileApp.jsx's
+            MHome ─────────────────────────────────────────────────── */}
       <div className="md:hidden space-y-5">
-        {yourTurn ? (
-          <div className="ticket p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="badge badge-indigo">
-                <yourTurn.icon size={11} /> Your turn · {yourTurn.action}
-              </span>
-            </div>
-            <div>
-              <p className="font-mono text-title-s font-semibold text-ink-900">
-                {yourTurn.deal.flight?.from_code} → {yourTurn.deal.flight?.to_code}
-              </p>
-              <p className="text-body-s text-ink-subtle mt-0.5 truncate">{yourTurn.deal.request?.item_name}</p>
-            </div>
-            {yourTurn.kind === 'deal' && (() => {
-              const fees = calcFees(yourTurn.deal);
-              const amount = isShipper(yourTurn.deal) ? fees.totalShipperPays : fees.travelerReceives;
-              return (
-                <p className="font-mono text-title-m font-bold text-ink-900">
-                  {isShipper(yourTurn.deal) ? 'You pay' : 'You receive'} ${amount.toFixed(2)}
+        {yourTurn ? (() => {
+          const deal = yourTurn.deal;
+          const other = getOtherParty(deal);
+          const ref = (deal.id || '').slice(0, 6).toUpperCase();
+          const fees = yourTurn.kind === 'deal' ? calcFees(deal) : null;
+          const amount = fees ? (isShipper(deal) ? fees.totalShipperPays : fees.travelerReceives) : null;
+          return (
+            <div className="ticket">
+              {/* Header bar */}
+              <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
+                <div className="flex items-center gap-1.5">
+                  <BareGlyph size={15} />
+                  <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+                </div>
+                <span className="font-mono text-[10px] text-ink-300 uppercase">
+                  {yourTurn.kind === 'deal' ? 'DEAL' : 'MATCH'}{deal.match_score != null ? ` · ${Math.min(deal.match_score, 100)}%` : ''} · #{ref}
+                </span>
+              </div>
+
+              <div className="px-4 py-3.5 space-y-3">
+                <StatusPill tone="signal" icon={yourTurn.icon}>Your turn · {yourTurn.action}</StatusPill>
+
+                <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-overline uppercase text-ink-400">From</p>
+                    <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.from_code || '—'}</p>
+                  </div>
+                  <div className="flex items-center justify-center pt-4">
+                    <div className="w-7 border-t border-dashed border-line-perf" />
+                  </div>
+                  <div className="min-w-0 text-right">
+                    <p className="font-mono text-overline uppercase text-ink-400">To</p>
+                    <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.to_code || '—'}</p>
+                  </div>
+                </div>
+
+                <p className="font-mono text-micro text-ink-muted border-t border-b border-line py-1.5 truncate">
+                  {deal.flight?.flight_date
+                    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                    : '—'}
+                  {' · '}{deal.flight?.flight_number || deal.flight?.airline || '—'}
+                  {' · '}{deal.agreed_weight_kg || deal.request?.weight_kg || '—'}kg
                 </p>
-              );
-            })()}
-            <button
-              onClick={() => navigate('messages', yourTurn.kind === 'deal' ? { focusMatchId: yourTurn.deal.id } : undefined)}
-              className="btn-signal w-full">
-              {yourTurn.action}
-            </button>
-          </div>
-        ) : (
+
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
+                    {getInitials(other?.full_name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
+                      <VerificationBadge verified={other?.verified} />
+                    </div>
+                    <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller" />
+                  </div>
+                </div>
+
+                <p className="text-body-s text-ink-subtle truncate">{deal.request?.item_name}</p>
+              </div>
+
+              <div className="perf mx-4" />
+
+              <div className="px-4 py-3.5 space-y-3">
+                {amount != null && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-mono text-body-m text-ink-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
+                    <span className="font-mono font-bold text-num-l text-ink-900">${amount.toFixed(2)}</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => navigate(yourTurn.kind === 'deal' ? 'messages' : 'matches',
+                    yourTurn.kind === 'deal' ? { focusMatchId: deal.id } : undefined)}
+                  className="btn-signal w-full">
+                  {yourTurn.action}
+                </button>
+                {yourTurn.kind === 'deal' && (
+                  <p className="text-body-s text-ink-muted text-center">We hold it until you both confirm delivery.</p>
+                )}
+              </div>
+            </div>
+          );
+        })() : (
           <div className="card p-5 text-center">
             <CheckCircle size={20} className="text-ink-300 mx-auto mb-2" />
             <p className="text-body-s text-ink-muted">Nothing needs you right now.</p>
@@ -441,17 +501,22 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               {comingUp.map((item, i) => {
                 const isDeal = !!item.status && activeDeals.includes(item);
                 const stageInfo = isDeal ? getDealStageLabel(item) : null;
+                const stubState = isDeal && item.status === 'in_escrow' ? 'secured' : isDeal ? 'yours' : 'default';
                 return (
                   <button key={item.id || i}
                     onClick={() => navigate(isDeal ? 'messages' : 'matches', isDeal ? { focusMatchId: item.id } : undefined)}
-                    className="w-full flex items-center gap-3 p-3 rounded-md border border-line hover:bg-surface-sunken transition text-left">
-                    <div className="flex-1 min-w-0">
+                    className={`w-full h-14 flex items-center gap-3 px-3.5 rounded-md border bg-surface hover:border-line-strong transition text-left ${
+                      stubState === 'yours' ? 'border-l-[3px] border-l-signal-500 border-y-line border-r-line' : 'border-line'
+                    }`}>
+                    <div className="min-w-0">
                       <p className="font-mono text-body-s font-semibold text-ink-900">
                         {item.flight?.from_code} → {item.flight?.to_code}
                       </p>
-                      <p className="text-label text-ink-subtle truncate">{item.request?.item_name}</p>
+                      <p className="text-micro text-ink-subtle truncate">{item.request?.item_name}</p>
                     </div>
-                    <p className={`text-label font-semibold flex-shrink-0 ${isDeal ? stageInfo.color : 'text-ink-muted'}`}>
+                    <p className={`ml-auto text-label font-semibold flex-shrink-0 ${
+                      stubState === 'secured' ? 'text-success' : isDeal ? stageInfo.color : 'text-ink-muted'
+                    }`}>
                       {isDeal ? stageInfo.label : `${item.match_score}% match`}
                     </p>
                   </button>
