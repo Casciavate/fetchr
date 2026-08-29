@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '../supabaseClient';
+
+// Running inside the native iOS shell always gets the touch-optimized
+// bottom-nav layout, regardless of viewport width — a phone rotated to
+// landscape is still a phone, not a tablet/desktop, and the md: breakpoint
+// used to switch the whole nav paradigm (sidebar vs bottom tabs) based on
+// width alone, which is the wrong signal here. The web app (real browsers,
+// any width) keeps its existing responsive breakpoint behavior unchanged.
+const IS_NATIVE = Capacitor.isNativePlatform();
 import AddFlight from './AddFlight';
 import MyFlights from './MyFlights';
 import NewRequest from './NewRequest';
@@ -874,8 +883,8 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
     <div className="flex h-screen bg-ground overflow-hidden">
 
       {/* Sidebar — desktop only; mobile navigation is the bottom nav */}
-      <aside className="hidden md:flex md:relative inset-y-0 left-0 w-60 bg-surface border-r border-line
-        flex-col min-h-0 overflow-y-auto">
+      <aside className={`${IS_NATIVE ? 'hidden' : 'hidden md:flex md:relative'} inset-y-0 left-0 w-60 bg-surface border-r border-line
+        flex-col min-h-0 overflow-y-auto`}>
         <div className="flex items-center justify-between px-5 py-5 border-b border-line">
           <div className="flex items-center gap-2">
             <BareGlyph size={20} />
@@ -951,11 +960,11 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         <header className="bg-surface border-b border-line px-4 md:px-6 pb-3.5 flex items-center justify-between sticky top-0 z-sticky flex-shrink-0"
           style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top))' }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('dashboard')} className="md:hidden flex items-center gap-2">
+            <button onClick={() => navigate('dashboard')} className={`${IS_NATIVE ? 'flex' : 'md:hidden flex'} items-center gap-2`}>
               <BareGlyph size={20} />
               <span className="font-display font-extrabold text-title-s tracking-[-0.05em] text-ink-900">fetchr</span>
             </button>
-            <div className="hidden md:block">
+            <div className={IS_NATIVE ? 'hidden' : 'hidden md:block'}>
               <p className="font-display font-semibold text-title-s text-ink-900">
                 {activeNav === 'dashboard' ? 'Dashboard' :
                  activeNav === 'post' ? 'Post' :
@@ -982,16 +991,16 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
           <div className="flex items-center gap-2">
             <button onClick={() => navigate('post')}
-              className="hidden md:inline-flex items-center gap-1.5 h-9 px-3.5 rounded-md bg-brand text-white hover:bg-brand-hover transition font-display font-semibold text-body-s">
+              className={`${IS_NATIVE ? 'hidden' : 'hidden md:inline-flex'} items-center gap-1.5 h-9 px-3.5 rounded-md bg-brand text-white hover:bg-brand-hover transition font-display font-semibold text-body-s`}>
               <PlusCircle size={16} /> Post
             </button>
             <button onClick={() => navigate('wallet')}
-              className="hidden md:flex items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition">
+              className={`${IS_NATIVE ? 'hidden' : 'hidden md:flex'} items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition`}>
               <Wallet size={15} />
               <span className="font-mono text-num-m font-semibold">${stats.walletBalance.toFixed(2)}</span>
             </button>
             <button onClick={() => navigate('wallet')}
-              className="md:hidden flex items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition">
+              className={`${IS_NATIVE ? 'flex' : 'md:hidden flex'} items-center gap-1.5 h-9 px-2.5 rounded-md bg-surface-sunken border border-line text-ink-900 hover:border-line-strong transition`}>
               <Wallet size={15} />
               <span className="font-mono text-num-m font-semibold">${stats.walletBalance.toFixed(2)}</span>
             </button>
@@ -1021,7 +1030,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         </header>
 
         <main className="flex-1 min-h-0 overflow-y-auto">
-          <div className="max-w-6xl mx-auto p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6">
+          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'}`}>
             {renderMain()}
           </div>
         </main>
@@ -1029,7 +1038,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
 
       {/* Mobile bottom nav — exactly the 5 items the design spec fixes;
           stays visible at all times, including inside an open chat thread. */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 pt-2"
+      <nav className={`${IS_NATIVE ? '' : 'md:hidden'} fixed bottom-0 left-0 right-0 bg-surface border-t border-line z-nav px-2 pt-2`}
         style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
           <div className="flex items-center justify-around">
             {bottomNavItems.map(item => (

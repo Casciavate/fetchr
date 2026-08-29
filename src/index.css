@@ -208,6 +208,19 @@
 /* ── Base ─────────────────────────────────────────────────────────────── */
 html { -webkit-text-size-adjust: 100%; }
 
+/* The iOS WKWebView allows a small horizontal rubber-band drag on the page
+   itself by default, independent of any element's own overflow — visible
+   as "a bit of side-to-side scroll" even though nothing actually overflows
+   sideways. overflow-x:hidden is the belt (blocks it on every WebKit
+   version); overscroll-behavior-x stops scroll from chaining/bouncing on
+   modern ones. Neither affects vertical scroll, and neither touches an
+   inner element's own overflow-x:auto (the boarding-pass carousels), which
+   stay independently horizontally scrollable within their own bounds. */
+html, body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
 body {
   margin: 0;
   background: var(--ground);
