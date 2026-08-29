@@ -5,6 +5,30 @@ import {
   ChevronUp, Award, TrendingUp
 } from 'lucide-react';
 
+// Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — same
+// treatment as the active-deal ticket, carried through to the completed
+// ticket so the deal keeps its reference code visible after delivery.
+const Barcode = ({ deal }) => {
+  const ref = deal.id.slice(0, 6).toUpperCase();
+  const route = `${deal.flight?.from_code || '???'}${deal.flight?.to_code || '???'}`;
+  const ddmmyy = deal.flight?.flight_date
+    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '')
+    : '------';
+  const bars = Array.from(ref).map(c => (c.charCodeAt(0) % 3) + 1);
+  return (
+    <div className="pt-3 border-t border-line-perf border-dashed">
+      <div className="h-[26px] flex items-stretch gap-[2px]" aria-hidden="true">
+        {bars.map((w, i) => (
+          <div key={i} className="bg-ink-900" style={{ width: `${w * 2}px`, opacity: 0.82 }} />
+        ))}
+      </div>
+      <p className="mt-1.5 text-center font-mono text-overline text-ink-muted tracking-[0.28em]">
+        {ref}·{route}·{ddmmyy}
+      </p>
+    </div>
+  );
+};
+
 const RatingDisplay = ({ rating, totalReviews }) => {
   if (!rating || rating <= 0) {
     return <span className="text-micro text-ink-subtle">No ratings yet</span>;
@@ -27,6 +51,7 @@ const Completed = ({ session }) => {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [ratings, setRatings] = useState({});
+  const [comments, setComments] = useState({});
   const [submittingRating, setSubmittingRating] = useState({});
   const [ratedDeals, setRatedDeals] = useState({});
 
@@ -45,6 +70,22 @@ const Completed = ({ session }) => {
       .eq('status', 'completed')
       .order('created_at', { ascending: false });
     if (data) setDeals(data);
+
+    // Load this user's own reviews for these deals, so "already rated" is a
+    // real, persisted fact — not local state that resets on reload (which
+    // was the previous behaviour and could let someone submit twice).
+    if (data?.length) {
+      const { data: myReviews } = await supabase
+        .from('reviews')
+        .select('match_id, rating, comment')
+        .eq('reviewer_id', session.user.id)
+        .in('match_id', data.map(d => d.id));
+      if (myReviews) {
+        const map = {};
+        myReviews.forEach(r => { map[r.match_id] = { rating: r.rating, comment: r.comment }; });
+        setRatedDeals(map);
+      }
+    }
     setLoading(false);
   };
 
@@ -70,20 +111,23 @@ const Completed = ({ session }) => {
     return 0.10;
   };
 
-  const submitRating = async (dealId, otherPartyId, rating) => {
+  // Inserting into `reviews` — a DB trigger (recalc_profile_rating) recomputes
+  // the reviewee's profiles.rating/total_reviews server-side. The previous
+  // version tried to update the OTHER party's profile row directly from the
+  // client, which profiles' RLS policy (auth.uid() = id) silently blocks —
+  // that's why ratings never showed up on the other person's profile.
+  const submitRating = async (dealId, otherPartyId, rating, comment) => {
     setSubmittingRating(prev => ({ ...prev, [dealId]: true }));
-    const { data: profile } = await supabase
-      .from('profiles').select('rating, total_reviews')
-      .eq('id', otherPartyId).single();
-    if (profile) {
-      const newTotal = (profile.total_reviews || 0) + 1;
-      const newRating = ((profile.rating || 0) * (profile.total_reviews || 0) + rating) / newTotal;
-      await supabase.from('profiles').update({
-        rating: Math.round(newRating * 10) / 10,
-        total_reviews: newTotal,
-      }).eq('id', otherPartyId);
+    const { error } = await supabase.from('reviews').insert([{
+      match_id: dealId,
+      reviewer_id: session.user.id,
+      reviewee_id: otherPartyId,
+      rating,
+      comment: comment?.trim() || null,
+    }]);
+    if (!error) {
+      setRatedDeals(prev => ({ ...prev, [dealId]: { rating, comment: comment?.trim() || null } }));
     }
-    setRatedDeals(prev => ({ ...prev, [dealId]: rating }));
     setSubmittingRating(prev => ({ ...prev, [dealId]: false }));
   };
 
@@ -150,7 +194,9 @@ const Completed = ({ session }) => {
             const travelerReceives = dealValue - fetchrFee;
             const isExpanded = expandedId === deal.id;
             const currentRating = ratings[deal.id] || 0;
-            const hasRated = !!ratedDeals[deal.id];
+            const currentComment = comments[deal.id] || '';
+            const myReview = ratedDeals[deal.id];
+            const hasRated = !!myReview;
 
             return (
               <div key={deal.id} className="relative ticket border-b-[3px] border-b-success">
@@ -298,7 +344,7 @@ const Completed = ({ session }) => {
                         <p className="text-label text-content-muted mb-2">
                           Rate your experience with {other?.full_name?.split(' ')[0] || 'this user'}
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 mb-2">
                           <div className="flex gap-1">
                             {[1,2,3,4,5].map(star => (
                               <button key={star}
@@ -311,22 +357,36 @@ const Completed = ({ session }) => {
                               </button>
                             ))}
                           </div>
-                          {currentRating > 0 && (
+                        </div>
+                        {currentRating > 0 && (
+                          <div className="space-y-2">
+                            <textarea
+                              value={currentComment}
+                              onChange={e => setComments(prev => ({ ...prev, [deal.id]: e.target.value }))}
+                              placeholder="Leave a comment for this rating (optional)"
+                              rows={2}
+                              maxLength={500}
+                              className="input-field resize-none text-body-s" />
                             <button
-                              onClick={() => submitRating(deal.id, other?.id, currentRating)}
+                              onClick={() => submitRating(deal.id, other?.id, currentRating, currentComment)}
                               disabled={submittingRating[deal.id]}
-                              className="btn-primary ml-2 px-4 py-1.5 min-h-0 text-body-s disabled:opacity-50">
+                              className="btn-primary px-4 py-1.5 min-h-0 text-body-s disabled:opacity-50">
                               {submittingRating[deal.id] ? 'Submitting' : 'Submit rating'}
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 bg-success-tint rounded-md p-3">
-                        <CheckCircle size={16} className="text-success" />
-                        <p className="text-body-s text-success font-medium">
-                          You rated {other?.full_name?.split(' ')[0]} {ratedDeals[deal.id]} star{ratedDeals[deal.id] !== 1 ? 's' : ''}
-                        </p>
+                      <div className="bg-success-tint rounded-md p-3 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle size={16} className="text-success flex-shrink-0" />
+                          <p className="text-body-s text-success font-medium">
+                            You rated {other?.full_name?.split(' ')[0]} {myReview.rating} star{myReview.rating !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        {myReview.comment && (
+                          <p className="text-body-s text-content-muted italic pl-6">"{myReview.comment}"</p>
+                        )}
                       </div>
                     )}
 
@@ -335,6 +395,8 @@ const Completed = ({ session }) => {
                         day: '2-digit', month: 'long', year: 'numeric'
                       })}
                     </p>
+
+                    <Barcode deal={deal} />
                   </div>
                 )}
               </div>

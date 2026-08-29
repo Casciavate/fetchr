@@ -631,8 +631,23 @@ const Messages = ({ session }) => {
     setTimeout(scrollToBottom, 100);
   };
 
+  // A deal can only be confirmed complete once the flight it's tied to has
+  // actually happened — otherwise both sides could confirm delivery (and
+  // release escrow) before the traveller has even flown. If the match gets
+  // re-pointed at a different flight (amendment) this naturally re-checks
+  // against whichever flight is current, since match.flight is a live join.
+  const flightHasDeparted = (match) => {
+    if (!match?.flight?.flight_date) return true; // no flight data — don't block on missing data
+    const today = new Date().toISOString().split('T')[0];
+    return match.flight.flight_date <= today;
+  };
+
   const handleCompleteDeal = async () => {
     if (!activeMatch) return;
+    if (!flightHasDeparted(activeMatch)) {
+      alert(`This deal can't be marked delivered until the flight on ${new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} has taken place.`);
+      return;
+    }
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'traveler_completed' : 'shipper_completed';
     const otherDone = iAmTraveler ? activeMatch.shipper_completed : activeMatch.traveler_completed;
@@ -904,15 +919,18 @@ const Messages = ({ session }) => {
                 </button>
               )}
 
-              {/* Confirm Delivery */}
+              {/* Confirm Delivery — blocked until the flight has actually taken place */}
               {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && (
-                <button onClick={handleCompleteDeal} disabled={submittingComplete || myCompleted}
+                <button onClick={handleCompleteDeal}
+                  disabled={submittingComplete || myCompleted || !flightHasDeparted(activeMatch)}
+                  title={!flightHasDeparted(activeMatch) ? `Available once the flight on ${new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} has taken place` : undefined}
                   className={
-                    myCompleted ? 'inline-flex items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
+                    myCompleted || !flightHasDeparted(activeMatch)
+                      ? 'inline-flex items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
                       : 'btn-signal px-3 text-label'
                   }>
                   <CheckCircle size={12} />
-                  {myCompleted ? 'Waiting' : otherCompleted ? 'Confirm & release' : 'Confirm delivery'}
+                  {myCompleted ? 'Waiting' : !flightHasDeparted(activeMatch) ? 'Not yet flown' : otherCompleted ? 'Confirm & release' : 'Confirm delivery'}
                 </button>
               )}
 
@@ -960,6 +978,16 @@ const Messages = ({ session }) => {
                 {isShipper(activeMatch)
                   ? `You'll pay $${calcFees(activeMatch).totalShipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
                   : `Nothing to do yet — ${getOtherParty(activeMatch)?.full_name || 'the sender'} pays into escrow before you fly.`}
+              </p>
+            </div>
+          )}
+
+          {/* Flight-not-yet-flown notice — delivery can't be confirmed early */}
+          {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && !myCompleted && !flightHasDeparted(activeMatch) && (
+            <div className="px-4 py-2.5 flex items-start gap-2 border-l-[3px] border-info-400 bg-info-50 flex-shrink-0">
+              <Plane size={14} className="flex-shrink-0 mt-0.5 text-info-500" />
+              <p className="text-body-s leading-relaxed text-info-500">
+                Confirming delivery opens up on {new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, once the flight has taken place.
               </p>
             </div>
           )}
