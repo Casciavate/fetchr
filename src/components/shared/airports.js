@@ -171,4 +171,20 @@ export const AIRPORTS = [
   { code: 'MRU', city: 'Mauritius', name: 'Sir Seewoosagur Ramgoolam', country: 'Mauritius' },
   { code: 'ALA', city: 'Almaty', name: 'Almaty International', country: 'Kazakhstan' },
   { code: 'TAS', city: 'Tashkent', name: 'Islam Karimov International', country: 'Uzbekistan' },
+  // Russia — the live flight-schedule lookup (AeroDataBox, via
+  // supabase/functions/flight-search) appears unable to return results
+  // for Russian airports, likely a provider-side restriction. That must
+  // never block manual selection here: the app applies no country
+  // restrictions of its own, so these stay in the searchable list
+  // regardless of what the live lookup can or can't fetch.
+  { code: 'SVO', city: 'Moscow', name: 'Sheremetyevo International', country: 'Russia' },
+  { code: 'DME', city: 'Moscow', name: 'Domodedovo International', country: 'Russia' },
+  { code: 'VKO', city: 'Moscow', name: 'Vnukovo International', country: 'Russia' },
+  { code: 'LED', city: 'St. Petersburg', name: 'Pulkovo Airport', country: 'Russia' },
+  { code: 'AER', city: 'Sochi', name: 'Sochi International', country: 'Russia' },
+  { code: 'KZN', city: 'Kazan', name: 'Kazan International', country: 'Russia' },
+  { code: 'SVX', city: 'Yekaterinburg', name: 'Koltsovo Airport', country: 'Russia' },
+  { code: 'OVB', city: 'Novosibirsk', name: 'Tolmachevo Airport', country: 'Russia' },
+  { code: 'ROV', city: 'Rostov-on-Don', name: 'Platov International', country: 'Russia' },
+  { code: 'KRR', city: 'Krasnodar', name: 'Krasnodar International', country: 'Russia' },
 ];

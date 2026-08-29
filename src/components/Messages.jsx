@@ -1152,13 +1152,16 @@ const Messages = ({ session, focusMatchId }) => {
                 const { icon: EventIcon, tone } = getSystemEventStyle(msg.content);
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    <div className="flex items-start gap-2.5 bg-surface-sunken border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
+                    {/* bg-ink-50, not bg-surface-sunken — that semantic token goes
+                        near-black under system dark mode while text-ink-900 stays
+                        literal-dark, producing the black-on-black bug. */}
+                    <div className="flex items-start gap-2.5 bg-ink-50 border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
                       <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${EVENT_TONE_CLASSES[tone]}`}>
                         <EventIcon size={14} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-body-s text-ink-900 leading-relaxed">{msg.content}</p>
-                        <p className="font-mono text-micro text-ink-subtle mt-0.5">
+                        <p className="font-mono text-micro text-ink-500 mt-0.5">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                         </p>
                       </div>
@@ -1218,7 +1221,7 @@ const Messages = ({ session, focusMatchId }) => {
                   rows={1} className="flex-1 input-field resize-none py-2.5 text-body-m min-h-[42px] max-h-24"
                   onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }} />
                 <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
-                  className="w-11 h-11 bg-brand rounded-md flex items-center justify-center hover:bg-brand-hover transition disabled:opacity-50 flex-shrink-0">
+                  className="w-11 h-11 bg-ink-900 rounded-md flex items-center justify-center hover:bg-ink-700 transition disabled:opacity-50 flex-shrink-0">
                   {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send size={16} className="text-white" />}
                 </button>
               </div>
