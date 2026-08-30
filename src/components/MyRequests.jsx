@@ -11,6 +11,8 @@ import AdvisoryBanner from './shared/AdvisoryBanner';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
 import { resolveOptionPrice } from '../lib/fees';
+import CargoTag from './shared/CargoTag';
+import { CATEGORY_ICONS } from './shared/categories';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -18,16 +20,6 @@ const CATEGORIES = [
   'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
   'Home & Living', 'Documents', 'Other'
 ];
-
-// Bare glyph, docs/BRAND.md §2.6 — ticket header bar
-const BareGlyph = ({ size = 14 }) => (
-  <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="fetchr">
-    <path d="M17.5 37 V21.5 C17.5 15 23 12.5 27.5 14.5"
-      fill="none" stroke="#FBFAF8" strokeWidth="5" strokeLinecap="round" />
-    <rect x="10.5" y="21" width="16" height="4.6" rx="2.3" fill="#FBFAF8" />
-    <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
-  </svg>
-);
 
 const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
   const [requests, setRequests] = useState([]);
@@ -92,8 +84,7 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
         *,
         flight:flights(*),
         traveler:profiles!matches_traveler_id_fkey(
-          id, full_name, avatar_url, rating, total_reviews,
-          nationality, languages, verified
+          id, full_name, avatar_url, rating, total_reviews, verified
         )
       `)
       .eq('request_id', requestId)
@@ -228,64 +219,41 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
             const isLoadingDeal = loadingDeal[req.id];
             const ref = req.id.slice(0, 6).toUpperCase();
 
+            // Same "most this could cost" logic as Home's request tile —
+            // real agreed price once a deal exists, else the advertised
+            // budget. requestStatuses only tracks status, not enough for
+            // calcFees, so this stays the simple pre-deal estimate; the
+            // real figure is still visible under "Current deal" once expanded.
+            const advertisedBudget = req.max_budget || (req.budget_per_kg ? req.budget_per_kg * req.weight_kg : 0);
+
             return (
               <div key={req.id} id={`request-${req.id}`}
-                className={`ticket ${focusRequestId === req.id ? 'ring-2 ring-signal-500 ring-offset-2' : ''}`}>
+                className={focusRequestId === req.id ? 'ring-2 ring-signal-500 ring-offset-2 rounded-lg' : ''}>
 
-                {/* Header bar — request ticket, docs/BRAND.md §7.7 variant */}
-                <div className="h-10 bg-ink-900 flex items-center justify-between px-4">
-                  <div className="flex items-center gap-2">
-                    <BareGlyph size={16} />
-                    <span className="font-display font-extrabold text-[13px] tracking-[-0.05em] text-paper-100">
-                      fetchr
-                    </span>
-                  </div>
-                  <span className="font-mono text-[11px] text-ink-300">
-                    REQUEST · #{ref}
-                  </span>
-                </div>
+                <CargoTag
+                  itemName={req.item_name}
+                  category={req.category}
+                  categoryIcon={CATEGORY_ICONS[req.category] || 'Package'}
+                  from={{ code: req.from_code, city: req.from_city }}
+                  to={{ code: req.to_code, city: req.to_city }}
+                  neededBy={req.needed_by
+                    ? new Date(req.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                    : 'No deadline'}
+                  spend={advertisedBudget ? `$${advertisedBudget.toFixed(2)}` : 'Open'}
+                  spendNote={advertisedBudget ? 'Your budget' : 'Open to offers · negotiate in chat'}
+                />
 
-                <div className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-4 min-w-0">
-                      {req.item_photo_url ? (
-                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-line flex-shrink-0 bg-surface-sunken flex items-center justify-center">
-                          <img
-                            src={req.item_photo_url}
-                            alt={req.item_name}
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 bg-ink-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Package size={22} className="text-ink-400" />
-                        </div>
+                <div className="px-1 pt-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {req.requires_purchase && (
+                        <span className="badge badge-blue">
+                          <ShoppingBag size={9} /> Shop & Ship
+                        </span>
                       )}
-                      <div className="min-w-0">
-                        <p className="font-display font-semibold text-title-s text-ink-900 truncate">{req.item_name}</p>
-                        <p className="text-body-s text-content-subtle mt-0.5">{req.category}</p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span className="badge badge-gray">
-                            {req.from_code} &rarr; {req.to_code}
-                          </span>
-                          {req.requires_purchase && (
-                            <span className="badge badge-blue">
-                              <ShoppingBag size={9} /> Shop & Ship
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      <span className="font-mono text-micro text-content-subtle">#{ref}</span>
                     </div>
                     {getStatusPill(req)}
-                  </div>
-
-                  {/* Data strip — Needed by · Weight · Value · Offers, §7.7 */}
-                  <div className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 flex flex-wrap gap-x-1">
-                    <span>{req.needed_by ? `by ${new Date(req.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : 'no deadline'}</span>
-                    <span>&middot;</span>
-                    <span>{req.weight_kg}kg</span>
-                    <span>&middot;</span>
-                    <span>{req.max_budget ? `${req.budget_currency || 'USD'} ${parseFloat(req.max_budget).toFixed(0)} max` : 'open budget'}</span>
                   </div>
 
                   {hasMatch && (
@@ -316,8 +284,7 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
                 {/* Edit mode */}
                 {editingId === req.id && (
                   <>
-                    <div className="perf" />
-                    <div className="bg-surface-sunken p-4 space-y-4">
+                    <div className="bg-surface-sunken rounded-lg border border-line mt-3 p-4 space-y-4">
                       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
                       <div>
@@ -436,11 +403,17 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
                 {/* Expanded details */}
                 {isExpanded && (
                   <>
-                    <div className="perf" />
-                    <div className="bg-surface-sunken p-4 space-y-4">
+                    <div className="bg-surface-sunken rounded-lg border border-line mt-3 p-4 space-y-4">
 
                       <div>
                         <p className="text-label text-content-muted mb-3">Item details</p>
+
+                        {req.item_photo_url && (
+                          <div className="rounded-lg overflow-hidden border border-line mb-3 bg-surface-sunken">
+                            <img src={req.item_photo_url} alt={req.item_name}
+                              className="w-full max-h-64 object-contain" />
+                          </div>
+                        )}
 
                         {req.description && (
                           <div className="bg-surface rounded-md p-4 border border-line mb-3">

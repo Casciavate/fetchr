@@ -22,6 +22,7 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Barcode from './shared/Barcode';
 import CargoTag from './shared/CargoTag';
+import { CATEGORY_ICONS } from './shared/categories';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
@@ -53,21 +54,6 @@ const BareGlyph = ({ size = 20 }) => (
 
 // Maps shipment_requests.category (see NewRequest.jsx's CATEGORIES) to a
 // CargoTag categoryIcon name.
-const CATEGORY_ICONS = {
-  'Electronics': 'Smartphone',
-  'Clothing & Fashion': 'Shirt',
-  'Cosmetics & Beauty': 'Sparkles',
-  'Food & Beverages': 'UtensilsCrossed',
-  'Books & Stationery': 'BookOpen',
-  'Toys & Games': 'Gamepad2',
-  'Medical & Pharmacy': 'Pill',
-  'Jewelry & Accessories': 'Gem',
-  'Sports & Fitness': 'Dumbbell',
-  'Home & Living': 'Home',
-  'Documents': 'FileText',
-  'Other': 'Package',
-};
-
 const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];
   if (!code) return <Plane size={16} className="text-ink-600" />;
