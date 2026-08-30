@@ -516,18 +516,25 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
       // Accumulate in order, skipping any deal that would push the running
       // total past the kg budget — the same capacity kg is never counted
       // into more than one deal's earnings.
+      // The traveler's actual take-home, excluding purchase_price — that
+      // portion of travelerReceives is just a Shop & Ship reimbursement for
+      // money the traveler already spent buying the item, not earnings.
+      const travelerEarnings = (m) => {
+        const fees = calcFees(m);
+        return fees.travelerReceives - fees.purchasePrice;
+      };
       const sumCappedByWeight = (matches, capKg) => {
         let usedKg = 0, total = 0;
         for (const m of matches) {
           const w = dealWeightKg(m);
           if (usedKg + w > capKg) continue;
           usedKg += w;
-          total += calcFees(m).travelerReceives;
+          total += travelerEarnings(m);
         }
         return total;
       };
       const totalCapacityKg = Number(flight.available_kg) || 0;
-      // Potential Earnings — deals both users have agreed/accepted
+      // Estimated Earnings — deals both users have agreed/accepted
       // (terms_agreed+). Already capacity-validated server-side at accept
       // time (enforce_flight_capacity), capped again here defensively
       // against the flight's current advertised capacity.
@@ -543,7 +550,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
       // flight's current remaining capacity.
       const acceptedNotAgreed = myMatches.filter(m => m.status === 'accepted');
       const openDeals =
-        acceptedNotAgreed.reduce((sum, m) => sum + calcFees(m).travelerReceives, 0) +
+        acceptedNotAgreed.reduce((sum, m) => sum + travelerEarnings(m), 0) +
         sumCappedByWeight(myMatches.filter(m => ['pending', 'awaiting_other'].includes(m.status)), free);
       return (
         <div className="ticket cursor-pointer"
@@ -588,7 +595,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
             </div>
             {potentialEarnings > 0 && (
               <div className="flex items-center justify-between text-body-s">
-                <span className="text-content-muted">Potential Earnings</span>
+                <span className="text-content-muted">Estimated Earnings</span>
                 <span className="font-mono font-semibold text-num-m text-success">${potentialEarnings.toFixed(2)}</span>
               </div>
             )}
