@@ -1018,10 +1018,17 @@ const Messages = ({ session, focusMatchId }) => {
               <div className="w-8 h-8 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 flex-shrink-0">
                 {getInitials(getOtherParty(activeMatch)?.full_name)}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
+                {/* min-w-0 + flex-1 on the name itself, not just this outer
+                    wrapper — a flex item's default min-width:auto otherwise
+                    blocks truncate from ever engaging, so on a narrow phone
+                    screen the name's full width collided with the verification
+                    badge instead of ellipsizing before it. */}
                 <div className="flex items-center gap-1.5">
-                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
-                  <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
+                  <p className="font-display font-semibold text-title-s text-ink-900 truncate min-w-0 flex-1">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
+                  <div className="flex-shrink-0">
+                    <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
+                  </div>
                 </div>
                 <p className="text-micro text-content-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
               </div>
