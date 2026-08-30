@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Search, CheckCircle, XCircle, Ticket,
+  Search, CheckCircle, XCircle, Ticket, MessageCircle,
   ChevronRight, ChevronDown, ChevronUp, X, Award, Globe,
   AlertTriangle, Info, List, LayoutGrid
 } from 'lucide-react';
@@ -92,7 +92,7 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
         shipper:profiles!matches_shipper_id_fkey(*)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .in('status', ['pending', 'awaiting_other'])
+      .in('status', ['pending', 'awaiting_other', 'accepted'])
       .order('match_score', { ascending: false });
     if (declinedIds.length > 0) query = query.not('id', 'in', `(${declinedIds.join(',')})`);
     const { data, error } = await query;
@@ -122,29 +122,14 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     fetchMatches();
     const userId = session.user.id;
 
-    // Poll every 2 seconds — detects when match becomes 'accepted'
-    // This handles the first party who is waiting for the second to accept
+    // Poll every 2 seconds — catches the other party accepting, agreeing
+    // terms (which moves a match out to Deals), or a capacity change.
+    // Never auto-navigates: a match staying visible here (even once
+    // status='accepted' and chat is open) is exactly the point — the user
+    // explicitly clicks into chat when they want it, never redirected here
+    // just because someone else's action changed this match's status.
     const interval = setInterval(async () => {
       await supabase.rpc('find_matches');
-
-      // Lightweight check: has any of our matches become 'accepted'?
-      const { data } = await supabase
-        .from('matches')
-        .select('id, status, traveler_id, shipper_id')
-        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['pending', 'awaiting_other', 'accepted']);
-
-      if (!data) return;
-
-      // If any match is now 'accepted', remove it and go to messages
-      const acceptedMatch = data.find(m => m.status === 'accepted');
-      if (acceptedMatch) {
-        setMatches(prev => prev.filter(m => m.id !== acceptedMatch.id));
-        if (onNavigate) onNavigate('messages');
-        return;
-      }
-
-      // Otherwise refresh full match list
       const declinedIds = await fetchDeclinedIds(userId);
       let fullQuery = supabase
         .from('matches')
@@ -156,7 +141,7 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
           shipper:profiles!matches_shipper_id_fkey(*)
         `)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['pending', 'awaiting_other'])
+        .in('status', ['pending', 'awaiting_other', 'accepted'])
         .order('match_score', { ascending: false });
       if (declinedIds.length > 0) fullQuery = fullQuery.not('id', 'in', `(${declinedIds.join(',')})`);
       const { data: fullData, error } = await fullQuery;
@@ -219,13 +204,21 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
         is_read: false,
       }]);
 
-      // Remove from local list immediately so it disappears
-      setMatches(prev => prev.filter(m => m.id !== matchId));
+      // Stays visible here — it's still just a match, not a confirmed deal,
+      // until both sides agree terms in chat. Update it in place rather
+      // than removing it from the list.
+      setMatches(prev => prev.map(m => m.id === matchId ? {
+        ...m, [myField]: true, status: 'accepted', deal_stage: 'matched',
+        terms_agreed_traveler: false, terms_agreed_shipper: false,
+        traveler_completed: false, shipper_completed: false,
+      } : m));
       setActing(prev => ({ ...prev, [matchId]: null }));
 
-      // Navigate to messages — delay slightly so DB write commits before Messages queries
+      // First-time redirect into chat so the user can actually agree terms
+      // — a deliberate consequence of THIS accept, not a background poll
+      // reacting to someone else's action (that auto-redirect was removed).
       setTimeout(() => {
-        if (onNavigate) onNavigate('messages');
+        if (onNavigate) onNavigate('messages', { focusMatchId: matchId });
       }, 800);
 
     } else {
@@ -303,10 +296,14 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     const remainingCapacityKg = getFlightRemainingKg(match);
     const capacityOk = remainingCapacityKg === null || remainingCapacityKg >= neededKg;
     const isExpanded = expandedId === match.id;
+    const myTermsAgreed = iAmTraveler ? match.terms_agreed_traveler : match.terms_agreed_shipper;
+    // Needs my attention: either I haven't accepted the match yet, or the
+    // match is accepted (chat open) and I haven't agreed terms yet.
+    const needsMe = !iHaveAccepted || (match.status === 'accepted' && !myTermsAgreed);
 
     return (
       <div key={match.id} id={`match-${match.id}`}
-        className={`ticket ${!iHaveAccepted ? 'border-l-[3px] border-l-signal-500' : ''} ${
+        className={`ticket ${needsMe ? 'border-l-[3px] border-l-signal-500' : ''} ${
           focusMatchId === match.id ? 'ring-2 ring-signal-500 ring-offset-2' : ''
         }`}>
 
@@ -328,12 +325,12 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
           {/* State + score pills — docs/BRAND.md §7.13, "match% may
               coexist since it's a score not a state" */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {!iHaveAccepted && <StatusPill tone="signal">Your turn</StatusPill>}
+            {needsMe && <StatusPill tone="signal">Your turn</StatusPill>}
             {iHaveAccepted && !otherHasAcceptedFull && (
               <StatusPill tone="neutral">Waiting on {iAmTraveler ? 'sender' : 'traveller'}</StatusPill>
             )}
-            {iHaveAccepted && otherHasAcceptedFull && (
-              <StatusPill tone="success">Both accepted</StatusPill>
+            {match.status === 'accepted' && (
+              <StatusPill tone="success">Chat open</StatusPill>
             )}
             <StatusPill tone="score">{Math.min(match.match_score, 100)}% match</StatusPill>
           </div>
@@ -546,6 +543,29 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
                 </button>
               </div>
             </div>
+          ) : match.status === 'accepted' ? (
+            // Both parties accepted the match itself — chat is open, but
+            // this is still a match, not a confirmed deal, until both sides
+            // explicitly agree terms there. Never auto-opens chat; only
+            // this deliberate click does.
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-info-50 rounded-md px-3 py-2.5">
+                <MessageCircle size={16} className="text-info-500 flex-shrink-0" />
+                <p className="text-body-s text-info-500 font-medium">
+                  {(() => {
+                    const myTerms = iAmTraveler ? match.terms_agreed_traveler : match.terms_agreed_shipper;
+                    const otherTerms = iAmTraveler ? match.terms_agreed_shipper : match.terms_agreed_traveler;
+                    if (myTerms && !otherTerms) return `Waiting for ${iAmTraveler ? 'sender' : 'traveller'} to agree terms`;
+                    if (!myTerms) return 'Agree on terms in chat to confirm this deal';
+                    return 'Terms agreed — finalizing…';
+                  })()}
+                </p>
+              </div>
+              <button onClick={() => onNavigate && onNavigate('messages', { focusMatchId: match.id })}
+                className="btn-primary w-full">
+                <MessageCircle size={15} /> Open chat
+              </button>
+            </div>
           ) : (
             <div className="flex items-center gap-2 bg-success-tint rounded-md px-3 py-2.5">
               <CheckCircle size={16} className="text-success flex-shrink-0" />
@@ -573,7 +593,7 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
         <div>
           <h1 className="font-display font-bold text-title-l text-ink-900">Your matches</h1>
           <p className="text-body-s text-content-muted mt-0.5">
-            {matches.length} pending match{matches.length !== 1 ? 'es' : ''}
+            {matches.length} match{matches.length !== 1 ? 'es' : ''} in progress
           </p>
         </div>
         <StatusPill tone="success" dot>Live</StatusPill>

@@ -145,7 +145,11 @@ const ActiveDeals = ({ session, onNavigate }) => {
         shipper:profiles!matches_shipper_id_fkey(*)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+      // 'accepted' (match accepted, chat open, terms not yet mutually
+      // agreed) stays in Matches now — a deal only starts existing here
+      // once both sides have agreed terms, which is also when the
+      // boarding-pass barcode first appears (see Barcode usage below).
+      .in('status', ['terms_agreed', 'in_escrow', 'proof_uploaded'])
       .order('created_at', { ascending: false });
     if (data) setDeals(data);
     if (showLoading) setLoading(false);
@@ -240,6 +244,25 @@ const ActiveDeals = ({ session, onNavigate }) => {
     </div>
   );
 
+  // Group by the flight (traveller side) or request/product (shipper
+  // side) each deal is tied to — same underlying relationship the Home
+  // carousels use, just a plain section-header list here rather than
+  // Home's ticket-styled tiles, since this screen is deal management/
+  // history, not a dashboard. Order of first appearance, recomputed every
+  // render so a deal always lands under the correct group the instant its
+  // status/flight/request changes.
+  const dealGroups = [];
+  const groupIndex = new Map();
+  for (const deal of deals) {
+    const trav = isTraveler(deal);
+    const key = trav ? `flight:${deal.flight_id}` : `request:${deal.request_id}`;
+    if (!groupIndex.has(key)) {
+      groupIndex.set(key, dealGroups.length);
+      dealGroups.push({ key, type: trav ? 'flight' : 'request', flight: deal.flight, request: deal.request, deals: [] });
+    }
+    dealGroups[groupIndex.get(key)].deals.push(deal);
+  }
+
   return (
     <div className="max-w-3xl mx-auto animate-fade-in">
       <div className="flex items-center justify-between mb-6">
@@ -256,9 +279,21 @@ const ActiveDeals = ({ session, onNavigate }) => {
         <EmptyState icon={Zap} title="No active deals" body="Accept a match to start a deal."
           action={<button onClick={() => onNavigate('matches')} className="btn-primary">Browse matches</button>} />
       ) : (
-        <div className="space-y-4">
-          {deals.map(deal => {
-            const other = getOtherParty(deal);
+        <div className="space-y-6">
+          {dealGroups.map(group => (
+            <div key={group.key}>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-line">
+                {group.type === 'flight' ? <Plane size={14} className="text-ink-500 flex-shrink-0" /> : <Package size={14} className="text-ink-500 flex-shrink-0" />}
+                <p className="font-mono text-label font-semibold text-ink-700 uppercase tracking-wide truncate">
+                  {group.type === 'flight'
+                    ? `${group.flight?.from_code || '—'} → ${group.flight?.to_code || '—'}${group.flight?.flight_date ? ` · ${new Date(group.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : ''}`
+                    : (group.request?.item_name || 'Request')}
+                </p>
+                <span className="text-label text-content-subtle flex-shrink-0">({group.deals.length})</span>
+              </div>
+              <div className="space-y-4">
+                {group.deals.map(deal => {
+                  const other = getOtherParty(deal);
             const otherName = other?.full_name || 'the other party';
             const stage = getStage(deal);
             const fees = calcFees(deal);
@@ -413,7 +448,10 @@ const ActiveDeals = ({ session, onNavigate }) => {
                 )}
               </div>
             );
-          })}
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

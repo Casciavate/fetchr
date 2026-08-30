@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { AIRLINE_CODES } from './shared/airlines';
 import {
@@ -161,7 +161,7 @@ const LuggageEditCard = ({ opt, index, onChange, onRemove, shopFee, offersShopSh
   );
 };
 
-const MyFlights = ({ session, onAddFlight }) => {
+const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
   const [flights, setFlights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [flightStatuses, setFlightStatuses] = useState({});
@@ -171,6 +171,18 @@ const MyFlights = ({ session, onAddFlight }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const consumedFocusIdRef = useRef(null);
+
+  // Deep-link from Home's flight tile — straight to this exact flight, no
+  // intermediate screen (same pattern as Matches.jsx/Messages.jsx).
+  useEffect(() => {
+    if (!focusFlightId || consumedFocusIdRef.current === focusFlightId) return;
+    if (!flights.some(f => f.id === focusFlightId)) return;
+    consumedFocusIdRef.current = focusFlightId;
+    setTimeout(() => {
+      document.getElementById(`flight-${focusFlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [focusFlightId, flights]);
 
   const fetchFlights = async () => {
     setLoading(true);
@@ -366,7 +378,8 @@ const MyFlights = ({ session, onAddFlight }) => {
             const ref = flight.id.slice(0, 6).toUpperCase();
 
             return (
-              <div key={flight.id} className="ticket">
+              <div key={flight.id} id={`flight-${flight.id}`}
+                className={`ticket ${focusFlightId === flight.id ? 'ring-2 ring-signal-500 ring-offset-2' : ''}`}>
 
                 {/* Header bar — trip ticket, docs/BRAND.md §7.7 variant */}
                 <div className="h-10 bg-ink-900 flex items-center justify-between px-4">

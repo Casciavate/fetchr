@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Package, Trash2, Plus, AlertTriangle, CheckCircle,
@@ -29,7 +29,7 @@ const BareGlyph = ({ size = 14 }) => (
   </svg>
 );
 
-const MyRequests = ({ session, onNewRequest }) => {
+const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [requestStatuses, setRequestStatuses] = useState({});
@@ -40,6 +40,18 @@ const MyRequests = ({ session, onNewRequest }) => {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const consumedFocusIdRef = useRef(null);
+
+  // Deep-link from Home's request tile — straight to this exact request,
+  // no intermediate screen (same pattern as MyFlights.jsx/Matches.jsx).
+  useEffect(() => {
+    if (!focusRequestId || consumedFocusIdRef.current === focusRequestId) return;
+    if (!requests.some(r => r.id === focusRequestId)) return;
+    consumedFocusIdRef.current = focusRequestId;
+    setTimeout(() => {
+      document.getElementById(`request-${focusRequestId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [focusRequestId, requests]);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -217,7 +229,8 @@ const MyRequests = ({ session, onNewRequest }) => {
             const ref = req.id.slice(0, 6).toUpperCase();
 
             return (
-              <div key={req.id} className="ticket">
+              <div key={req.id} id={`request-${req.id}`}
+                className={`ticket ${focusRequestId === req.id ? 'ring-2 ring-signal-500 ring-offset-2' : ''}`}>
 
                 {/* Header bar — request ticket, docs/BRAND.md §7.7 variant */}
                 <div className="h-10 bg-ink-900 flex items-center justify-between px-4">
