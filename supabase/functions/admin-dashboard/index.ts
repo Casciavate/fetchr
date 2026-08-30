@@ -70,6 +70,7 @@ Deno.serve(async (req) => {
         revenue: { totalRevenue, escrowInFlight, walletLiability },
         counts: { userCount, activeDealsCount, completedDealsCount },
         stripeBalance,
+        testMode: !Deno.env.get('STRIPE_SECRET_KEY')?.startsWith('sk_live_'),
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

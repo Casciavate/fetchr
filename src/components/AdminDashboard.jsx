@@ -295,7 +295,12 @@ const AdminDashboard = () => {
             </div>
 
             <div className="card p-5">
-              <h2 className="font-display font-semibold text-title-s text-content mb-3">Stripe account balance (test mode)</h2>
+              <h2 className="font-display font-semibold text-title-s text-content mb-3 flex items-center gap-2">
+                Stripe account balance
+                <StatusPill tone={overview.testMode ? 'neutral' : 'danger'}>
+                  {overview.testMode ? 'Test mode' : 'LIVE'}
+                </StatusPill>
+              </h2>
               {overview.stripeBalance?.error ? (
                 <p className="text-body-s text-danger">{overview.stripeBalance.error}</p>
               ) : (
@@ -319,10 +324,11 @@ const AdminDashboard = () => {
                 </div>
               )}
               <p className="text-label text-content-subtle mt-3">
-                Real fund segregation (separate Stripe sub-accounts per bucket) requires Stripe Connect
-                and would force users through onboarding/KYC. Since that's off the table for now, this
-                reconciliation view derives segregation in software from the <code className="font-mono bg-surface-sunken px-1 rounded-sm">transactions</code> ledger
-                instead — every dollar in the single Stripe account is accounted for as revenue, escrow, or wallet liability above.
+                Traveler payouts now go through Stripe Connect (Express accounts, one per traveler) —
+                money for a completed deal is transferred to their connected account, then Stripe pays
+                it out to their real bank. Revenue and escrow-in-flight still sit in this single platform
+                balance, so this reconciliation view derives that split in software from the <code className="font-mono bg-surface-sunken px-1 rounded-sm">transactions</code> ledger:
+                every dollar here is accounted for as revenue, escrow, or wallet liability above.
               </p>
             </div>
           </div>

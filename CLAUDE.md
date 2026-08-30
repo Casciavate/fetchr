@@ -94,12 +94,60 @@ Amounts are sent from the frontend in **dollars**. The edge function performs
 the `× 100` conversion to cents exactly once. A past bug did it twice and
 turned a $5 charge into $500.
 
-Revenue segregation is not yet implemented. For production this needs Stripe
-Connect: travelers get Connected Accounts and `application_fee_amount` splits
-the Fetchr fee to the platform account automatically. Today all funds land in
-one account and the fee is tracked in `transactions.metadata`.
+Revenue segregation is still done in software, not via Stripe's own
+`application_fee_amount` split — escrow charges land in the single platform
+balance and the fee is tracked in `transactions.metadata`; the admin
+dashboard's Overview tab derives revenue/escrow/wallet-liability numbers
+from that ledger rather than from separate Stripe sub-accounts.
 
-Withdrawals are simulated in test mode; real payouts need a verified account.
+Traveler payouts, however, are real: each traveler gets a Stripe Connect
+Express account (`stripe_connect_account_id`/`stripe_connect_payouts_enabled`
+on `profiles`, created and onboarded via `create_connect_account` /
+`create_connect_onboarding_link` in `stripe-connect`). `withdraw_to_bank`
+calls `stripe.transfers.create()` to that account for real — it is no
+longer simulated. A `/webhook` path on `stripe-connect` (Stripe's
+`account.updated` event) keeps `stripe_connect_payouts_enabled` current;
+that function is deployed with `--no-verify-jwt` so Stripe can call it
+directly (each action still authenticates the caller itself via bearer
+token, except the webhook path, which authenticates via Stripe's
+signature instead).
+
+The old `save_bank_account` action (raw account/routing numbers submitted
+through fetchr's own form, tokenized directly via `stripe.tokens.create`)
+was removed — collecting bank details that way is the kind of thing
+Stripe restricts to specially-approved platforms. Connect's own hosted
+onboarding does that KYC/bank-linking instead.
+
+## Identity verification (Stripe Identity)
+
+Full ID verification (government document + selfie) is optional, not
+mandatory for every user — deliberately, to avoid the privacy/liability
+burden of fetchr being the party a data breach would expose IDs from.
+`profiles.verified` only ever flips to `true` via the `stripe-identity`
+edge function's `/webhook` path (the `identity.verification_session.verified`
+event), never from the client-side redirect after Stripe's hosted flow —
+a user can land back on the return URL before Stripe has actually
+finished reviewing the document. That function is also deployed with
+`--no-verify-jwt` for the same reason as `stripe-connect`'s webhook.
+
+Verification becomes mandatory, not optional, once a single deal's total
+(`totalShipperPays`) reaches `HIGH_VALUE_THRESHOLD` ($500, matching the
+top fee tier) — both `create_payment_intent` and `escrow_from_wallet` in
+`stripe-connect` check `requireVerifiedForHighValue()` before allowing
+escrow to be paid, and refuse if either party isn't verified yet.
+
+## Deep links out to Stripe's hosted flows (Connect onboarding, Identity)
+
+Both use the same pattern for opening an external URL from React, because
+naive `window.open()` has two failure modes: it doesn't work at all in
+Capacitor's bare iOS WKWebView (no native wiring for it), and on web it's
+only reliably treated as user-initiated (bypassing the popup blocker) if
+called synchronously inside the click handler — not after an awaited
+fetch. The fix, used in both `Profile.jsx` and `Wallet.jsx`: branch on
+`Capacitor.isNativePlatform()` — native opens the URL via `@capacitor/browser`'s
+`Browser.open()` (a real in-app browser view); web opens a blank tab
+synchronously on click (`window.open('', '_blank')`) and redirects it
+(`tab.location.href = url`) once the async call returns the real URL.
 
 ## Debugging rules learned the hard way
 
