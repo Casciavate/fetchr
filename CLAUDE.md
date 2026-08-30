@@ -107,6 +107,17 @@ own hand-kept, structurally identical mirror (`supabase/functions/stripe-connect
 same constants and field names) since it can't import from `src/`. If
 you change one, change both.
 
+A flight offering hand luggage and check-in luggage at different prices
+(`flights.luggage_options`) records which tranche a match/deal actually
+draws from in `matches.luggage_type` (`'carry_on' | 'checkin' | null` —
+null for legacy single-tranche flights). `calcFees()`'s pre-agreement
+price fallback, and every display that shows a flight's price/kg before
+`agreed_price_per_kg` is locked in, must resolve through
+`resolveOptionPrice(flight, luggageType)` (also exported from
+`src/lib/fees.js`, mirrored in the edge function) — never read
+`flight.price_per_kg` directly, which is only correct for single-tranche
+flights and is otherwise just whichever tranche happens to be first.
+
 **UI rule — each side sees only what affects their own number.** Never
 show the traveler the shipper's service fee or sourcing fee, and never
 show the shipper the traveler's platform fee (this includes not showing
@@ -238,7 +249,44 @@ SQL migrations are still applied by hand in the Supabase SQL Editor.
 
 ## Open bugs
 
-All previously tracked bugs below have been fixed and verified (2026-08-28):
+All previously tracked bugs below have been fixed and verified (2026-08-30):
+
+- ~~AddFlight vs MyFlights earnings mismatch~~ — `AddFlight.jsx` had a third,
+  never-updated copy of the earnings calc (`getNetEarnings`, generic
+  variable names so earlier greps for the old formula missed it) still
+  running the pre-two-sided-model tiered percentages. Rewritten to delegate
+  to shared `calcFees()`, exactly like the `MyFlights.jsx` fix before it.
+- ~~iOS double-tap-to-zoom~~ — `touch-action: manipulation` added globally in
+  `src/index.css`; kills the double-tap-zoom gesture while still allowing
+  pinch-zoom.
+- ~~Duplicate flight search results~~ — `flight-search` edge function's
+  `by_route` (and defensively `by_number`) deduped on `flightNumber`, which
+  AeroDataBox's `withCodeshared=true` breaks (same physical flight, multiple
+  marketing numbers). Deduped on `${departureUtc}_${arrivalUtc}` instead.
+- ~~Unmatched shipment requests can only be deleted, not amended~~ —
+  `MyRequests.jsx` now has a full edit form for `status='open'` requests
+  with no active match; the existing `protect_request_price_columns`
+  trigger already freezes price/weight once a real match exists, so no new
+  migration was needed.
+- ~~Home dashboard shows stacked matches instead of a swipeable carousel~~ —
+  `Dashboard.jsx`'s "Coming up" section now uses `CardStack` with a new
+  `renderComingUpCard` boarding-pass teaser (route, date, weight, other
+  party, item — no fee breakdown) instead of a scrolling list; "Review
+  match"/"View deal" navigates into the full Matches/Messages detail.
+- ~~Hand luggage vs check-in luggage priced differently weren't matched or
+  capacity-tracked independently~~ — a flight's flat `available_kg`/
+  `booked_kg` pooled every tranche (e.g. 10kg check-in + 8kg carry-on read
+  as one 18kg pool), so an 11kg request could look matchable even though no
+  single tranche could hold it, and booking one tranche silently ate into
+  the other's capacity. Added `matches.luggage_type`; `find_matches()` now
+  evaluates each `luggage_options` tranche's own remaining capacity
+  independently and offers the cheapest qualifying tranche (legacy flights
+  with no `luggage_options` are unaffected, `luggage_type` stays null);
+  `enforce_flight_capacity()`/`update_flight_capacity()` book/release
+  against that specific tranche's own `booked_kg` (inside the
+  `luggage_options` JSONB) while keeping the flat `booked_kg` column as a
+  pooled aggregate for legacy display code. See `resolveOptionPrice()` note
+  under Fee logic above for how price resolution follows the same tranche.
 
 - ~~`AddFlight.jsx` airport dropdown wrong IATA code~~ — was already fixed by
   the Jun 7 `AddFlight` rewrite; reproduced with an RTL test against the live

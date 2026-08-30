@@ -208,6 +208,19 @@
 /* ── Base ─────────────────────────────────────────────────────────────── */
 html { -webkit-text-size-adjust: 100%; }
 
+/* Kills the double-tap-to-zoom gesture that makes the iOS app feel like a
+   browser tab instead of a native app — a fast double-tap on any element
+   (a button, a card, anything) was being interpreted as the zoom gesture.
+   touch-action: manipulation explicitly excludes double-tap-zoom while
+   still permitting pan and pinch-zoom, so this doesn't remove pinch-zoom
+   accessibility on the web version; it only removes the specific gesture
+   that was firing unintentionally during normal tapping. Applied to every
+   element, not just html/body, since the ambiguous-tap detection that
+   triggers zoom happens per-element. */
+html, body, #root, * {
+  touch-action: manipulation;
+}
+
 /* The iOS WKWebView allows a small horizontal rubber-band drag on the page
    itself by default, independent of any element's own overflow — visible
    as "a bit of side-to-side scroll" even though nothing actually overflows

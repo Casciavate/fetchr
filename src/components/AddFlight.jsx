@@ -5,6 +5,7 @@ import { AIRPORTS } from './shared/airports';
 import ImportFlights from './ImportFlights';
 import RoutePicker from './shared/RoutePicker';
 import DatePicker from './shared/DatePicker';
+import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
 import {
   Plane, Search, MapPin, DollarSign,
   CheckCircle, AlertCircle, ShoppingBag,
@@ -124,20 +125,27 @@ const AirlineSearch = ({ label, value, onChange, suggestions = [], suggestionsLa
 };
 
 // ── Luggage Option Card ──
-const getNetEarnings = (kg, ppk) => {
+// Was its own separate copy of the old tiered-percentage model, never
+// updated when the two-sided pricing model shipped — this is exactly why
+// the estimate shown here disagreed with My Flights (which does use the
+// shared calcFees). Same fix as MyFlights.jsx's getNetEarnings: build the
+// minimal synthetic match shape and let calcFees do the real math.
+const getNetEarnings = (kg, ppk, shopFee = 0, offersShopShip = false) => {
   if (!kg || !ppk) return null;
   const gross = parseFloat(kg) * parseFloat(ppk);
   if (gross <= 0) return null;
-  let pct = 0.10;
-  if (gross >= 500) pct = 0.07;
-  else if (gross >= 200) pct = 0.085;
-  else if (gross < 20) pct = 0.12;
-  return { gross, net: gross * (1 - pct), fee: gross * pct, pct: Math.round(pct * 100) };
+  const fees = calcFees({
+    agreed_price_per_kg: ppk,
+    agreed_weight_kg: kg,
+    agreed_shop_fee: shopFee,
+    request: { requires_purchase: offersShopShip, purchase_price: 0 },
+  });
+  return { gross: fees.transportFee + fees.shopFee, net: fees.travelerReceives, fee: fees.travelerPlatformFee, pct: Math.round(TRAVELER_PLATFORM_FEE_PCT * 100) };
 };
 
-const LuggageOptionCard = ({ type, data, onChange, onRemove }) => {
+const LuggageOptionCard = ({ type, data, onChange, onRemove, shopFee, offersShopShip }) => {
   const isCarryOn = type === 'carry_on';
-  const earnings = getNetEarnings(data.available_kg, data.price_per_kg);
+  const earnings = getNetEarnings(data.available_kg, data.price_per_kg, shopFee, offersShopShip);
 
   return (
     <div className="ticket p-4 space-y-3">
@@ -202,7 +210,7 @@ const LuggageOptionCard = ({ type, data, onChange, onRemove }) => {
             <span>${earnings.gross.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-content-muted">
-            <span>fetchr service fee ({earnings.pct}%)</span>
+            <span>Platform fee ({earnings.pct}%)</span>
             <span>−${earnings.fee.toFixed(2)}</span>
           </div>
           <div className="flex justify-between font-semibold text-ink-900 border-t border-line pt-1">
@@ -498,10 +506,15 @@ const AddFlight = ({ session }) => {
   };
 
   const totalKg = luggageOptions.reduce((s, l) => s + (parseFloat(l.available_kg) || 0), 0);
+  // Shop & ship fee is flat per deal, not per luggage tranche — added once
+  // here rather than inside the per-option reduce, which would double (or
+  // triple) it across carry-on + check-in.
+  const offersShopShip = form.delivery_type === 'both';
+  const shopShipFeeAmount = offersShopShip ? (parseFloat(form.shop_and_ship_fee) || 0) : 0;
   const totalNet = luggageOptions.reduce((s, l) => {
     const e = getNetEarnings(l.available_kg, l.price_per_kg);
     return s + (e?.net || 0);
-  }, 0);
+  }, 0) + (shopShipFeeAmount > 0 ? shopShipFeeAmount * (1 - TRAVELER_PLATFORM_FEE_PCT) : 0);
 
   // ── Success screen ──
   if (success) return (
@@ -844,6 +857,8 @@ const AddFlight = ({ session }) => {
                   key={i} type={opt.type} data={opt}
                   onChange={data => updateLuggageOption(i, data)}
                   onRemove={() => removeLuggageOption(i)}
+                  shopFee={form.delivery_type === 'both' ? (parseFloat(form.shop_and_ship_fee) || 0) : 0}
+                  offersShopShip={form.delivery_type === 'both'}
                 />
               ))}
             </div>

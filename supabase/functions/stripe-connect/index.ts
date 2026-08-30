@@ -24,8 +24,20 @@ const SHIPPER_SERVICE_FEE_PCT = 0.15
 const TRAVELER_PLATFORM_FEE_PCT = 0.05
 const SOURCING_FEE_PCT = 0.06
 
+// Mirrors src/lib/fees.js's resolveOptionPrice — resolves the price/kg for
+// the specific luggage tranche (hand vs. check-in) the match was made
+// against, falling back to the flight's flat price_per_kg for legacy
+// single-tranche flights (match.luggage_type is null).
+const resolveOptionPrice = (flight, luggageType) => {
+  if (luggageType && Array.isArray(flight?.luggage_options)) {
+    const opt = flight.luggage_options.find((o) => o.type === luggageType)
+    if (opt && opt.price_per_kg != null) return opt.price_per_kg
+  }
+  return flight?.price_per_kg
+}
+
 const calcFees = (match) => {
-  const pricePerKg = parseFloat(match.agreed_price_per_kg ?? match.flight?.price_per_kg ?? 0) || 0
+  const pricePerKg = parseFloat(match.agreed_price_per_kg ?? resolveOptionPrice(match.flight, match.luggage_type) ?? 0) || 0
   const weightKg = parseFloat(match.agreed_weight_kg ?? match.request?.weight_kg ?? 0) || 0
   const transportFee = pricePerKg * weightKg
 

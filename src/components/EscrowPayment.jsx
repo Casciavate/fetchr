@@ -7,7 +7,7 @@ import {
   Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
 } from 'lucide-react';
 import AdvisoryBanner from './shared/AdvisoryBanner';
-import { calcFees, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -340,7 +340,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
           <div className="flex justify-between text-content-muted">
             <span className="flex items-center gap-1.5 font-mono text-num-m">
               <Plane size={12} className="text-ink-400" />
-              {match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg
+              {match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || resolveOptionPrice(match.flight, match.luggage_type)}/kg
             </span>
             <span className="font-mono text-num-m">${fees.transportFee.toFixed(2)}</span>
           </div>

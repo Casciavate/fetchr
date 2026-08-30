@@ -7,7 +7,7 @@ import {
 import RatingDisplay from './shared/RatingDisplay';
 import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
-import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
 
 const Earnings = ({ session }) => {
   const [loading, setLoading] = useState(true);
@@ -365,7 +365,7 @@ const Earnings = ({ session }) => {
                         <div className="flex justify-between text-content-muted">
                           <span>
                             {kg(deal.agreed_weight_kg || deal.request?.weight_kg)} ×
-                            ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
+                            ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
                           </span>
                           <span>{money(subtotal - shopFee - purchasePrice)}</span>
                         </div>

@@ -4,12 +4,20 @@ import {
   Package, Trash2, Plus, AlertTriangle, CheckCircle,
   MapPin, Weight, DollarSign, Calendar, ShoppingBag,
   Link, ChevronDown, ChevronUp, User, Phone, Shield,
-  Plane, Clock, X
+  Plane, Clock, X, Edit2, Save
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
 import AdvisoryBanner from './shared/AdvisoryBanner';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
+import { resolveOptionPrice } from '../lib/fees';
+
+const CATEGORIES = [
+  'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
+  'Food & Beverages', 'Books & Stationery', 'Toys & Games',
+  'Medical & Pharmacy', 'Jewelry & Accessories', 'Sports & Fitness',
+  'Home & Living', 'Documents', 'Other'
+];
 
 // Bare glyph, docs/BRAND.md §2.6 — ticket header bar
 const BareGlyph = ({ size = 14 }) => (
@@ -28,6 +36,10 @@ const MyRequests = ({ session, onNewRequest }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [dealDetails, setDealDetails] = useState({});
   const [loadingDeal, setLoadingDeal] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -90,6 +102,51 @@ const MyRequests = ({ session, onNewRequest }) => {
     if (!window.confirm('Delete this request? This cannot be undone.')) return;
     const { error } = await supabase.from('shipment_requests').delete().eq('id', id);
     if (!error) setRequests(prev => prev.filter(r => r.id !== id));
+  };
+
+  const startEditing = (req) => {
+    if (hasActiveMatch(req.id)) return;
+    setEditingId(req.id);
+    setEditForm({
+      item_name: req.item_name || '', category: req.category || '',
+      description: req.description || '', weight_kg: req.weight_kg || '',
+      budget_per_kg: req.budget_per_kg || '', max_budget: req.max_budget || '',
+      needed_by: req.needed_by || '', notes: req.notes || '',
+      purchase_store: req.purchase_store || '', purchase_price: req.purchase_price || '',
+      purchase_url: req.purchase_url || '', purchase_details: req.purchase_details || '',
+    });
+    setError('');
+  };
+
+  const cancelEditing = () => { setEditingId(null); setEditForm({}); setError(''); };
+
+  const saveEdit = async (id) => {
+    if (!editForm.item_name.trim()) { setError('Enter an item name.'); return; }
+    if (!editForm.category) { setError('Select a category.'); return; }
+    if (!editForm.weight_kg || parseFloat(editForm.weight_kg) <= 0) { setError('Enter a valid weight.'); return; }
+    setSaving(true); setError('');
+    const req = requests.find(r => r.id === id);
+    const updates = {
+      item_name: editForm.item_name, category: editForm.category,
+      description: editForm.description || null,
+      weight_kg: parseFloat(editForm.weight_kg),
+      budget_per_kg: parseFloat(editForm.budget_per_kg) || null,
+      max_budget: parseFloat(editForm.max_budget) || null,
+      needed_by: editForm.needed_by || null,
+      notes: editForm.notes || null,
+    };
+    if (req?.requires_purchase) {
+      updates.purchase_store = editForm.purchase_store || null;
+      updates.purchase_price = parseFloat(editForm.purchase_price) || null;
+      updates.purchase_url = editForm.purchase_url || null;
+      updates.purchase_details = editForm.purchase_details || null;
+    }
+    const { error: err } = await supabase.from('shipment_requests').update(updates).eq('id', id);
+    if (err) { setError(err.message); } else {
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+      setEditingId(null); setEditForm({});
+    }
+    setSaving(false);
   };
 
   const handleExpand = async (id) => {
@@ -219,21 +276,141 @@ const MyRequests = ({ session, onNewRequest }) => {
                   {hasMatch && (
                     <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
                       <AlertTriangle size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-body-s text-info-500">Active deal in progress — cannot delete until complete.</p>
+                      <p className="text-body-s text-info-500">Active deal in progress — this request can't be edited or deleted until complete.</p>
                     </div>
                   )}
 
-                  <div className="flex gap-2">
-                    <button onClick={() => handleExpand(req.id)} className="flex-1 btn-secondary">
-                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                      {isExpanded ? 'Hide details' : 'View details'}
-                    </button>
-                    <button onClick={() => deleteRequest(req.id)} disabled={hasMatch}
-                      className="flex-1 btn-danger disabled:opacity-30 disabled:cursor-not-allowed">
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  </div>
+                  {editingId !== req.id && (
+                    <div className="flex gap-2">
+                      <button onClick={() => handleExpand(req.id)} className="flex-1 btn-secondary">
+                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        {isExpanded ? 'Hide details' : 'View details'}
+                      </button>
+                      <button onClick={() => startEditing(req)} disabled={hasMatch}
+                        className="flex-1 btn-secondary disabled:opacity-30 disabled:cursor-not-allowed">
+                        <Edit2 size={14} /> Edit
+                      </button>
+                      <button onClick={() => deleteRequest(req.id)} disabled={hasMatch}
+                        className="flex-1 btn-danger disabled:opacity-30 disabled:cursor-not-allowed">
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {/* Edit mode */}
+                {editingId === req.id && (
+                  <>
+                    <div className="perf" />
+                    <div className="bg-surface-sunken p-4 space-y-4">
+                      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
+
+                      <div>
+                        <label className="block text-label text-content-muted mb-1.5 uppercase">Item name</label>
+                        <input type="text" value={editForm.item_name}
+                          onChange={e => setEditForm({ ...editForm, item_name: e.target.value })}
+                          className="input-field" />
+                      </div>
+
+                      <div>
+                        <label className="block text-label text-content-muted mb-2 uppercase">Category</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {CATEGORIES.map(cat => (
+                            <button key={cat} type="button" onClick={() => setEditForm({ ...editForm, category: cat })}
+                              className={`px-2.5 py-1 rounded-md text-label font-semibold border transition-all ${
+                                editForm.category === cat
+                                  ? 'bg-brand text-white border-brand'
+                                  : 'bg-surface text-ink-600 border-line-strong hover:bg-surface-sunken'
+                              }`}>
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-label text-content-muted mb-1.5 uppercase">Weight (kg)</label>
+                          <input type="number" min="0.1" step="0.1" value={editForm.weight_kg}
+                            onChange={e => setEditForm({ ...editForm, weight_kg: e.target.value })}
+                            className="input-field font-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-label text-content-muted mb-1.5 uppercase">Budget/kg ($)</label>
+                          <input type="number" min="0" step="0.5" value={editForm.budget_per_kg}
+                            onChange={e => setEditForm({ ...editForm, budget_per_kg: e.target.value })}
+                            className="input-field font-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-label text-content-muted mb-1.5 uppercase">Max budget ($)</label>
+                          <input type="number" min="0" step="1" value={editForm.max_budget}
+                            onChange={e => setEditForm({ ...editForm, max_budget: e.target.value })}
+                            className="input-field font-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-label text-content-muted mb-1.5 uppercase">Needed by</label>
+                          <input type="date" value={editForm.needed_by ? editForm.needed_by.slice(0, 10) : ''}
+                            onChange={e => setEditForm({ ...editForm, needed_by: e.target.value })}
+                            className="input-field font-mono" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-label text-content-muted mb-1.5 uppercase">Description</label>
+                        <textarea rows={2} value={editForm.description}
+                          onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                          className="input-field resize-none" />
+                      </div>
+
+                      <div>
+                        <label className="block text-label text-content-muted mb-1.5 uppercase">Notes</label>
+                        <textarea rows={2} value={editForm.notes}
+                          onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
+                          className="input-field resize-none" />
+                      </div>
+
+                      {req.requires_purchase && (
+                        <div className="bg-info-50 rounded-md p-3 border border-info-100 space-y-3">
+                          <p className="text-label text-info-500 font-bold uppercase">Shop &amp; ship purchase details</p>
+                          <div>
+                            <label className="block text-label text-content-muted mb-1.5 uppercase">Store</label>
+                            <input type="text" value={editForm.purchase_store}
+                              onChange={e => setEditForm({ ...editForm, purchase_store: e.target.value })}
+                              className="input-field" />
+                          </div>
+                          <div>
+                            <label className="block text-label text-content-muted mb-1.5 uppercase">Expected price ($)</label>
+                            <input type="number" min="0" step="0.5" value={editForm.purchase_price}
+                              onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })}
+                              className="input-field font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-label text-content-muted mb-1.5 uppercase">Product link</label>
+                            <input type="text" value={editForm.purchase_url}
+                              onChange={e => setEditForm({ ...editForm, purchase_url: e.target.value })}
+                              className="input-field" />
+                          </div>
+                          <div>
+                            <label className="block text-label text-content-muted mb-1.5 uppercase">Specifications</label>
+                            <textarea rows={2} value={editForm.purchase_details}
+                              onChange={e => setEditForm({ ...editForm, purchase_details: e.target.value })}
+                              className="input-field resize-none" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button onClick={cancelEditing} className="flex-1 btn-secondary">
+                          <X size={14} /> Cancel
+                        </button>
+                        <button onClick={() => saveEdit(req.id)} disabled={saving}
+                          className="flex-[2] btn-primary disabled:opacity-50">
+                          <Save size={14} /> {saving ? 'Saving' : 'Save changes'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Expanded details */}
                 {isExpanded && (
@@ -450,10 +627,10 @@ const MyRequests = ({ session, onNewRequest }) => {
                                       <DollarSign size={10} /> Agreed deal
                                     </p>
                                     <p className="text-body-s font-bold text-ink-900 font-mono">
-                                      ${((deal.agreed_price_per_kg || deal.flight.price_per_kg) * req.weight_kg).toFixed(2)}
+                                      ${((deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)) * req.weight_kg).toFixed(2)}
                                     </p>
                                     <p className="text-body-s text-content-muted font-mono">
-                                      ${deal.agreed_price_per_kg || deal.flight.price_per_kg}/kg
+                                      ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
                                     </p>
                                   </div>
                                 </div>

@@ -19,17 +19,36 @@ export const TRAVELER_PLATFORM_FEE_PCT = 0.05; // deducted from traveler's payou
 export const SOURCING_FEE_PCT = 0.06;          // paid by shipper, on top, only when there's a purchase
 
 /**
+ * Resolves the price/kg for a specific luggage tranche on a flight.
+ * A flight offering hand luggage and check-in luggage at different prices
+ * stores each tranche in `flight.luggage_options` (`{ type, available_kg,
+ * price_per_kg, booked_kg }`); the flight's flat `price_per_kg` is only
+ * correct for single-tranche (legacy) flights, where `luggageType` is null.
+ * Falls back to the flat field if the match predates per-type matching or
+ * the named tranche can't be found (defensive — should not normally happen).
+ */
+export function resolveOptionPrice(flight, luggageType) {
+  if (luggageType && Array.isArray(flight?.luggage_options)) {
+    const opt = flight.luggage_options.find(o => o.type === luggageType);
+    if (opt && opt.price_per_kg != null) return opt.price_per_kg;
+  }
+  return flight?.price_per_kg;
+}
+
+/**
  * Computes the full two-sided fee breakdown for a match.
  *
  * `match` is expected in the same joined shape used throughout the app:
- * { agreed_price_per_kg, agreed_weight_kg, agreed_shop_fee,
- *   flight: { price_per_kg, shop_and_ship_fee },
+ * { agreed_price_per_kg, agreed_weight_kg, agreed_shop_fee, luggage_type,
+ *   flight: { price_per_kg, shop_and_ship_fee, luggage_options },
  *   request: { weight_kg, requires_purchase, purchase_price } }
  * Agreed (locked-in) values win once terms are agreed; the flight/request
- * fallbacks only apply beforehand (pending-match previews).
+ * fallbacks only apply beforehand (pending-match previews), and resolve to
+ * the specific luggage tranche (`match.luggage_type`) the match was made
+ * against, not just the flight's flat price.
  */
 export function calcFees(match) {
-  const pricePerKg = parseFloat(match.agreed_price_per_kg ?? match.flight?.price_per_kg ?? 0) || 0;
+  const pricePerKg = parseFloat(match.agreed_price_per_kg ?? resolveOptionPrice(match.flight, match.luggage_type) ?? 0) || 0;
   const weightKg = parseFloat(match.agreed_weight_kg ?? match.request?.weight_kg ?? 0) || 0;
   const transportFee = pricePerKg * weightKg;
 

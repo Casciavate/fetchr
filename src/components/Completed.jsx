@@ -9,7 +9,7 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
-import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — same
 // treatment as the active-deal ticket, carried through to the completed
@@ -270,7 +270,7 @@ const Completed = ({ session, focusDealId }) => {
                       <div className="flex justify-between font-mono text-num-m text-content-muted">
                         <span>
                           {deal.agreed_weight_kg || deal.request?.weight_kg}kg ×
-                          ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
+                          ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
                         </span>
                         <span>${fees.transportFee.toFixed(2)}</span>
                       </div>

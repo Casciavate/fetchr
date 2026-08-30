@@ -7,7 +7,7 @@ import {
   Circle, Zap
 } from 'lucide-react';
 import EscrowPayment, { ProofUploadModal } from './EscrowPayment';
-import { calcFees, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
 import SkeletonList from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
@@ -59,7 +59,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   const isTrav = match.traveler_id === session.user.id;
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    agreed_price_per_kg: match.agreed_price_per_kg || match.flight?.price_per_kg || '',
+    agreed_price_per_kg: match.agreed_price_per_kg || resolveOptionPrice(match.flight, match.luggage_type) || '',
     agreed_weight_kg: match.agreed_weight_kg || match.request?.weight_kg || '',
     agreed_notes: match.agreed_notes || '',
     agreed_shop_fee: match.agreed_shop_fee || match.flight?.shop_and_ship_fee || '',
@@ -70,7 +70,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   // back to the locked-in match otherwise — same shape calcFees expects
   // everywhere else.
   const fees = calcFees({
-    agreed_price_per_kg: form.agreed_price_per_kg || match.agreed_price_per_kg || match.flight?.price_per_kg,
+    agreed_price_per_kg: form.agreed_price_per_kg || match.agreed_price_per_kg || resolveOptionPrice(match.flight, match.luggage_type),
     agreed_weight_kg: form.agreed_weight_kg || match.agreed_weight_kg || match.request?.weight_kg,
     agreed_shop_fee: form.agreed_shop_fee || match.agreed_shop_fee || match.flight?.shop_and_ship_fee,
     request: match.request,
@@ -169,6 +169,12 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                 <p className="text-micro text-content-subtle mb-0.5">Weight</p>
                 <p className="font-mono font-semibold text-ink-900">{match.agreed_weight_kg || match.request?.weight_kg} kg</p>
               </div>
+              {match.luggage_type && (
+                <div>
+                  <p className="text-micro text-content-subtle mb-0.5">Luggage allowance</p>
+                  <p className="font-medium text-content">{match.luggage_type === 'carry_on' ? 'Hand luggage' : 'Check-in luggage'}</p>
+                </div>
+              )}
               {match.request?.item_dimensions && (
                 <div>
                   <p className="text-micro text-content-subtle mb-0.5">Dimensions</p>
@@ -329,7 +335,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
               <div className="space-y-2 text-body-s">
                 {/* Transport — both sides see this */}
                 <div className="flex justify-between text-content-muted font-mono">
-                  <span>{match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
+                  <span>{match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || resolveOptionPrice(match.flight, match.luggage_type)}/kg</span>
                   <span className="font-semibold text-ink-900">${dealValue.toFixed(2)}</span>
                 </div>
                 {isPurchase && (

@@ -10,7 +10,7 @@ import { TicketSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
-import { calcFees } from '../lib/fees';
+import { calcFees, resolveOptionPrice } from '../lib/fees';
 
 const STEPS = [
   { key: 'matched', label: 'Matched' },
@@ -366,7 +366,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                         ${(isTrav ? fees.travelerReceives : fees.shipperPays).toFixed(2)}
                       </p>
                       <p className="text-body-s text-content-muted">
-                        ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
+                        ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
                       </p>
                     </div>
                   </div>

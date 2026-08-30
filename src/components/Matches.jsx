@@ -12,7 +12,7 @@ import EmptyState from './shared/EmptyState';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Toast from './shared/Toast';
-import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
 // where the tile would double up on the surface-inverse fill.
@@ -390,11 +390,27 @@ const Matches = ({ session, onNavigate }) => {
                   <p className="text-micro text-content-subtle">Weight</p>
                   <p className="font-mono font-medium text-content">{match.request?.weight_kg} kg</p>
                 </div>
+                {match.luggage_type && (
+                  <div>
+                    <p className="text-micro text-content-subtle">Luggage allowance</p>
+                    <p className="font-medium text-content">{match.luggage_type === 'carry_on' ? 'Hand luggage' : 'Check-in luggage'}</p>
+                  </div>
+                )}
                 {match.flight?.available_kg != null && (
                   <div>
-                    <p className="text-micro text-content-subtle">Flight capacity free</p>
+                    <p className="text-micro text-content-subtle">
+                      {match.luggage_type ? `${match.luggage_type === 'carry_on' ? 'Hand' : 'Check-in'} allowance free` : 'Flight capacity free'}
+                    </p>
                     <p className="font-mono font-medium text-content">
-                      {Math.max(0, (match.flight.available_kg || 0) - (match.flight.booked_kg || 0)).toFixed(1)} kg
+                      {(() => {
+                        const opt = match.luggage_type && Array.isArray(match.flight?.luggage_options)
+                          ? match.flight.luggage_options.find(o => o.type === match.luggage_type)
+                          : null;
+                        const free = opt
+                          ? (opt.available_kg || 0) - (opt.booked_kg || 0)
+                          : (match.flight.available_kg || 0) - (match.flight.booked_kg || 0);
+                        return Math.max(0, free).toFixed(1);
+                      })()} kg
                     </p>
                   </div>
                 )}
@@ -411,7 +427,7 @@ const Matches = ({ session, onNavigate }) => {
               </div>
               <div className="border-t border-line pt-2 space-y-1">
                 <div className="flex justify-between font-mono text-num-m text-content-muted">
-                  <span>{match.request?.weight_kg}kg × ${match.flight?.price_per_kg}/kg</span>
+                  <span>{match.request?.weight_kg}kg × ${resolveOptionPrice(match.flight, match.luggage_type)}/kg</span>
                   <span>${fees.transportFee.toFixed(2)}</span>
                 </div>
                 {fees.isPurchase && (

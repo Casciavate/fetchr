@@ -24,7 +24,7 @@ import WalletScreen from './Wallet';
 // weight out of the bundle every regular user downloads.
 const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
 import { AIRLINE_CODES } from './shared/airlines';
-import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
@@ -543,6 +543,83 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
       );
     };
 
+    // "Coming up" teaser — a compact boarding-pass card for matches/deals
+    // that don't need action yet, swiped through like the "your turn"
+    // cards above rather than stacked as a scrolling list. No fee
+    // breakdown here on purpose (that's what "Review match" is for) —
+    // this is a teaser, not the deal-details view.
+    const renderComingUpCard = (item) => {
+      const isDeal = !!item.status && activeDeals.includes(item);
+      const other = getOtherParty(item);
+      const ref = (item.id || '').slice(0, 6).toUpperCase();
+      const stageInfo = isDeal ? getDealStageLabel(item) : null;
+      return (
+        <div className="ticket">
+          <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
+            <div className="flex items-center gap-1.5">
+              <BareGlyph size={15} />
+              <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+            </div>
+            <span className="font-mono text-[10px] text-ink-300 uppercase">
+              {isDeal ? 'DEAL' : 'MATCH'}{item.match_score != null ? ` · ${Math.min(item.match_score, 100)}%` : ''} · #{ref}
+            </span>
+          </div>
+
+          <div className="px-4 py-3.5 space-y-3">
+            <StatusPill tone="neutral">{isDeal ? stageInfo.label : `${item.match_score}% match`}</StatusPill>
+
+            <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-overline uppercase text-ink-400">From</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{item.flight?.from_code || '—'}</p>
+              </div>
+              <div className="flex items-center justify-center pt-4">
+                <div className="w-7 border-t border-dashed border-line-perf" />
+              </div>
+              <div className="min-w-0 text-right">
+                <p className="font-mono text-overline uppercase text-ink-400">To</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{item.flight?.to_code || '—'}</p>
+              </div>
+            </div>
+
+            <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 truncate">
+              {item.flight?.flight_date
+                ? new Date(item.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                : '—'}
+              {' · '}{item.flight?.flight_number || item.flight?.airline || '—'}
+              {' · '}{item.agreed_weight_kg || item.request?.weight_kg || '—'}kg
+            </p>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
+                {getInitials(other?.full_name)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
+                  <VerificationBadge verified={other?.verified} />
+                </div>
+                <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller"
+                  onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
+              </div>
+            </div>
+
+            <p className="text-body-s text-content-subtle truncate">{item.request?.item_name}</p>
+          </div>
+
+          <div className="perf mx-4" />
+
+          <div className="px-4 py-3.5">
+            <button
+              onClick={() => navigate(isDeal ? 'messages' : 'matches', isDeal ? { focusMatchId: item.id } : undefined)}
+              className="btn-secondary w-full">
+              {isDeal ? 'View deal' : 'Review match'}
+            </button>
+          </div>
+        </div>
+      );
+    };
+
     return (
     <div className="animate-fade-in space-y-6">
 
@@ -572,32 +649,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
         {comingUp.length > 0 && (
           <div>
             <p className="font-mono text-overline uppercase text-content-subtle mb-2">Coming up</p>
-            <div className="space-y-2">
-              {comingUp.map((item, i) => {
-                const isDeal = !!item.status && activeDeals.includes(item);
-                const stageInfo = isDeal ? getDealStageLabel(item) : null;
-                const stubState = isDeal && item.status === 'in_escrow' ? 'secured' : isDeal ? 'yours' : 'default';
-                return (
-                  <button key={item.id || i}
-                    onClick={() => navigate(isDeal ? 'messages' : 'matches', isDeal ? { focusMatchId: item.id } : undefined)}
-                    className={`w-full h-14 flex items-center gap-3 px-3.5 rounded-md border bg-surface hover:border-line-strong transition text-left ${
-                      stubState === 'yours' ? 'border-l-[3px] border-l-signal-500 border-y-line border-r-line' : 'border-line'
-                    }`}>
-                    <div className="min-w-0">
-                      <p className="font-mono text-body-s font-semibold text-ink-900">
-                        {item.flight?.from_code} → {item.flight?.to_code}
-                      </p>
-                      <p className="text-micro text-content-subtle truncate">{item.request?.item_name}</p>
-                    </div>
-                    <p className={`ml-auto text-label font-semibold flex-shrink-0 ${
-                      stubState === 'secured' ? 'text-success' : isDeal ? stageInfo.color : 'text-content-muted'
-                    }`}>
-                      {isDeal ? stageInfo.label : `${item.match_score}% match`}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+            <CardStack items={comingUp} keyFn={(it) => it.id} renderItem={renderComingUpCard} />
           </div>
         )}
 
@@ -698,7 +750,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                         {match.match_score}% match
                       </span>
                       <p className="font-mono text-label text-ink-700 font-semibold mt-1">
-                        ${match.flight?.price_per_kg}/kg
+                        ${resolveOptionPrice(match.flight, match.luggage_type)}/kg
                       </p>
                     </div>
                   </button>
@@ -740,7 +792,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
           ) : (
             <div className="space-y-2">
               {activeDeals.map((deal, i) => {
-                const dealValue = (deal.agreed_price_per_kg || deal.flight?.price_per_kg || 0) *
+                const dealValue = (deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type) || 0) *
                   (deal.agreed_weight_kg || deal.request?.weight_kg || 0);
                 const stageInfo = getDealStageLabel(deal);
                 const StageIcon = deal.status === 'in_escrow' ? Lock

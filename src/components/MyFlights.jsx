@@ -69,6 +69,7 @@ const getLuggageOptions = (flight) => {
       type: 'checkin',
       available_kg: flight.available_kg,
       price_per_kg: flight.price_per_kg,
+      booked_kg: flight.booked_kg,
     }];
   }
   return [];
@@ -343,7 +344,12 @@ const MyFlights = ({ session, onAddFlight }) => {
             const luggageOpts = getLuggageOptions(flight);
             const totalKg = luggageOpts.reduce((s, l) => s + parseFloat(l.available_kg || 0), 0);
             const bookedKg = parseFloat(flight.booked_kg || 0);
-            const remainingKg = Math.max(0, totalKg - bookedKg);
+            // Each tranche's own remaining capacity, not a pooled
+            // available-minus-booked — 10kg check-in fully booked and 8kg
+            // hand luggage untouched is 8kg free, never "18kg minus however
+            // much of either type has been booked so far."
+            const remainingKg = luggageOpts.reduce((s, l) =>
+              s + Math.max(0, parseFloat(l.available_kg || 0) - parseFloat(l.booked_kg || 0)), 0);
             const offersShopShip = flight.delivery_type === 'both';
             const shopShipFee = offersShopShip ? (parseFloat(flight.shop_and_ship_fee) || 0) : 0;
             // Shop & ship fee is a flat one-time fee per deal, not per
@@ -429,7 +435,9 @@ const MyFlights = ({ session, onAddFlight }) => {
                     <>
                       <div className="space-y-2">
                         {luggageOpts.map((opt, i) => {
-                          const e = getNetEarnings(opt.available_kg, opt.price_per_kg);
+                          const optBooked = parseFloat(opt.booked_kg || 0);
+                          const optRemaining = Math.max(0, parseFloat(opt.available_kg || 0) - optBooked);
+                          const e = getNetEarnings(optRemaining, opt.price_per_kg);
                           const isCarryOn = opt.type === 'carry_on';
                           return (
                             <div key={i} className="flex items-center justify-between p-3 rounded-md bg-surface-sunken border border-line">
@@ -443,7 +451,9 @@ const MyFlights = ({ session, onAddFlight }) => {
                                     {isCarryOn ? 'Hand luggage' : 'Check-in luggage'}
                                   </p>
                                   <p className="text-body-s text-content-muted font-mono">
-                                    {opt.available_kg}kg @ ${opt.price_per_kg}/kg
+                                    {optBooked > 0
+                                      ? `${optRemaining}kg free of ${opt.available_kg}kg @ $${opt.price_per_kg}/kg`
+                                      : `${opt.available_kg}kg @ $${opt.price_per_kg}/kg`}
                                   </p>
                                 </div>
                               </div>

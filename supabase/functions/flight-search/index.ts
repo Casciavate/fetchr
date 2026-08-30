@@ -103,7 +103,13 @@ Deno.serve(async (req) => {
       if (!flights) {
         try {
           const raw = await callAeroDataBox(`/flights/number/${clean}/${date}`, apiKey)
-          flights = (Array.isArray(raw) ? raw : []).map(normalizeFlight)
+          const seenByNumber = new Set()
+          flights = (Array.isArray(raw) ? raw : []).map(normalizeFlight).filter(f => {
+            const key = `${f.departureUtc}_${f.arrivalUtc}`
+            if (seenByNumber.has(key)) return false
+            seenByNumber.add(key)
+            return true
+          })
           await setCached(supabase, cacheKey, flights)
         } catch (e) {
           return new Response(JSON.stringify(unavailable(e.code || 'provider_error', e.message)), {
@@ -141,8 +147,16 @@ Deno.serve(async (req) => {
             .filter(f => f.arrival?.airport?.iata?.toUpperCase() === toIata.toUpperCase())
             .map(normalizeFlight)
             .filter(f => {
-              if (seen.has(f.flightNumber)) return false
-              seen.add(f.flightNumber)
+              // withCodeshared=true means the same physical flight can show
+              // up under multiple marketing flight numbers (e.g. a
+              // Lufthansa-operated flight also listed as a United
+              // codeshare) — deduping on flightNumber alone let those
+              // through as "different" flights. Same departure + arrival
+              // timestamp means it's the same physical flight regardless
+              // of which airline's number it's filed under.
+              const key = `${f.departureUtc}_${f.arrivalUtc}`
+              if (seen.has(key)) return false
+              seen.add(key)
               return true
             })
           await setCached(supabase, cacheKey, flights)
