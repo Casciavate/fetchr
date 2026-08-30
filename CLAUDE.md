@@ -152,6 +152,64 @@ query, `admin_user_stats()`, `admin_kpi_timeseries()`) needs the rename.
 
 Amending deal terms resets both `terms_agreed_*` flags back to false.
 
+## Test-fixture bots (Simon Shipper / Tara Traveler) — TEST ONLY, removable
+
+Two fixed accounts (`profiles.is_bot = true`, identified by email, not name)
+simulate a counterparty so there's always something to match/transact
+against: **Simon Shipper** (`sandrocasciani1+fetchrshipper@gmail.com`,
+always the shipper/request side) and **Tara Traveler**
+(`sandrocasciani1+fetchrtraveler@gmail.com`, always the traveler/flight
+side). Real users are everyone else — no allowlist, just `is_bot`.
+
+`supabase/functions/bot-agent/index.ts`, driven by a `pg_cron` job
+(`bot-agent-tick`, every 2 minutes, calling the function via `pg_net` with
+no auth header — deployed `--no-verify-jwt`) does two things on every tick:
+
+1. **Seed**: any real-user flight/request not yet in `bot_seed_log` gets 3
+   varied counter-listings from the opposite-role bot (different
+   categories/items or airlines/prices/dates), then calls `find_matches()`.
+   `bot_seed_log(source_table, source_id)` is a unique constraint, so a
+   listing is only ever seeded once no matter how many ticks run.
+2. **Advance**: every match with a bot party gets driven forward exactly
+   one step per tick, mirroring the real frontend logic field-for-field
+   (`Matches.jsx`'s accept, `Messages.jsx`'s agree-terms/upload-proof/
+   confirm-delivery/cancellation) — same tables, same RLS policies, same
+   triggers, same `stripe-connect` actions (`escrow_from_wallet`,
+   `capture_payment`, `cancel_payment`) called with a real session token
+   for the bot (`admin.generateLink` + `verifyOtp`, no email sent), never
+   a service-role shortcut for anything a real user would do. The bot
+   never accepts a match first — only reacts once the real user has. About
+   20% of bot-involved deals (deterministic per match id, not re-rolled)
+   self-cancel at `in_escrow` instead of uploading proof, so the real user
+   can exercise the cancellation-agree flow too. `handleCompleteDeal`'s own
+   `flightHasDeparted` gate is respected — a deal can't reach `completed`
+   before its flight's date, same as for real users.
+
+Simon's wallet was seeded with $3000 test-fixture balance (a `topup`
+transaction, same shape as a real one) so he can actually pay escrow; he
+has no Stripe Connect account, so none of it can ever be withdrawn as real
+money. He could alternatively pay via Stripe's test card instead of
+wallet — not implemented, since the wallet path already exercises the same
+downstream code (`capture_payment`/`cancel_payment` don't care which
+funded the escrow).
+
+**To remove this feature entirely:**
+```sql
+select cron.unschedule('bot-agent-tick');  -- stops all bot activity immediately
+```
+```bash
+supabase functions delete bot-agent        -- undeploys the function
+```
+```sql
+-- optional full data cleanup
+delete from public.matches where traveler_id in (select id from profiles where is_bot)
+  or shipper_id in (select id from profiles where is_bot);
+delete from public.flights where user_id in (select id from profiles where is_bot);
+delete from public.shipment_requests where user_id in (select id from profiles where is_bot);
+drop table if exists public.bot_seed_log;
+alter table public.profiles drop column if exists is_bot;
+```
+
 ## Stripe
 
 Escrow uses `capture_method: 'manual'`. Payments therefore show as
@@ -237,6 +295,18 @@ synchronously on click (`window.open('', '_blank')`) and redirects it
    `traveler_accepted` / `shipper_accepted` are not always both written.
 4. Realtime needs `REPLICA IDENTITY FULL` and table membership in the
    `supabase_realtime` publication, or UPDATE events never arrive.
+5. **A `SECURITY INVOKER` function doing a global multi-user `INSERT` will
+   silently fail under RLS the moment any candidate row doesn't involve the
+   calling user** — found live in `find_matches()`: it's a system-wide
+   matching sweep (inserts rows for every eligible flight/request pair, not
+   just the caller's own), but `matches`' INSERT policy requires
+   `auth.uid() IN (traveler_id, shipper_id)` per row. Every frontend call
+   site does `await supabase.rpc('find_matches')` and ignores the result,
+   so this had been failing silently for any multi-user candidate set this
+   whole time. Fixed by making it `SECURITY DEFINER`, matching the same
+   pattern already used by `enforce_flight_capacity`/`update_flight_capacity`/
+   `protect_match_columns`. If you add another sweep-style function that
+   writes across users, it needs this too.
 
 ## Deploying
 
