@@ -898,8 +898,14 @@ const Messages = ({ session, focusMatchId }) => {
             </div>
           </div>
 
-          {/* Chat header */}
-          <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 flex-shrink-0">
+          {/* Chat header — fixed height (matches the design system's
+              Header chrome, 56px), identity only. Route/price/status
+              moved entirely to the deal stub strip right below, so this
+              bar never has to fit three different kinds of information
+              into one cramped line. Name and verification badge get a
+              line each instead of sharing one — a name long enough to
+              truncate no longer visually collides with the badge. */}
+          <div className="h-14 px-4 border-b border-line flex items-center justify-between gap-2 flex-shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <button onClick={() => setActiveMatch(null)}
                 className="md:hidden w-8 h-8 -ml-1 flex items-center justify-center rounded-md hover:bg-surface-sunken transition text-ink-700 flex-shrink-0">
@@ -913,18 +919,8 @@ const Messages = ({ session, focusMatchId }) => {
                 {getInitials(getOtherParty(activeMatch)?.full_name)}
               </div>
               <div className="min-w-0 flex-1">
-                {/* min-w-0 + flex-1 on the name itself, not just this outer
-                    wrapper — a flex item's default min-width:auto otherwise
-                    blocks truncate from ever engaging, so on a narrow phone
-                    screen the name's full width collided with the verification
-                    badge instead of ellipsizing before it. */}
-                <div className="flex items-center gap-1.5">
-                  <p className="font-display font-semibold text-title-s text-ink-900 truncate min-w-0 flex-1">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
-                  <div className="flex-shrink-0">
-                    <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
-                  </div>
-                </div>
-                <p className="text-micro text-content-subtle truncate">{activeMatch.flight?.from_code} → {activeMatch.flight?.to_code} · {activeMatch.request?.item_name}</p>
+                <p className="font-display font-semibold text-title-s text-ink-900 truncate">{getOtherParty(activeMatch)?.full_name || 'User'}</p>
+                <VerificationBadge verified={getOtherParty(activeMatch)?.verified} />
               </div>
             </div>
 
@@ -979,9 +975,13 @@ const Messages = ({ session, focusMatchId }) => {
             </div>
           </div>
 
-          {/* Pinned deal stub — mobile only; route, amount, escrow state, tap for the full ticket */}
+          {/* Pinned deal stub — route, amount, status, tap for the full
+              ticket. Shown on every viewport now: this is where deal
+              context lives (matching the design system's Header +
+              DealStub as two separate persistent bars), not squeezed
+              into the identity header above. */}
           <button onClick={() => setShowDealDetails(true)}
-            className="md:hidden flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left">
+            className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left">
             <div className="flex-1 min-w-0">
               <p className="font-mono text-body-s font-semibold text-ink-900">
                 {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
