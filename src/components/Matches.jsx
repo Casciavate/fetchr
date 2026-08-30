@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, CheckCircle, XCircle, Ticket,
@@ -27,7 +27,24 @@ const BareGlyph = ({ size = 16 }) => (
 
 const FILTERS = ['All', 'As sender', 'As traveller', 'Best fit'];
 
-const Matches = ({ session, onNavigate }) => {
+// Remaining capacity for whichever tranche this match actually draws from
+// (or the flight's flat pool for legacy single-tranche flights) — the
+// exact same real-time state enforce_flight_capacity() checks server-side
+// on accept, so the UI never shows a match as fine when the backend would
+// actually reject it.
+const getFlightRemainingKg = (match) => {
+  const flight = match.flight;
+  if (!flight || flight.available_kg == null) return null;
+  const opt = match.luggage_type && Array.isArray(flight.luggage_options)
+    ? flight.luggage_options.find(o => o.type === match.luggage_type)
+    : null;
+  const free = opt
+    ? (opt.available_kg || 0) - (opt.booked_kg || 0)
+    : (flight.available_kg || 0) - (flight.booked_kg || 0);
+  return Math.max(0, free);
+};
+
+const Matches = ({ session, onNavigate, focusMatchId }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
@@ -38,6 +55,22 @@ const Matches = ({ session, onNavigate }) => {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState('');
+  const consumedFocusIdRef = useRef(null);
+
+  // Deep-link from Home's action tiles — same pattern as Messages.jsx's
+  // focusMatchId, so a "Review match"/"Issue boarding pass" tile on Home
+  // opens straight into that specific match's details here rather than
+  // completing the action on Home itself.
+  useEffect(() => {
+    if (!focusMatchId || consumedFocusIdRef.current === focusMatchId) return;
+    if (!matches.some(m => m.id === focusMatchId)) return;
+    consumedFocusIdRef.current = focusMatchId;
+    setFilter('All'); // guarantee the target match isn't hidden by a filter chip
+    setExpandedId(focusMatchId);
+    setTimeout(() => {
+      document.getElementById(`match-${focusMatchId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [focusMatchId, matches]);
 
   const fetchDeclinedIds = async (userId) => {
     const { data } = await supabase
@@ -260,11 +293,22 @@ const Matches = ({ session, onNavigate }) => {
     // Also treat awaiting_other as other having accepted
     const otherHasAcceptedFull = otherHasAccepted || match.status === 'awaiting_other';
     const ref = match.id.slice(0, 6).toUpperCase();
+
+    // Live capacity gate — mirrors enforce_flight_capacity()'s own check
+    // exactly, using the same fresh flight/luggage_options join this list
+    // already re-fetches every 2s, so a match that's no longer feasible
+    // (another deal already took the space) shows as such immediately,
+    // not just after a failed accept attempt.
+    const neededKg = match.agreed_weight_kg || match.request?.weight_kg || 0;
+    const remainingCapacityKg = getFlightRemainingKg(match);
+    const capacityOk = remainingCapacityKg === null || remainingCapacityKg >= neededKg;
     const isExpanded = expandedId === match.id;
 
     return (
-      <div key={match.id}
-        className={`ticket ${!iHaveAccepted ? 'border-l-[3px] border-l-signal-500' : ''}`}>
+      <div key={match.id} id={`match-${match.id}`}
+        className={`ticket ${!iHaveAccepted ? 'border-l-[3px] border-l-signal-500' : ''} ${
+          focusMatchId === match.id ? 'ring-2 ring-signal-500 ring-offset-2' : ''
+        }`}>
 
         {/* Header bar — docs/BRAND.md §7.7 / §7.8 (32px compact) */}
         <div className="h-8 bg-ink-900 flex items-center justify-between px-3">
@@ -402,15 +446,7 @@ const Matches = ({ session, onNavigate }) => {
                       {match.luggage_type ? `${match.luggage_type === 'carry_on' ? 'Hand' : 'Check-in'} allowance free` : 'Flight capacity free'}
                     </p>
                     <p className="font-mono font-medium text-content">
-                      {(() => {
-                        const opt = match.luggage_type && Array.isArray(match.flight?.luggage_options)
-                          ? match.flight.luggage_options.find(o => o.type === match.luggage_type)
-                          : null;
-                        const free = opt
-                          ? (opt.available_kg || 0) - (opt.booked_kg || 0)
-                          : (match.flight.available_kg || 0) - (match.flight.booked_kg || 0);
-                        return Math.max(0, free).toFixed(1);
-                      })()} kg
+                      {getFlightRemainingKg(match).toFixed(1)} kg
                     </p>
                   </div>
                 )}
@@ -481,24 +517,34 @@ const Matches = ({ session, onNavigate }) => {
           </div>
 
           {!iHaveAccepted ? (
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDecline(match.id)}
-                disabled={!!acting[match.id]}
-                className="btn-secondary flex-1 disabled:opacity-50">
-                <XCircle size={15} />
-                {acting[match.id] === 'declining' ? 'Declining' : 'Decline'}
-              </button>
-              <button
-                onClick={() => handleAccept(match.id)}
-                disabled={!!acting[match.id]}
-                className="btn-primary flex-[2] disabled:opacity-50">
-                <Ticket size={15} />
-                {acting[match.id] === 'accepting'
-                  ? 'Issuing pass'
-                  : 'Issue boarding pass'
-                }
-              </button>
+            <div className="space-y-2">
+              {!capacityOk && (
+                <div className="flex items-start gap-2 bg-danger-tint border-l-[3px] border-danger rounded-r px-2.5 py-2">
+                  <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+                  <p className="text-body-s text-danger">
+                    No remaining luggage space on this flight for {neededKg}kg — another deal already took it.
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleDecline(match.id)}
+                  disabled={!!acting[match.id]}
+                  className="btn-secondary flex-1 disabled:opacity-50">
+                  <XCircle size={15} />
+                  {acting[match.id] === 'declining' ? 'Declining' : 'Decline'}
+                </button>
+                <button
+                  onClick={() => handleAccept(match.id)}
+                  disabled={!!acting[match.id] || !capacityOk}
+                  className="btn-primary flex-[2] disabled:opacity-50">
+                  <Ticket size={15} />
+                  {acting[match.id] === 'accepting'
+                    ? 'Issuing pass'
+                    : 'Issue boarding pass'
+                  }
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-success-tint rounded-md px-3 py-2.5">

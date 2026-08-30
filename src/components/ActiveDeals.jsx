@@ -10,6 +10,7 @@ import { TicketSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
+import Barcode from './shared/Barcode';
 import { calcFees, resolveOptionPrice } from '../lib/fees';
 
 const STEPS = [
@@ -31,39 +32,6 @@ const STAGE_INFO = {
   disputed: { label: 'Disputed', desc: 'This deal is on hold.' },
 };
 
-// Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — decorative
-// today, encodes match id + route + date as text only (no scanner reads
-// this yet; it's specified so a real handover code can replace it later
-// without a redesign).
-const Barcode = ({ deal }) => {
-  const ref = deal.id.slice(0, 6).toUpperCase();
-  const route = `${deal.flight?.from_code || '???'}${deal.flight?.to_code || '???'}`;
-  const ddmmyy = deal.flight?.flight_date
-    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '')
-    : '------';
-  // Deterministic bar weights from the ref (repeated to fill a full row of
-  // bars), stable per deal. Bars use flex so the strip spans the card
-  // width instead of staying a small fixed-width cluster.
-  // Real boarding-pass barcodes (Code128-style) are packed with many thin
-  // bars of varying width, not a handful of thick blocks — that's what
-  // was reading as "stretched/unrealistic". More bars, 1px each at most,
-  // 1px gaps, shorter height.
-  const code = ref + route + ddmmyy;
-  const bars = Array.from({ length: 70 }, (_, i) => (code.charCodeAt(i % code.length) % 2) + 1);
-  return (
-    <div className="pt-4 mt-1 -mx-2">
-      <div className="perf mb-3 mx-2" />
-      <div className="h-[22px] flex items-stretch gap-px px-2" aria-hidden="true">
-        {bars.map((w, i) => (
-          <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
-        ))}
-      </div>
-      <p className="mt-1.5 text-center font-mono text-overline text-content-muted tracking-[0.28em]">
-        {ref}·{route}·{ddmmyy}
-      </p>
-    </div>
-  );
-};
 
 const stepIndex = (statusKey) => {
   const i = STEPS.findIndex(s => s.key === statusKey);

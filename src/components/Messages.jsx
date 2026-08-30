@@ -452,10 +452,16 @@ const Messages = ({ session, focusMatchId }) => {
 
     if (data && data.length > 0) {
       setAcceptedMatches(data);
+      // Never auto-select on this background refresh — null means the user
+      // deliberately backed out to the list (or a just-completed/cancelled
+      // deal dropped off), not "nothing loaded yet" (that's loadWithRetry's
+      // job, once, on mount). Refreshing here used to force activeMatch back
+      // to data[0], so a poll/realtime tick landing right after the user hit
+      // back would silently reopen whatever chat happened to be first.
       setActiveMatch(prev => {
-        if (!prev) return data[0];
+        if (!prev) return null;
         const still = data.find(m => m.id === prev.id);
-        return still ? { ...prev, ...still } : data[0];
+        return still ? { ...prev, ...still } : null;
       });
       await fetchUnreadCounts(data);
     }
@@ -511,10 +517,12 @@ const Messages = ({ session, focusMatchId }) => {
       if (!data || cancelled) return;
       if (data.length > 0) {
         setAcceptedMatches(data);
+        // Same rule as fetchMatches() above — don't resurrect a chat the
+        // user deliberately backed out of just because the 3s poll ticked.
         setActiveMatch(prev => {
-          if (!prev) return data[0];
+          if (!prev) return null;
           const still = data.find(m => m.id === prev.id);
-          return still ? { ...prev, ...still } : data[0];
+          return still ? { ...prev, ...still } : null;
         });
         await fetchUnreadCounts(data);
       }
@@ -799,6 +807,58 @@ const Messages = ({ session, focusMatchId }) => {
   const getOtherParty = (match) => isTraveler(match) ? match.shipper : match.traveler;
   const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2); };
   const totalUnread = Object.values(unreadCounts).reduce((s, c) => s + c, 0);
+
+  // Group the sidebar by the flight/request each chat actually belongs to
+  // — reuses the exact same matches join Messages.jsx already fetches, no
+  // new data or entities. A chat where I'm the traveler groups under its
+  // flight (one flight can have several shippers); one where I'm the
+  // shipper groups under its request (mine, so exactly one at a time, but
+  // grouped the same way for consistency).
+  const groupChats = (list, keyFn) => {
+    const order = [];
+    const groups = new Map();
+    for (const m of list) {
+      const key = keyFn(m);
+      if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+      groups.get(key).push(m);
+    }
+    return order.map(key => ({ key, matches: groups.get(key) }));
+  };
+  const flightChatGroups = groupChats(acceptedMatches.filter(isTraveler), m => m.flight_id);
+  const requestChatGroups = groupChats(acceptedMatches.filter(m => !isTraveler(m)), m => m.request_id);
+
+  const renderChatRow = (match) => {
+    const other = getOtherParty(match);
+    const unread = unreadCounts[match.id] || 0;
+    const isActive = activeMatch?.id === match.id;
+    const stageInfo = STAGES.find(s => s.id === getCurrentStage(match)) || STAGES[0];
+    const StageIcon = stageInfo.icon;
+    return (
+      <button key={match.id}
+        onClick={() => { setActiveMatch(match); setShowPayment(false); setShowCancelRequest(false); }}
+        className={`w-full text-left p-3.5 border-b border-line transition-all ${isActive ? 'bg-surface-sunken' : 'hover:bg-surface-sunken'}`}>
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-shrink-0">
+            <div className={`w-9 h-9 rounded-avatar flex items-center justify-center text-micro font-mono font-semibold ${isActive ? 'bg-ink-900 text-paper-100' : 'bg-ink-100 text-ink-600'}`}>
+              {getInitials(other?.full_name)}
+            </div>
+            {unread > 0 && (
+              <span className="absolute -top-1 -right-1 bg-accent-fill text-white font-mono text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-1">
+              <p className={`text-body-s truncate ${unread > 0 ? 'font-semibold text-ink-900' : 'font-medium text-content'}`}>{other?.full_name || 'User'}</p>
+              <StageIcon size={13} className="text-ink-400 flex-shrink-0" />
+            </div>
+            <p className="text-micro text-content-subtle truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
+          </div>
+        </div>
+      </button>
+    );
+  };
   const getCurrentStage = (match) => { if (!match) return 'matched'; const s = match.deal_stage || match.status || 'matched'; if (s === 'accepted') return 'matched'; return s; };
   const getStageIndex = (stage) => STAGES.findIndex(st => st.id === stage);
   const myTermsAgreed = activeMatch ? (isTraveler(activeMatch) ? activeMatch.terms_agreed_traveler : activeMatch.terms_agreed_shipper) : false;
@@ -873,38 +933,47 @@ const Messages = ({ session, focusMatchId }) => {
           )}
         </div>
         <div className="overflow-y-auto flex-1">
-          {acceptedMatches.map(match => {
-            const other = getOtherParty(match);
-            const unread = unreadCounts[match.id] || 0;
-            const isActive = activeMatch?.id === match.id;
-            const stageInfo = STAGES.find(s => s.id === getCurrentStage(match)) || STAGES[0];
-            const StageIcon = stageInfo.icon;
-            return (
-              <button key={match.id}
-                onClick={() => { setActiveMatch(match); setShowPayment(false); setShowCancelRequest(false); }}
-                className={`w-full text-left p-3.5 border-b border-line transition-all ${isActive ? 'bg-surface-sunken' : 'hover:bg-surface-sunken'}`}>
-                <div className="flex items-center gap-2.5">
-                  <div className="relative flex-shrink-0">
-                    <div className={`w-9 h-9 rounded-avatar flex items-center justify-center text-micro font-mono font-semibold ${isActive ? 'bg-ink-900 text-paper-100' : 'bg-ink-100 text-ink-600'}`}>
-                      {getInitials(other?.full_name)}
-                    </div>
-                    {unread > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-accent-fill text-white font-mono text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                        {unread > 9 ? '9+' : unread}
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className={`text-body-s truncate ${unread > 0 ? 'font-semibold text-ink-900' : 'font-medium text-content'}`}>{other?.full_name || 'User'}</p>
-                      <StageIcon size={13} className="text-ink-400 flex-shrink-0" />
-                    </div>
-                    <p className="text-micro text-content-subtle truncate mt-0.5">{match.flight?.from_code} → {match.flight?.to_code} · {match.request?.item_name}</p>
-                  </div>
+          {acceptedMatches.length === 0 ? null : (
+            <>
+              {flightChatGroups.length > 0 && (
+                <div className="px-3.5 pt-3 pb-1">
+                  <p className="font-mono text-overline uppercase text-content-subtle">Your flights</p>
                 </div>
-              </button>
-            );
-          })}
+              )}
+              {flightChatGroups.map(group => {
+                const f = group.matches[0].flight;
+                return (
+                  <div key={`f-${group.key}`} className="border-b border-line">
+                    <div className="px-3.5 py-2 bg-surface-sunken/60 flex items-center gap-1.5">
+                      <Plane size={11} className="text-ink-400 flex-shrink-0" />
+                      <p className="text-micro font-semibold text-content-muted truncate">
+                        {f?.from_code} → {f?.to_code}{f?.flight_date ? ` · ${new Date(f.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : ''}
+                      </p>
+                    </div>
+                    {group.matches.map(match => renderChatRow(match))}
+                  </div>
+                );
+              })}
+
+              {requestChatGroups.length > 0 && (
+                <div className="px-3.5 pt-3 pb-1">
+                  <p className="font-mono text-overline uppercase text-content-subtle">Your requests</p>
+                </div>
+              )}
+              {requestChatGroups.map(group => {
+                const r = group.matches[0].request;
+                return (
+                  <div key={`r-${group.key}`} className="border-b border-line">
+                    <div className="px-3.5 py-2 bg-surface-sunken/60 flex items-center gap-1.5">
+                      <Package size={11} className="text-ink-400 flex-shrink-0" />
+                      <p className="text-micro font-semibold text-content-muted truncate">{r?.item_name}</p>
+                    </div>
+                    {group.matches.map(match => renderChatRow(match))}
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       </div>
 

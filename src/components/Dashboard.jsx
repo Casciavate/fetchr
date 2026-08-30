@@ -31,11 +31,12 @@ import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
+import Barcode from './shared/Barcode';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, ChevronDown, ChevronUp, LogOut, CheckCircle, Search,
-  Zap, ArrowUpRight, Lock, Camera
+  Zap, ArrowUpRight, Lock, Camera, Ticket, Weight
 } from 'lucide-react';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the sidebar lockup and
@@ -95,7 +96,6 @@ const Dashboard = ({ session }) => {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [focusMatchId, setFocusMatchId] = useState(null);
   const [focusDealId, setFocusDealId] = useState(null);
-  const [expandedHeroKey, setExpandedHeroKey] = useState(null);
   const [reviewsFor, setReviewsFor] = useState(null);
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -108,6 +108,9 @@ const Dashboard = ({ session }) => {
   const [upcomingFlights, setUpcomingFlights] = useState([]);
   const [activeDeals, setActiveDeals] = useState([]);
   const [ongoingRequests, setOngoingRequests] = useState([]);
+  const [allMatches, setAllMatches] = useState([]);
+  const [activeFlightIdx, setActiveFlightIdx] = useState(0);
+  const [activeRequestIdx, setActiveRequestIdx] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const userName = profile?.full_name?.split(' ')[0]
@@ -175,11 +178,16 @@ const Dashboard = ({ session }) => {
 // Generate new matches for this user before fetching
     await supabase.rpc('find_matches');
 
-    // Widget data — all in parallel
+    // Widget data — all in parallel. One broad matches query (every status
+    // that isn't finished/cancelled) replaces the old separate "pending"
+    // and "accepted+" queries — recentMatches/activeDeals below are just
+    // client-side slices of it, and the full set also drives the Home
+    // carousels' per-flight/per-request grouping (flightGroups/
+    // requestGroups), which need every match tied to a listing, not a
+    // top-N sample.
     const [
       { data: matchesData },
       { data: flightsData },
-      { data: activeDealsData },
       { data: requestsData },
     ] = await Promise.all([
       supabase.from('matches')
@@ -187,28 +195,25 @@ const Dashboard = ({ session }) => {
           traveler:profiles!matches_traveler_id_fkey(*),
           shipper:profiles!matches_shipper_id_fkey(*)`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['pending', 'awaiting_other'])
-        .order('match_score', { ascending: false }).limit(3),
+        .in('status', ['pending', 'awaiting_other', 'accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'])
+        .order('created_at', { ascending: false }).limit(100),
 
       supabase.from('flights').select('*')
         .eq('user_id', userId).eq('status', 'active')
         .gte('flight_date', new Date().toISOString().split('T')[0])
-        .order('flight_date', { ascending: true }).limit(4),
-
-      supabase.from('matches')
-        .select(`*, flight:flights(*), request:shipment_requests(*)`)
-        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
-        .order('created_at', { ascending: false }).limit(4),
+        .order('flight_date', { ascending: true }).limit(20),
 
       supabase.from('shipment_requests').select('*')
         .eq('user_id', userId).eq('status', 'open')
-        .order('created_at', { ascending: false }).limit(4),
+        .order('created_at', { ascending: false }).limit(20),
     ]);
 
-    setRecentMatches(matchesData || []);
+    const all = matchesData || [];
+    setAllMatches(all);
+    setRecentMatches(all.filter(m => ['pending', 'awaiting_other'].includes(m.status))
+      .sort((a, b) => (b.match_score || 0) - (a.match_score || 0)).slice(0, 3));
+    setActiveDeals(all.filter(m => ['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status)).slice(0, 4));
     setUpcomingFlights(flightsData || []);
-    setActiveDeals(activeDealsData || []);
     setOngoingRequests(requestsData || []);
 
     if (showLoading) setLoading(false);
@@ -357,28 +362,39 @@ const Dashboard = ({ session }) => {
     return m.flight.flight_date <= new Date().toISOString().split('T')[0];
   };
 
-  // Every deal/match blocked on this user, not just the highest-priority
-  // one — rendered as a carousel when there's more than one.
-  const getYourTurnItems = () => {
-    const items = [];
-    for (const deal of activeDeals) {
-      const myTermsAgreed = isTraveler(deal) ? deal.terms_agreed_traveler : deal.terms_agreed_shipper;
-      const myCompleted = isTraveler(deal) ? deal.traveler_completed : deal.shipper_completed;
-      if (deal.status === 'accepted' && !myTermsAgreed) {
-        items.push({ kind: 'deal', deal, action: 'Agree terms', icon: CheckCircle });
-      } else if (deal.status === 'terms_agreed' && isShipper(deal)) {
-        items.push({ kind: 'deal', deal, action: 'Pay escrow', icon: Lock });
-      } else if (deal.status === 'in_escrow' && isTraveler(deal)) {
-        items.push({ kind: 'deal', deal, action: 'Upload proof', icon: Camera });
-      } else if (deal.status === 'proof_uploaded' && !myCompleted && flightHasDeparted(deal)) {
-        items.push({ kind: 'deal', deal, action: 'Confirm delivery', icon: CheckCircle });
-      }
+  // The single blocking action for a match/deal, if any — one place for
+  // the precedence Home's tile-highlighting, the badge count, and
+  // Messages.jsx's own header CTA all need to agree on. Returns where
+  // clicking the highlight should navigate: Home never completes the
+  // action itself, it only routes into Matches/Messages so the existing
+  // workflow there stays the single place these actually happen.
+  const getMatchAction = (m) => {
+    if (['pending', 'awaiting_other'].includes(m.status)) {
+      const mine = isTraveler(m) ? m.traveler_accepted : m.shipper_accepted;
+      if (!mine) return { label: 'Issue boarding pass', icon: Ticket, nav: 'matches' };
+      return null; // waiting on the other party to accept
     }
-    if (recentMatches.length > 0) {
-      items.push({ kind: 'match', deal: recentMatches[0], action: 'Review match', icon: Search });
-    }
-    return items;
+    const myTermsAgreed = isTraveler(m) ? m.terms_agreed_traveler : m.terms_agreed_shipper;
+    const myCompleted = isTraveler(m) ? m.traveler_completed : m.shipper_completed;
+    if (m.status === 'accepted' && !myTermsAgreed) return { label: 'Agree terms', icon: CheckCircle, nav: 'messages' };
+    if (m.status === 'terms_agreed' && isShipper(m)) return { label: 'Pay escrow', icon: Lock, nav: 'messages' };
+    if (m.status === 'in_escrow' && isTraveler(m)) return { label: 'Upload proof', icon: Camera, nav: 'messages' };
+    if (m.status === 'proof_uploaded' && !myCompleted && flightHasDeparted(m)) return { label: 'Confirm delivery', icon: CheckCircle, nav: 'messages' };
+    return null;
   };
+
+  // Home groups every match by the flight/request it's tied to, rather
+  // than showing loose boarding-pass tickets — a flight or request tile is
+  // the unit, its matches (any status) are what's underneath it.
+  const flightGroups = upcomingFlights.map(flight => ({
+    flight,
+    matches: allMatches.filter(m => m.flight_id === flight.id),
+  }));
+  const requestGroups = ongoingRequests.map(request => ({
+    request,
+    matches: allMatches.filter(m => m.request_id === request.id),
+  }));
+  const remainingKg = (flight) => Math.max(0, (Number(flight.available_kg) || 0) - (Number(flight.booked_kg) || 0));
 
   const renderMain = () => {
     switch (activeNav) {
@@ -387,7 +403,7 @@ const Dashboard = ({ session }) => {
       case 'flights': return <MyFlights session={session} onAddFlight={() => navigate('add-flight')} />;
       case 'new-request': return <NewRequest session={session} />;
       case 'my-requests': return <MyRequests session={session} onNewRequest={() => navigate('new-request')} />;
-case 'matches': return <Matches session={session} onNavigate={navigate} />;
+case 'matches': return <Matches session={session} onNavigate={navigate} focusMatchId={focusMatchId} />;
       case 'messages': return <Messages session={session} focusMatchId={focusMatchId} />;
       case 'active-deals': return <ActiveDeals session={session} onNavigate={navigate} />;
       case 'completed': return <Completed session={session} focusDealId={focusDealId} />;
@@ -405,154 +421,56 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
   };
 
   const renderDashboard = () => {
-    const yourTurnItems = getYourTurnItems();
-    const yourTurnKeys = new Set(yourTurnItems.map(it => `${it.kind}:${it.deal.id}`));
-    const comingUp = [
-      ...activeDeals.filter(d => !yourTurnKeys.has(`deal:${d.id}`)),
-      ...recentMatches.filter(m => !yourTurnKeys.has(`match:${m.id}`)),
-    ].slice(0, 4);
-
-    const renderHeroCard = (yourTurn) => {
-      const deal = yourTurn.deal;
-      const other = getOtherParty(deal);
-      const ref = (deal.id || '').slice(0, 6).toUpperCase();
-      const fees = yourTurn.kind === 'deal' ? calcFees(deal) : null;
-      const amount = fees ? (isShipper(deal) ? fees.shipperPays : fees.travelerReceives) : null;
-      const cardKey = `${yourTurn.kind}:${deal.id}`;
-      const isExpanded = expandedHeroKey === cardKey;
+    // One row under a flight/request tile — a real boarding-pass ticket
+    // (barcode visible) once the match is past pending/awaiting_other,
+    // otherwise a lighter match-preview row. Clicking never completes the
+    // action here — it routes into Matches (still pending) or Messages
+    // (already a deal) where the existing workflow owns it.
+    const renderMatchRow = (m, kind) => {
+      const other = getOtherParty(m);
+      const isDeal = !['pending', 'awaiting_other'].includes(m.status);
+      const action = getMatchAction(m);
+      const stageInfo = isDeal ? getDealStageLabel(m) : null;
+      const waitingLabel = !isDeal && !action ? `Waiting for ${isTraveler(m) ? 'sender' : 'traveller'}` : null;
       return (
-        <div className="ticket">
-          {/* Header bar */}
-          <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
-            <div className="flex items-center gap-1.5">
-              <BareGlyph size={15} />
-              <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+        <button key={m.id}
+          onClick={() => navigate(isDeal ? 'messages' : 'matches', { focusMatchId: m.id })}
+          className={`w-full text-left ticket transition ${action ? 'ring-2 ring-signal-500' : 'hover:border-line-strong'}`}>
+          <div className="px-4 py-3 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
+              {getInitials(other?.full_name)}
             </div>
-            <span className="font-mono text-[10px] text-ink-300 uppercase">
-              {yourTurn.kind === 'deal' ? 'DEAL' : 'MATCH'}{deal.match_score != null ? ` · ${Math.min(deal.match_score, 100)}%` : ''} · #{ref}
-            </span>
-          </div>
-
-          <div className="px-4 py-3.5 space-y-3">
-            <StatusPill tone="signal" icon={yourTurn.icon}>Your turn · {yourTurn.action}</StatusPill>
-
-            <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-              <div className="min-w-0">
-                <p className="font-mono text-overline uppercase text-ink-400">From</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.from_code || '—'}</p>
-              </div>
-              <div className="flex items-center justify-center pt-4">
-                <div className="w-7 border-t border-dashed border-line-perf" />
-              </div>
-              <div className="min-w-0 text-right">
-                <p className="font-mono text-overline uppercase text-ink-400">To</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{deal.flight?.to_code || '—'}</p>
-              </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-display font-semibold text-body-s text-ink-900 truncate">
+                {kind === 'flight' ? (m.request?.item_name || 'Item') : `${m.flight?.from_code || '—'} → ${m.flight?.to_code || '—'}`}
+              </p>
+              <p className="text-micro text-content-subtle truncate">
+                {other?.full_name || 'User'} · {isDeal ? stageInfo.label : waitingLabel || `${m.match_score}% match`}
+              </p>
             </div>
-
-            <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 truncate">
-              {deal.flight?.flight_date
-                ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                : '—'}
-              {' · '}{deal.flight?.flight_number || deal.flight?.airline || '—'}
-              {' · '}{deal.agreed_weight_kg || deal.request?.weight_kg || '—'}kg
-            </p>
-
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
-                {getInitials(other?.full_name)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
-                  <VerificationBadge verified={other?.verified} />
-                </div>
-                <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller"
-                  onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
-              </div>
-            </div>
-
-            <p className="text-body-s text-content-subtle truncate">{deal.request?.item_name}</p>
-
-            {isExpanded && fees && (
-              <div className="border-t border-line pt-3 space-y-1.5">
-                <div className="flex justify-between font-mono text-num-m text-content-muted">
-                  <span>Transport{deal.agreed_weight_kg || deal.request?.weight_kg ? ` · ${deal.agreed_weight_kg || deal.request?.weight_kg} kg` : ''}</span>
-                  <span>${fees.transportFee.toFixed(2)}</span>
-                </div>
-                {fees.isPurchase && (
-                  <div className="flex justify-between font-mono text-num-m text-content-muted">
-                    <span>Shop fee</span><span>${fees.shopFee.toFixed(2)}</span>
-                  </div>
-                )}
-                {fees.isPurchase && fees.purchasePrice > 0 && (
-                  <div className="flex justify-between font-mono text-num-m text-content-muted">
-                    <span>Item</span><span>${fees.purchasePrice.toFixed(2)}</span>
-                  </div>
-                )}
-                {/* Fee line diverges by viewer — never show the other
-                    side's cut (see EscrowPayment/Messages for the same rule). */}
-                {isShipper(deal) ? (
-                  <>
-                    <div className="flex justify-between font-mono text-num-m text-content-muted">
-                      <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
-                      <span>${fees.shipperServiceFee.toFixed(2)}</span>
-                    </div>
-                    {fees.isPurchase && fees.purchasePrice > 0 && (
-                      <div className="flex justify-between font-mono text-num-m text-content-muted">
-                        <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
-                        <span>${fees.sourcingFee.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex justify-between font-mono text-num-m text-content-muted">
-                    <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
-                    <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
+            {action ? (
+              <StatusPill tone="signal" icon={action.icon}>{action.label}</StatusPill>
+            ) : (
+              <ChevronRight size={16} className="text-ink-300 flex-shrink-0" />
             )}
           </div>
-
-          <div className="perf mx-4" />
-
-          <div className="px-4 py-3.5 space-y-3">
-            {amount != null && (
-              <div className="flex items-baseline justify-between">
-                <span className="font-mono text-body-m text-content-muted">{isShipper(deal) ? 'You pay' : 'You receive'}</span>
-                <span className="font-mono font-bold text-num-l text-ink-900">${amount.toFixed(2)}</span>
-              </div>
-            )}
-            <button
-              onClick={() => navigate(yourTurn.kind === 'deal' ? 'messages' : 'matches',
-                yourTurn.kind === 'deal' ? { focusMatchId: deal.id } : undefined)}
-              className="btn-signal w-full">
-              {yourTurn.action}
-            </button>
-            <button onClick={() => setExpandedHeroKey(isExpanded ? null : cardKey)}
-              className="w-full flex items-center justify-center gap-1 text-body-s text-content-muted font-medium">
-              {isExpanded ? 'Hide details' : 'View details'}
-              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-            {yourTurn.kind === 'deal' && (
-              <p className="text-body-s text-content-muted text-center">We hold it until you both confirm delivery.</p>
-            )}
-          </div>
-        </div>
+          {isDeal && <div className="px-4 pb-3"><Barcode deal={m} /></div>}
+        </button>
       );
     };
 
-    // "Coming up" teaser — a compact boarding-pass card for matches/deals
-    // that don't need action yet, swiped through like the "your turn"
-    // cards above rather than stacked as a scrolling list. No fee
-    // breakdown here on purpose (that's what "Review match" is for) —
-    // this is a teaser, not the deal-details view.
-    const renderComingUpCard = (item) => {
-      const isDeal = !!item.status && activeDeals.includes(item);
-      const other = getOtherParty(item);
-      const ref = (item.id || '').slice(0, 6).toUpperCase();
-      const stageInfo = isDeal ? getDealStageLabel(item) : null;
+    const renderMatchesUnder = (matches, kind, emptyLabel) => (
+      matches.length === 0 ? (
+        <div className="text-center py-6 bg-surface-sunken rounded-md border border-line">
+          <p className="text-body-s text-content-muted">{emptyLabel}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">{matches.map(m => renderMatchRow(m, kind))}</div>
+      )
+    );
+
+    const renderFlightTile = (flight) => {
+      const free = remainingKg(flight);
       return (
         <div className="ticket">
           <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
@@ -560,65 +478,86 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
               <BareGlyph size={15} />
               <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
             </div>
-            <span className="font-mono text-[10px] text-ink-300 uppercase">
-              {isDeal ? 'DEAL' : 'MATCH'}{item.match_score != null ? ` · ${Math.min(item.match_score, 100)}%` : ''} · #{ref}
-            </span>
+            <span className="font-mono text-[10px] text-ink-300 uppercase">FLIGHT · #{flight.id.slice(0, 6).toUpperCase()}</span>
           </div>
-
           <div className="px-4 py-3.5 space-y-3">
-            <StatusPill tone="neutral">{isDeal ? stageInfo.label : `${item.match_score}% match`}</StatusPill>
-
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-md bg-surface-sunken flex items-center justify-center border border-line flex-shrink-0 overflow-hidden">
+                <AirlineLogo airline={flight.airline} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-display font-semibold text-title-s text-ink-900 truncate">{flight.airline || 'Flight'}</p>
+                <p className="font-mono text-micro text-content-subtle">
+                  {new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                  {flight.flight_number ? ` · ${flight.flight_number}` : ''}
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
               <div className="min-w-0">
                 <p className="font-mono text-overline uppercase text-ink-400">From</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{item.flight?.from_code || '—'}</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{flight.from_code}</p>
               </div>
               <div className="flex items-center justify-center pt-4">
                 <div className="w-7 border-t border-dashed border-line-perf" />
               </div>
               <div className="min-w-0 text-right">
                 <p className="font-mono text-overline uppercase text-ink-400">To</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{item.flight?.to_code || '—'}</p>
+                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{flight.to_code}</p>
               </div>
             </div>
-
-            <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 truncate">
-              {item.flight?.flight_date
-                ? new Date(item.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                : '—'}
-              {' · '}{item.flight?.flight_number || item.flight?.airline || '—'}
-              {' · '}{item.agreed_weight_kg || item.request?.weight_kg || '—'}kg
-            </p>
-
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0">
-                {getInitials(other?.full_name)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
-                  <VerificationBadge verified={other?.verified} />
-                </div>
-                <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller"
-                  onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
-              </div>
+            <div className="flex items-center justify-between border-t border-line pt-2.5">
+              <span className="flex items-center gap-1.5 text-body-s text-content-muted"><Weight size={14} /> Remaining capacity</span>
+              <span className={`font-mono font-semibold text-num-m ${free <= 0 ? 'text-danger' : 'text-success'}`}>{free.toFixed(1)} kg</span>
             </div>
-
-            <p className="text-body-s text-content-subtle truncate">{item.request?.item_name}</p>
-          </div>
-
-          <div className="perf mx-4" />
-
-          <div className="px-4 py-3.5">
-            <button
-              onClick={() => navigate(isDeal ? 'messages' : 'matches', isDeal ? { focusMatchId: item.id } : undefined)}
-              className="btn-secondary w-full">
-              {isDeal ? 'View deal' : 'Review match'}
-            </button>
           </div>
         </div>
       );
     };
+
+    const renderRequestTile = (request) => (
+      <div className="ticket">
+        <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
+          <div className="flex items-center gap-1.5">
+            <BareGlyph size={15} />
+            <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+          </div>
+          <span className="font-mono text-[10px] text-ink-300 uppercase">REQUEST · #{request.id.slice(0, 6).toUpperCase()}</span>
+        </div>
+        <div className="px-4 py-3.5 space-y-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-md bg-ink-100 flex items-center justify-center flex-shrink-0">
+              <Package size={16} className="text-ink-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-display font-semibold text-title-s text-ink-900 truncate">{request.item_name}</p>
+              <p className="text-micro text-content-subtle">{request.category}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+            <div className="min-w-0">
+              <p className="font-mono text-overline uppercase text-ink-400">From</p>
+              <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{request.from_code}</p>
+            </div>
+            <div className="flex items-center justify-center pt-4">
+              <div className="w-7 border-t border-dashed border-line-perf" />
+            </div>
+            <div className="min-w-0 text-right">
+              <p className="font-mono text-overline uppercase text-ink-400">To</p>
+              <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{request.to_code}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between border-t border-line pt-2.5 text-body-s">
+            <span className="text-content-muted">Needed by</span>
+            <span className="font-mono font-semibold text-ink-900">
+              {request.needed_by
+                ? new Date(request.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                : '—'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
 
     return (
     <div className="animate-fade-in space-y-6">
@@ -636,22 +575,60 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
       {/* ── Mobile — one decision per screen, real TicketCard anatomy
             matching fetchr_design/ui_kits/fetchr-mobile/MobileApp.jsx's
             MHome ─────────────────────────────────────────────────── */}
-      <div className="md:hidden space-y-5">
-        {yourTurnItems.length > 0 ? (
-          <CardStack items={yourTurnItems} keyFn={(it) => `${it.kind}:${it.deal.id}`} renderItem={renderHeroCard} />
-        ) : (
-          <div className="card p-5 text-center">
-            <CheckCircle size={20} className="text-ink-300 mx-auto mb-2" />
-            <p className="text-body-s text-content-muted">Nothing needs you right now.</p>
-          </div>
-        )}
+      <div className="md:hidden space-y-6">
+        {/* A. Upcoming Flights — swipe between flights, the boarding
+            passes underneath always reflect whichever one is centered. */}
+        <div>
+          <p className="font-mono text-overline uppercase text-content-subtle mb-2">Upcoming flights</p>
+          {upcomingFlights.length === 0 ? (
+            <div className="card p-5 text-center">
+              <Plane size={20} className="text-ink-300 mx-auto mb-2" />
+              <p className="text-body-s text-content-muted mb-3">No upcoming flights</p>
+              <button onClick={() => navigate('add-flight')} className="btn-primary text-label px-4 py-2 min-h-0">
+                Add a flight
+              </button>
+            </div>
+          ) : (
+            <>
+              <CardStack items={upcomingFlights} keyFn={f => f.id} renderItem={renderFlightTile}
+                onActiveChange={(_, i) => setActiveFlightIdx(i)} />
+              <div className="mt-3">
+                {renderMatchesUnder(
+                  flightGroups[activeFlightIdx]?.matches || [],
+                  'flight',
+                  'No boarding passes on this flight yet.'
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
-        {comingUp.length > 0 && (
-          <div>
-            <p className="font-mono text-overline uppercase text-content-subtle mb-2">Coming up</p>
-            <CardStack items={comingUp} keyFn={(it) => it.id} renderItem={renderComingUpCard} />
-          </div>
-        )}
+        {/* B. Requests — inverse of A: swipe between requests, matching
+            flights/boarding passes underneath follow the selected one. */}
+        <div>
+          <p className="font-mono text-overline uppercase text-content-subtle mb-2">Your requests</p>
+          {ongoingRequests.length === 0 ? (
+            <div className="card p-5 text-center">
+              <Package size={20} className="text-ink-300 mx-auto mb-2" />
+              <p className="text-body-s text-content-muted mb-3">No open requests</p>
+              <button onClick={() => navigate('new-request')} className="btn-primary text-label px-4 py-2 min-h-0">
+                Post a request
+              </button>
+            </div>
+          ) : (
+            <>
+              <CardStack items={ongoingRequests} keyFn={r => r.id} renderItem={renderRequestTile}
+                onActiveChange={(_, i) => setActiveRequestIdx(i)} />
+              <div className="mt-3">
+                {renderMatchesUnder(
+                  requestGroups[activeRequestIdx]?.matches || [],
+                  'request',
+                  'No matching flights for this request yet.'
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Existing flights/requests — creation lives behind the bottom
             nav's Post tab; modify/cancel stays in MyFlights/MyRequests. */}

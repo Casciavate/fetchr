@@ -9,37 +9,8 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
+import Barcode from './shared/Barcode';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
-
-// Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — same
-// treatment as the active-deal ticket, carried through to the completed
-// ticket so the deal keeps its reference code visible after delivery.
-const Barcode = ({ deal }) => {
-  const ref = deal.id.slice(0, 6).toUpperCase();
-  const route = `${deal.flight?.from_code || '???'}${deal.flight?.to_code || '???'}`;
-  const ddmmyy = deal.flight?.flight_date
-    ? new Date(deal.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '')
-    : '------';
-  // Real boarding-pass barcodes (Code128-style) are packed with many thin
-  // bars of varying width, not a handful of thick blocks — that's what
-  // was reading as "stretched/unrealistic". More bars, 1px each at most,
-  // 1px gaps, shorter height.
-  const code = ref + route + ddmmyy;
-  const bars = Array.from({ length: 70 }, (_, i) => (code.charCodeAt(i % code.length) % 2) + 1);
-  return (
-    <div className="pt-4 -mx-2">
-      <div className="perf mb-3 mx-2" />
-      <div className="h-[22px] flex items-stretch gap-px px-2" aria-hidden="true">
-        {bars.map((w, i) => (
-          <div key={i} className="bg-ink-900" style={{ flex: w, opacity: 0.82 }} />
-        ))}
-      </div>
-      <p className="mt-1.5 text-center font-mono text-overline text-content-muted tracking-[0.28em]">
-        {ref}·{route}·{ddmmyy}
-      </p>
-    </div>
-  );
-};
 
 const Completed = ({ session, focusDealId }) => {
   const [deals, setDeals] = useState([]);
