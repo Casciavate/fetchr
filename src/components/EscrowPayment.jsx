@@ -7,7 +7,7 @@ import {
   Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
 } from 'lucide-react';
 import AdvisoryBanner from './shared/AdvisoryBanner';
-import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, SOURCING_FEE_PCT, resolvedIsPurchase } from '../lib/fees';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -33,7 +33,7 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
-  const isPurchase = match.request?.requires_purchase;
+  const isPurchase = resolvedIsPurchase(match);
 
   const handleFileChange = (e) => {
     const selected = Array.from(e.target.files || []);

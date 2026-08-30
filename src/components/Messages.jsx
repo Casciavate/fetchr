@@ -7,7 +7,7 @@ import {
   Circle, Zap
 } from 'lucide-react';
 import EscrowPayment, { ProofUploadModal } from './EscrowPayment';
-import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
+import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT, shopShipMismatch, resolvedIsPurchase } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
 import SkeletonList from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
@@ -75,6 +75,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
     agreed_weight_kg: form.agreed_weight_kg || match.agreed_weight_kg || match.request?.weight_kg,
     agreed_shop_fee: form.agreed_shop_fee || match.agreed_shop_fee || match.flight?.shop_and_ship_fee,
     request: match.request,
+    shop_ship_included: match.shop_ship_included,
   });
   const { isPurchase, purchasePrice, shopFee } = fees;
   const dealValue = fees.transportFee;
@@ -505,10 +506,15 @@ const Messages = ({ session, focusMatchId }) => {
     const iAmTraveler = activeMatch.traveler_id === session.user.id;
     const myField = iAmTraveler ? 'terms_agreed_traveler' : 'terms_agreed_shipper';
     const otherAgreed = iAmTraveler ? activeMatch.terms_agreed_shipper : activeMatch.terms_agreed_traveler;
-    await supabase.from('matches').update({
+    const { error: err } = await supabase.from('matches').update({
       [myField]: true,
       ...(otherAgreed ? { status: 'terms_agreed', deal_stage: 'terms_agreed' } : {})
     }).eq('id', activeMatch.id);
+    // The DB itself refuses to let a deal reach terms_agreed while a Shop &
+    // Ship mismatch is unresolved (enforce_shop_ship_resolution) — the UI
+    // already hides this button in that state, but a stale client/race
+    // could still hit it, so this stays a real error, not a silent no-op.
+    if (err) { alert('This deal has a Shop & Ship mismatch that needs to be resolved first — see the notice above the chat.'); return; }
     const { data: msg } = await supabase.from('messages').insert([{
       match_id: activeMatch.id, sender_id: session.user.id,
       content: otherAgreed
@@ -520,6 +526,32 @@ const Messages = ({ session, focusMatchId }) => {
     setActiveMatch(prev => ({
       ...prev, [myField]: true,
       ...(otherAgreed ? { status: 'terms_agreed', deal_stage: 'terms_agreed' } : {})
+    }));
+    setTimeout(scrollToBottom, 100);
+  };
+
+  // Explicit resolution of a Shop & Ship mismatch — either party can
+  // propose it; resetting both terms_agreed_* flags reuses the exact same
+  // "amend resets agreement, both must re-confirm" mechanism the deal-terms
+  // amend flow already relies on, rather than a parallel agreement system.
+  const resolveShopShip = async (included) => {
+    const iAmTraveler = activeMatch.traveler_id === session.user.id;
+    await supabase.from('matches').update({
+      shop_ship_included: included,
+      terms_agreed_traveler: false,
+      terms_agreed_shipper: false,
+    }).eq('id', activeMatch.id);
+    const { data: msg } = await supabase.from('messages').insert([{
+      match_id: activeMatch.id, sender_id: session.user.id,
+      content: `Shop & Ship resolved by the ${iAmTraveler ? 'traveller' : 'sender'}: ${
+        included ? 'the traveller will purchase and carry the item.' : 'handover only — no purchase involved.'
+      } Both parties need to agree to terms again.`,
+      is_read: false,
+    }]).select();
+    if (msg) setMessages(prev => [...prev, msg[0]]);
+    setActiveMatch(prev => ({
+      ...prev, shop_ship_included: included,
+      terms_agreed_traveler: false, terms_agreed_shipper: false,
     }));
     setTimeout(scrollToBottom, 100);
   };
@@ -726,6 +758,13 @@ const Messages = ({ session, focusMatchId }) => {
   // buttons above, surfaced instead as a sticky bar on mobile (§3 handoff).
   const getBlockedAction = () => {
     if (!activeMatch) return null;
+    // A Shop & Ship mismatch must be explicitly resolved (see the notice
+    // above the chat) before terms can be agreed at all — the DB enforces
+    // this too (enforce_shop_ship_resolution), this just keeps the CTA from
+    // offering an action that would fail.
+    if (activeMatch.status === 'accepted' && !myTermsAgreed
+      && shopShipMismatch(activeMatch) && activeMatch.shop_ship_included == null)
+      return null;
     if (activeMatch.status === 'accepted' && !myTermsAgreed)
       return { label: 'Agree terms', icon: CheckCircle, onClick: agreeToTerms };
     if (isShipper(activeMatch) && activeMatch.status === 'terms_agreed')
@@ -960,14 +999,45 @@ const Messages = ({ session, focusMatchId }) => {
             </StatusPill>
           </button>
 
-          {/* Safety notice — §7.9 advisory banner */}
-          {activeMatch.status === 'accepted' && (
+          {/* Shop & Ship mismatch — must be explicitly resolved by both
+              parties before terms can be agreed (enforced in the DB too).
+              Covers both directions: sender wants a purchase the flight
+              doesn't offer, or the flight offers one the sender never asked
+              for. */}
+          {activeMatch.status === 'accepted' && shopShipMismatch(activeMatch) && activeMatch.shop_ship_included == null && (
+            <div className="px-4 py-3 flex flex-col gap-2 bg-warning-tint border-l-[3px] border-warn-400 flex-shrink-0">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                <p className="text-body-s text-warning leading-relaxed">
+                  <span className="font-semibold">Shop & Ship doesn't match: </span>
+                  {activeMatch.request?.requires_purchase
+                    ? 'the sender wants the traveller to buy the item, but this flight only offers handover.'
+                    : 'the traveller offers to buy items on this flight, but this request is handover only.'}
+                  {' '}Agree how to handle it before continuing.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => resolveShopShip(false)} className="btn-secondary flex-1 text-label">
+                  Handover only
+                </button>
+                <button onClick={() => resolveShopShip(true)} className="btn-secondary flex-1 text-label">
+                  Traveller will buy &amp; ship
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Safety notice — §7.9 advisory banner. Reflects the resolved
+              Shop & Ship outcome (never the raw, possibly-mismatched
+              request field), and only shows once there's nothing left to
+              resolve. */}
+          {activeMatch.status === 'accepted' && !(shopShipMismatch(activeMatch) && activeMatch.shop_ship_included == null) && (
             <div className={`px-4 py-2.5 flex items-start gap-2 border-l-[3px] flex-shrink-0 ${isTraveler(activeMatch) ? 'bg-warning-tint border-warn-400' : 'bg-info-50 border-info-400'}`}>
               {isTraveler(activeMatch)
                 ? <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
                 : <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />}
               <p className={`text-body-s leading-relaxed ${isTraveler(activeMatch) ? 'text-warning' : 'text-info-500'}`}>
-                {activeMatch.request?.requires_purchase
+                {resolvedIsPurchase(activeMatch)
                   ? isTraveler(activeMatch) ? 'Only purchase the item once escrow is confirmed paid.' : 'Once you agree terms and pay escrow, the traveller will purchase your item at the destination.'
                   : isTraveler(activeMatch) ? 'Only accept the item from the sender once escrow is confirmed paid.' : 'Hand the item to the traveller before their flight. Your payment is secured in escrow until both parties confirm delivery.'
                 }

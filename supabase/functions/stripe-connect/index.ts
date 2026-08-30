@@ -36,12 +36,21 @@ const resolveOptionPrice = (flight, luggageType) => {
   return flight?.price_per_kg
 }
 
+// Mirrors src/lib/fees.js's resolvedIsPurchase — matches.shop_ship_included
+// (set only via the explicit Shop & Ship mismatch resolution flow) wins
+// when present, else falls back to the request's original ask.
+const resolvedIsPurchase = (match) => {
+  return match.shop_ship_included != null
+    ? !!match.shop_ship_included
+    : !!(match.request?.requires_purchase)
+}
+
 const calcFees = (match) => {
   const pricePerKg = parseFloat(match.agreed_price_per_kg ?? resolveOptionPrice(match.flight, match.luggage_type) ?? 0) || 0
   const weightKg = parseFloat(match.agreed_weight_kg ?? match.request?.weight_kg ?? 0) || 0
   const transportFee = pricePerKg * weightKg
 
-  const isPurchase = !!(match.request?.requires_purchase)
+  const isPurchase = resolvedIsPurchase(match)
   const shopFee = isPurchase
     ? (parseFloat(match.agreed_shop_fee ?? match.flight?.shop_and_ship_fee ?? 0) || 0)
     : 0

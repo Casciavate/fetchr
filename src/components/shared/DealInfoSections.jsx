@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plane, Package, ShoppingBag, MapPin, Phone } from 'lucide-react';
+import { resolvedIsPurchase } from '../../lib/fees';
 
 // Shared read-only "what is this deal" content — route, item (incl. photo),
 // Shop & Ship purchase details, handover contact — used by both Matches'
@@ -85,7 +86,7 @@ export const DealInfoSections = ({ match }) => (
     </div>
 
     {/* Shop & Ship */}
-    {match.request?.requires_purchase && (
+    {resolvedIsPurchase(match) && (
       <div className="bg-info-50 rounded-lg p-4 border border-line">
         <p className="font-mono text-overline uppercase text-info-500 mb-3 flex items-center gap-1.5">
           <ShoppingBag size={13} /> Shop & Ship details

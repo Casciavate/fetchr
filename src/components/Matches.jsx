@@ -378,24 +378,41 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
             {' · '}{match.request?.weight_kg}kg
           </p>
 
-          {/* Advisory — §7.9 */}
-          {match.flight?.delivery_type === 'both' && (
+          {/* Advisory — §7.9. Once a Shop & Ship mismatch has actually been
+              resolved (only possible once chat is open, status='accepted'),
+              show the agreed outcome instead of the raw mismatch warning —
+              never imply there's still something to sort out. */}
+          {match.shop_ship_included != null ? (
+            <div className="flex items-start gap-2 bg-surface-sunken rounded-r px-2.5 py-2 border-l-[3px] border-line">
+              <CheckCircle size={14} className="text-content-muted flex-shrink-0 mt-0.5" />
+              <p className="text-body-s text-content-muted">
+                <span className="font-semibold">Shop & Ship resolved</span> — {match.shop_ship_included ? 'traveller will buy & ship the item.' : 'handover only, no purchase.'}
+              </p>
+            </div>
+          ) : match.flight?.delivery_type === 'both' && match.request?.requires_purchase ? (
             <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
               <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
               <p className="text-body-s text-info-500">
                 <span className="font-semibold">Shop & Ship available</span> — the traveller can buy at the destination.
               </p>
             </div>
-          )}
-          {match.request?.requires_purchase && match.flight?.delivery_type !== 'both' && (
+          ) : match.request?.requires_purchase && match.flight?.delivery_type !== 'both' ? (
             <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
               <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
               <div className="text-body-s text-warning">
-                <p className="font-semibold">Buy-and-carry needed</p>
-                <p>This traveller only offers handover, not Shop & Ship.</p>
+                <p className="font-semibold">Shop & Ship doesn't match</p>
+                <p>Sender wants a purchase; this traveller only offers handover. Resolve this in chat once matched.</p>
               </div>
             </div>
-          )}
+          ) : !match.request?.requires_purchase && match.flight?.delivery_type === 'both' ? (
+            <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
+              <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+              <div className="text-body-s text-warning">
+                <p className="font-semibold">Shop & Ship doesn't match</p>
+                <p>This flight offers Shop & Ship, but the request is handover only. Resolve this in chat once matched.</p>
+              </div>
+            </div>
+          ) : null}
 
           {/* Person row */}
           <div className="flex items-center gap-2.5 py-1">
@@ -672,11 +689,44 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
             )}
           </div>
 
-          {/* Carousel — mobile-only, one match at a time; browsing mode, so
-              it stays a flat swipeable stack rather than grouped sections. */}
+          {/* Tile/Carousel view — mobile-only. Same Home-style grouping as
+              the list above, but each group gets its own swipeable
+              carousel of just that flight/request's matches, rather than
+              one carousel mixing every match together — "Flight A" and its
+              matches, "Flight B" and its matches, never blended. A match
+              belongs to exactly one group (the current user is either the
+              traveler or the shipper on it, never both), so it can never
+              appear twice here. */}
           <div className="md:hidden">
             {viewMode === 'carousel' && (
-              <CardStack items={filteredMatches} keyFn={m => m.id} renderItem={renderMatchCard} />
+              flightGroups.length === 0 && requestGroups.length === 0 ? (
+                <EmptyState icon={Search} title="No matches yet"
+                  body="Add a flight or shipment request and we'll find your match automatically." />
+              ) : (
+                <div className="space-y-6">
+                  {flightGroups.map(group => (
+                    <div key={`f-${group.entity?.id}`} className="space-y-3">
+                      <div className="flex items-center gap-1.5 px-1">
+                        <Plane size={12} className="text-ink-400 flex-shrink-0" />
+                        <p className="text-body-s font-semibold text-content-muted truncate">
+                          {group.entity?.from_code} → {group.entity?.to_code}
+                          {group.entity?.flight_date ? ` · ${new Date(group.entity.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : ''}
+                        </p>
+                      </div>
+                      <CardStack items={group.matches} keyFn={m => m.id} renderItem={renderMatchCard} />
+                    </div>
+                  ))}
+                  {requestGroups.map(group => (
+                    <div key={`r-${group.entity?.id}`} className="space-y-3">
+                      <div className="flex items-center gap-1.5 px-1">
+                        <Package size={12} className="text-ink-400 flex-shrink-0" />
+                        <p className="text-body-s font-semibold text-content-muted truncate">{group.entity?.item_name}</p>
+                      </div>
+                      <CardStack items={group.matches} keyFn={m => m.id} renderItem={renderMatchCard} />
+                    </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         </>

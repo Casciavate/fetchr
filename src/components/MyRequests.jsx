@@ -243,7 +243,16 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
                   spendNote={advertisedBudget ? 'Your budget' : 'Open to offers · negotiate in chat'}
                 />
 
-                <div className="px-1 pt-3 space-y-3">
+                {/* Expand toggle — same interaction/markup as Matches'
+                    "View deal details" coupon pattern, not a separate
+                    action button among Edit/Delete. */}
+                <button onClick={() => handleExpand(req.id)}
+                  className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-1">
+                  {isExpanded ? 'Hide deal details' : 'View deal details'}
+                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                <div className="px-1 pt-1 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {req.requires_purchase && (
@@ -265,10 +274,6 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
 
                   {editingId !== req.id && (
                     <div className="flex gap-2">
-                      <button onClick={() => handleExpand(req.id)} className="flex-1 btn-secondary">
-                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                        {isExpanded ? 'Hide details' : 'View details'}
-                      </button>
                       <button onClick={() => startEditing(req)} disabled={hasMatch}
                         className="flex-1 btn-secondary disabled:opacity-30 disabled:cursor-not-allowed">
                         <Edit2 size={14} /> Edit

@@ -36,6 +36,32 @@ export function resolveOptionPrice(flight, luggageType) {
 }
 
 /**
+ * Whether this match's Shop & Ship expectations actually line up: the
+ * shipper's request wants a purchase iff the traveler's flight offers one.
+ * A mismatch (either direction) must be explicitly resolved by both parties
+ * (matches.shop_ship_included) before terms can be agreed — see
+ * enforce_shop_ship_resolution() in the DB and Messages.jsx's resolution UI.
+ */
+export function shopShipMismatch(match) {
+  const requested = !!(match.request?.requires_purchase);
+  const offered = match.flight?.delivery_type === 'both';
+  return requested !== offered;
+}
+
+/**
+ * Whether this deal actually includes a purchase, once any mismatch has
+ * been resolved. `matches.shop_ship_included` (set only via the explicit
+ * resolution flow) wins when present; otherwise falls back to the
+ * request's original ask — the correct, unambiguous default whenever the
+ * flight/request already agree with each other.
+ */
+export function resolvedIsPurchase(match) {
+  return match.shop_ship_included != null
+    ? !!match.shop_ship_included
+    : !!(match.request?.requires_purchase);
+}
+
+/**
  * Computes the full two-sided fee breakdown for a match.
  *
  * `match` is expected in the same joined shape used throughout the app:
@@ -52,7 +78,7 @@ export function calcFees(match) {
   const weightKg = parseFloat(match.agreed_weight_kg ?? match.request?.weight_kg ?? 0) || 0;
   const transportFee = pricePerKg * weightKg;
 
-  const isPurchase = !!(match.request?.requires_purchase);
+  const isPurchase = resolvedIsPurchase(match);
   const shopFee = isPurchase
     ? (parseFloat(match.agreed_shop_fee ?? match.flight?.shop_and_ship_fee ?? 0) || 0)
     : 0;
