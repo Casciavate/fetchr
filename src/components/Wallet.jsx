@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
@@ -334,30 +336,51 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
 };
 
 // ── WITHDRAW FORM ──
-// Selects saved bank account from profile OR enters new one (one-time, not saved)
-// Edge function verifies balance against ALL DB transactions before releasing funds
+// Payouts go through a Stripe Connect Express account rather than a raw
+// bank-account form — collecting account/routing numbers directly through
+// our own UI is the kind of thing Stripe restricts to platforms with
+// special approval; Connect's hosted onboarding does the KYC/bank-linking
+// properly and shifts that compliance burden to Stripe instead of us.
+// Edge function verifies balance against ALL DB transactions before releasing funds.
 const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   const [amount, setAmount] = useState(
     forceWithdrawAll ? (profile?.wallet_balance || 0).toFixed(2) : ''
   );
-  const [useSavedBank, setUseSavedBank] = useState(!!(profile?.bank_account_last4));
-  const [newBank, setNewBank] = useState({
-    accountHolderName: '',
-    accountNumber: '',
-    routingNumber: '',
-    country: '',
-    currency: 'usd',
-  });
   const [loading, setLoading] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState('form');
+  const [connectStatus, setConnectStatus] = useState(null); // null = checking
   const WITHDRAWAL_FEE_PCT = 2.5;
   const MIN_WITHDRAWAL = forceWithdrawAll ? 0 : 10;
 
-  const hasSavedBank = !!(profile?.bank_account_last4);
   const amt = parseFloat(amount) || 0;
   const fee = amt * WITHDRAWAL_FEE_PCT / 100;
   const net = amt - fee;
+
+  // Check live with Stripe, not the (possibly stale) cached profile prop —
+  // right after finishing onboarding, the account.updated webhook may not
+  // have landed yet.
+  useEffect(() => {
+    callStripe('connect_account_status').then(setConnectStatus).catch(() => setConnectStatus({ connected: false, payoutsEnabled: false }));
+  }, []);
+
+  const startBankConnect = async () => {
+    setConnecting(true); setError('');
+    const isNative = Capacitor.isNativePlatform();
+    const pendingTab = isNative ? null : window.open('', '_blank');
+    try {
+      await callStripe('create_connect_account');
+      const returnUrl = window.location.href;
+      const { url } = await callStripe('create_connect_onboarding_link', { returnUrl, refreshUrl: returnUrl });
+      if (isNative) await Browser.open({ url });
+      else if (pendingTab) pendingTab.location.href = url;
+      else window.open(url, '_blank');
+    } catch (e) {
+      setError(e.message); pendingTab?.close();
+    }
+    setConnecting(false);
+  };
 
   const handleWithdraw = async () => {
     if (!amt || amt <= 0) { setError('Enter a valid amount.'); return; }
@@ -367,32 +390,12 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
     if (!forceWithdrawAll && amt < MIN_WITHDRAWAL) {
       setError(`Minimum withdrawal is $${MIN_WITHDRAWAL}.`); return;
     }
-
-    // Validate new bank details if not using saved
-    if (!useSavedBank || !hasSavedBank) {
-      if (!newBank.accountHolderName.trim()) { setError('Enter account holder name.'); return; }
-      if (!newBank.accountNumber.trim()) { setError('Enter account number or IBAN.'); return; }
-      if (!newBank.country.trim() || newBank.country.length !== 2) {
-        setError('Enter a valid 2-letter country code (e.g. US, GB, AE).'); return;
-      }
+    if (!connectStatus?.payoutsEnabled) {
+      setError('Connect your bank via Stripe before withdrawing.'); return;
     }
 
     setLoading(true); setError(''); setStep('processing');
-
     try {
-      // If using new bank — save it first (saved to profile for future use)
-      // If user just wants one-time: we still save it but they can delete from profile later
-      if (!useSavedBank || !hasSavedBank) {
-        await callStripe('save_bank_account', {
-          accountHolderName: newBank.accountHolderName,
-          accountNumber: newBank.accountNumber.replace(/\s/g, ''),
-          routingNumber: newBank.routingNumber,
-          country: newBank.country.toUpperCase(),
-          currency: newBank.currency || 'usd',
-        });
-      }
-
-      // Execute withdrawal — edge function does full balance verification
       const result = await callStripe('withdraw_to_bank', { amount: amt });
       setStep('success');
       setTimeout(() => onSuccess(result), 1500);
@@ -465,70 +468,39 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
         )}
       </div>
 
-      {/* Bank account selector */}
-      {hasSavedBank && (
-        <div className="space-y-2">
-          <label className="block text-label text-content-muted uppercase">
-            Bank account
-          </label>
-          {[
-            { val: true, label: `Bank ****${profile.bank_account_last4}`, sub: profile.bank_account_holder || 'Saved bank account', Icon: Building },
-            { val: false, label: 'Use a different account', sub: 'Enter bank details (one-time)', Icon: Plus },
-          ].map(opt => (
-            <button key={String(opt.val)} type="button"
-              onClick={() => setUseSavedBank(opt.val)}
-              className={`w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left ${
-                useSavedBank === opt.val ? 'border-ink-900 bg-surface-sunken' : 'border-line hover:border-line-strong'
-              }`}>
-              <opt.Icon size={18} className="text-ink-600 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-body-m font-semibold text-ink-900">{opt.label}</p>
-                <p className="text-micro text-content-subtle">{opt.sub}</p>
-              </div>
-              {useSavedBank === opt.val && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* New bank details */}
-      {(!hasSavedBank || !useSavedBank) && (
-        <div className="space-y-3">
-          <div className="bg-info-50 border border-line rounded-md p-3">
-            <p className="text-label text-info-500 font-bold mb-1">Bank account details</p>
-            <p className="text-body-s text-info-500">
-              SEPA/international: use IBAN. US accounts: use account number + routing number.
-              Enter country as a 2-letter ISO code (US, GB, AE, DE, AU, SG, etc.)
-            </p>
-          </div>
-
-          {[
-            { label: 'Account holder name (required)', key: 'accountHolderName', placeholder: 'Full name as on bank account' },
-            { label: 'Country code (required)', key: 'country', placeholder: 'e.g. US, GB, AE', maxLen: 2 },
-            { label: 'Account number / IBAN (required)', key: 'accountNumber', placeholder: 'IBAN or account number' },
-            { label: 'Routing number (US only)', key: 'routingNumber', placeholder: '9-digit routing number' },
-            { label: 'Currency', key: 'currency', placeholder: 'usd, gbp, eur, aed...' },
-          ].map(f => (
-            <div key={f.key}>
-              <label className="block text-label text-content-muted mb-1.5 uppercase">
-                {f.label}
-              </label>
-              <input type="text" placeholder={f.placeholder} maxLength={f.maxLen}
-                value={newBank[f.key]}
-                onChange={e => setNewBank({ ...newBank, [f.key]: f.key === 'country' ? e.target.value.toUpperCase() : e.target.value })}
-                className="input-field" />
+      {/* Bank connection status */}
+      <div>
+        <label className="block text-label text-content-muted mb-1.5 uppercase">
+          Payout account
+        </label>
+        {connectStatus === null ? (
+          <div className="h-14 bg-surface-sunken rounded-md animate-pulse" />
+        ) : connectStatus.payoutsEnabled ? (
+          <div className="flex items-center gap-3 p-3 rounded-md border-2 border-success bg-success-tint">
+            <CheckCircle size={18} className="text-success flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-body-m font-semibold text-ink-900">Connected via Stripe</p>
+              <p className="text-micro text-content-subtle">Payouts go directly to your linked bank account</p>
             </div>
-          ))}
-
-          <div className="bg-info-50 border border-line rounded-md p-3">
-            <p className="text-label text-info-500 font-bold">Test mode</p>
-            <p className="text-body-s text-info-500 mt-0.5">
-              US: Account <strong>000123456789</strong> · Routing <strong>110000000</strong> · Country <strong>US</strong><br />
-              UK: IBAN <strong>GB29NWBK60161331926819</strong> · Country <strong>GB</strong>
-            </p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 p-3 rounded-md border-2 border-line">
+              <Building size={18} className="text-ink-400 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-body-m font-semibold text-ink-900">
+                  {connectStatus.connected ? 'Onboarding not finished yet' : 'No bank account connected'}
+                </p>
+                <p className="text-micro text-content-subtle">Required before you can withdraw</p>
+              </div>
+            </div>
+            <button type="button" onClick={startBankConnect} disabled={connecting}
+              className="w-full btn-primary disabled:opacity-50">
+              {connecting ? 'Opening Stripe…' : 'Connect your bank via Stripe'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="bg-danger-tint border border-line rounded-md p-3 flex items-start gap-2">
@@ -539,7 +511,7 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
       <div className="flex gap-2">
         <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-        <button onClick={handleWithdraw} disabled={loading}
+        <button onClick={handleWithdraw} disabled={loading || !connectStatus?.payoutsEnabled}
           className="btn-primary flex-[2] disabled:opacity-50">
           {loading
             ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>

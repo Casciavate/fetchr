@@ -50,11 +50,39 @@ const HIGH_VALUE_THRESHOLD = 500
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const adminClient = createClient(supabaseUrl, serviceRoleKey)
+  const url = new URL(req.url)
+  const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
+  // ── Stripe webhook: Connect account status changes. Called by Stripe
+  //    itself (authenticated via signature, not a Supabase session), so
+  //    this function is deployed with --no-verify-jwt — same reasoning as
+  //    stripe-identity's webhook path. ──
+  if (url.pathname.endsWith('/webhook')) {
+    const signature = req.headers.get('stripe-signature')
+    const webhookSecret = Deno.env.get('STRIPE_CONNECT_WEBHOOK_SECRET')
+    const body = await req.text()
+    let event
+    try {
+      event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret)
+    } catch (err) {
+      console.error('Connect webhook signature verification failed:', err.message)
+      return new Response(`Webhook Error: ${err.message}`, { status: 400 })
+    }
+
+    if (event.type === 'account.updated') {
+      const account = event.data.object
+      const userId = account.metadata?.supabase_user_id
+      if (userId) {
+        await adminClient.from('profiles').update({
+          stripe_connect_payouts_enabled: !!account.payouts_enabled,
+        }).eq('id', userId)
+      }
+    }
+
+    return new Response(JSON.stringify({ received: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  }
+
+  try {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('No auth header')
     const token = authHeader.replace('Bearer ', '')
@@ -115,6 +143,60 @@ Deno.serve(async (req) => {
     }
 
     // ── Setup Intent ──
+    // ── Stripe Connect: create (idempotently) the Express account a
+    //    traveler's earnings get transferred into, so they can eventually
+    //    be paid out to a real bank account. Creating the account doesn't
+    //    grant payout ability by itself — onboarding does that. ──
+    if (action === 'create_connect_account') {
+      const { data: profile } = await adminClient.from('profiles')
+        .select('stripe_connect_account_id').eq('id', user.id).single()
+      if (profile?.stripe_connect_account_id) {
+        return new Response(JSON.stringify({ accountId: profile.stripe_connect_account_id }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: user.email,
+        capabilities: { transfers: { requested: true } },
+        metadata: { supabase_user_id: user.id },
+      })
+      await adminClient.from('profiles').update({ stripe_connect_account_id: account.id }).eq('id', user.id)
+      return new Response(JSON.stringify({ accountId: account.id }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Stripe-hosted onboarding link (ID + bank account). Short-lived —
+    //    generate a fresh one each time rather than caching the URL. ──
+    if (action === 'create_connect_onboarding_link') {
+      const { data: profile } = await adminClient.from('profiles')
+        .select('stripe_connect_account_id').eq('id', user.id).single()
+      if (!profile?.stripe_connect_account_id) throw new Error('No Connect account yet — call create_connect_account first')
+      const { returnUrl, refreshUrl } = data || {}
+      const accountLink = await stripe.accountLinks.create({
+        account: profile.stripe_connect_account_id,
+        refresh_url: refreshUrl || returnUrl,
+        return_url: returnUrl,
+        type: 'account_onboarding',
+      })
+      return new Response(JSON.stringify({ url: accountLink.url }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Re-check status directly with Stripe — the webhook is what keeps
+    //    profiles.stripe_connect_payouts_enabled current in normal use, but
+    //    the user shouldn't have to wait on webhook latency right after
+    //    finishing onboarding and landing back on return_url. ──
+    if (action === 'connect_account_status') {
+      const { data: profile } = await adminClient.from('profiles')
+        .select('stripe_connect_account_id, stripe_connect_payouts_enabled').eq('id', user.id).single()
+      if (!profile?.stripe_connect_account_id) {
+        return new Response(JSON.stringify({ connected: false, payoutsEnabled: false }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
+      if (!!account.payouts_enabled !== profile.stripe_connect_payouts_enabled) {
+        await adminClient.from('profiles').update({ stripe_connect_payouts_enabled: !!account.payouts_enabled }).eq('id', user.id)
+      }
+      return new Response(JSON.stringify({ connected: true, payoutsEnabled: !!account.payouts_enabled }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'create_setup_intent') {
       const customerId = await getOrCreateCustomer(user.id, user.email)
       const setupIntent = await stripe.setupIntents.create({
@@ -216,26 +298,6 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── Save bank account ──
-    if (action === 'save_bank_account') {
-      const { accountHolderName, accountNumber, routingNumber, country, currency = 'usd' } = data
-      if (!accountHolderName || !accountNumber || !country) throw new Error('Missing required bank account fields')
-      const bankAccountParams: any = {
-        country: country.toUpperCase(), currency: currency.toLowerCase(),
-        account_holder_name: accountHolderName, account_holder_type: 'individual', account_number: accountNumber,
-      }
-      if (country.toUpperCase() === 'US' && routingNumber) bankAccountParams.routing_number = routingNumber
-      const bankToken = await stripe.tokens.create({ bank_account: bankAccountParams })
-      await adminClient.from('profiles').update({
-        bank_account_last4: bankToken.bank_account?.last4,
-        bank_account_country: country.toUpperCase(),
-        bank_account_holder: accountHolderName,
-        stripe_bank_token: bankToken.id,
-      }).eq('id', user.id)
-      return new Response(JSON.stringify({ success: true, last4: bankToken.bank_account?.last4 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
     // ── Withdraw to bank ──
     if (action === 'withdraw_to_bank') {
       const { amount } = data
@@ -244,25 +306,41 @@ Deno.serve(async (req) => {
       const fee = amount * WITHDRAWAL_FEE_PCT
       const netAmount = amount - fee
       const safeBalance = await verifyWithdrawalEligibility(user.id, amount)
+
       const { data: profile } = await adminClient.from('profiles')
-        .select('bank_account_last4, bank_account_holder').eq('id', user.id).single()
-      if (!profile?.bank_account_last4) throw new Error('No bank account saved.')
-      const payoutId = `withdrawal_${Date.now()}_${user.id.slice(0, 8)}`
+        .select('stripe_connect_account_id, stripe_connect_payouts_enabled').eq('id', user.id).single()
+      if (!profile?.stripe_connect_account_id) throw new Error('Connect your bank via Stripe before withdrawing.')
+
+      // Re-check live with Stripe rather than trusting the cached flag —
+      // this is the moment real money actually moves, worth the extra call.
+      const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
+      if (!account.payouts_enabled) throw new Error('Your connected bank account is not ready to receive payouts yet — finish onboarding in Stripe first.')
+
+      // The actual money movement, done BEFORE any DB write: if this
+      // throws, nothing else in this action has happened yet, so a failed
+      // transfer can never silently vanish wallet balance.
+      const transfer = await stripe.transfers.create({
+        amount: Math.round(netAmount * 100),
+        currency: 'usd',
+        destination: profile.stripe_connect_account_id,
+        description: `fetchr wallet withdrawal for ${user.email}`,
+        metadata: { supabase_user_id: user.id, gross_amount_usd: amount.toString(), fee_usd: fee.toString() },
+      })
+
       const newBalance = safeBalance - amount
       await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'withdrawal', amount,
-        description: `Withdrawal to bank ****${profile.bank_account_last4}`,
-        status: 'pending',
+        description: 'Withdrawal to connected bank account',
+        status: 'completed',
         metadata: {
-          payout_id: payoutId, fee, net: netAmount,
-          bank_last4: profile.bank_account_last4,
+          transfer_id: transfer.id, fee, net: netAmount,
+          connect_account_id: profile.stripe_connect_account_id,
           verified_balance_at_withdrawal: safeBalance,
-          note: 'Payout processed on go-live with verified Stripe account. For test mode, this is simulated.',
         },
       })
       return new Response(JSON.stringify({
-        success: true, newBalance, payoutId, netAmount, fee, estimatedArrival: '3-5 business days',
+        success: true, newBalance, transferId: transfer.id, netAmount, fee, estimatedArrival: '2-5 business days',
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

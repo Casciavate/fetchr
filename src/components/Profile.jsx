@@ -155,97 +155,6 @@ const SaveCardForm = ({ session, onSuccess, onCancel }) => {
   );
 };
 
-// ── Save Bank Account Form ──
-const SaveBankForm = ({ profile, onSuccess, onCancel }) => {
-  const [bank, setBank] = useState({
-    accountHolderName: profile?.bank_account_holder || '',
-    accountNumber: '',
-    routingNumber: '',
-    country: '',
-    currency: 'usd',
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSave = async () => {
-    if (!bank.accountHolderName.trim()) { setError('Enter account holder name.'); return; }
-    if (!bank.accountNumber.trim()) { setError('Enter account number or IBAN.'); return; }
-    if (!bank.country.trim() || bank.country.length !== 2) {
-      setError('Enter a valid 2-letter country code (e.g. US, GB, AE).'); return;
-    }
-    setLoading(true); setError('');
-    try {
-      const result = await callStripe('save_bank_account', {
-        accountHolderName: bank.accountHolderName,
-        accountNumber: bank.accountNumber.replace(/\s/g, ''),
-        routingNumber: bank.routingNumber,
-        country: bank.country.toUpperCase(),
-        currency: bank.currency || 'usd',
-      });
-      onSuccess(result);
-    } catch (e) {
-      setError(e.message);
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="space-y-3 mt-3">
-      <div className="bg-info-50 rounded-md p-3">
-        <p className="text-body-s font-semibold text-info-500 mb-1">Bank account details</p>
-        <p className="text-body-s text-info-500">
-          For SEPA/international accounts enter IBAN. For US accounts enter account number + routing number.
-        </p>
-      </div>
-
-      {[
-        { label: 'Account holder name (required)', key: 'accountHolderName', placeholder: 'Full name as on bank account' },
-        { label: 'Country code (required)', key: 'country', placeholder: 'e.g. US, GB, AE, DE, AU, SG', maxLen: 2 },
-        { label: 'Account number / IBAN (required)', key: 'accountNumber', placeholder: 'IBAN or account number' },
-        { label: 'Routing number (US only)', key: 'routingNumber', placeholder: '9-digit routing number' },
-        { label: 'Currency', key: 'currency', placeholder: 'usd, gbp, eur, aed...' },
-      ].map(f => (
-        <div key={f.key}>
-          <label className="block text-label text-content-muted mb-1.5 uppercase tracking-wide">
-            {f.label}
-          </label>
-          <input
-            type="text"
-            placeholder={f.placeholder}
-            maxLength={f.maxLen}
-            value={bank[f.key]}
-            onChange={e => setBank({ ...bank, [f.key]: f.key === 'country' ? e.target.value.toUpperCase() : e.target.value })}
-            className="input-field"
-          />
-        </div>
-      ))}
-
-      <div className="bg-info-50 rounded-md p-3">
-        <p className="text-body-s font-semibold text-info-500">Test mode</p>
-        <p className="text-body-s text-info-500 mt-0.5">
-          US: Account <strong>000123456789</strong> · Routing <strong>110000000</strong> · Country <strong>US</strong><br />
-          UK: IBAN <strong>GB29NWBK60161331926819</strong> · Country <strong>GB</strong>
-        </p>
-      </div>
-
-      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
-
-      <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>
-        <button
-          onClick={handleSave}
-          disabled={loading}
-          className="flex-[2] btn-primary py-2.5 text-sm disabled:opacity-50">
-          {loading
-            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving</>
-            : <><Building size={14} /> Save bank account</>
-          }
-        </button>
-      </div>
-    </div>
-  );
-};
-
 // ── Main Profile Component ──
 const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const [profile, setProfile] = useState(null);
@@ -257,7 +166,8 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const [success, setSuccess] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [showCardForm, setShowCardForm] = useState(false);
-  const [showBankForm, setShowBankForm] = useState(false);
+  const [connectStatus, setConnectStatus] = useState(null);
+  const [connectingBank, setConnectingBank] = useState(false);
   const [stats, setStats] = useState({
     flightsActive: 0, flightsCompleted: 0,
     requestsActive: 0, requestsCompleted: 0,
@@ -367,7 +277,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   };
 
   useEffect(() => {
-    fetchProfile(); fetchStats(); fetchReviews(); fetchReceivedReviews();
+    fetchProfile(); fetchStats(); fetchReviews(); fetchReceivedReviews(); fetchConnectStatus();
     const userId = session.user.id;
     const sub = supabase.channel(`profile-rt-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, fetchProfile)
@@ -433,14 +343,26 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
     setSuccess('Card removed.'); setTimeout(() => setSuccess(''), 3000);
   };
 
-  const removeBank = async () => {
-    if (!window.confirm('Remove stored bank account?')) return;
-    await supabase.from('profiles').update({
-      bank_account_last4: null, bank_account_country: null,
-      bank_account_holder: null, stripe_bank_token: null,
-    }).eq('id', session.user.id);
-    setProfile(prev => ({ ...prev, bank_account_last4: null }));
-    setSuccess('Bank account removed.'); setTimeout(() => setSuccess(''), 3000);
+  const fetchConnectStatus = async () => {
+    try { setConnectStatus(await callStripe('connect_account_status')); }
+    catch { setConnectStatus({ connected: false, payoutsEnabled: false }); }
+  };
+
+  const startBankConnect = async () => {
+    setConnectingBank(true); setError('');
+    const isNative = Capacitor.isNativePlatform();
+    const pendingTab = isNative ? null : window.open('', '_blank');
+    try {
+      await callStripe('create_connect_account');
+      const returnUrl = window.location.href;
+      const { url } = await callStripe('create_connect_onboarding_link', { returnUrl, refreshUrl: returnUrl });
+      if (isNative) await Browser.open({ url });
+      else if (pendingTab) pendingTab.location.href = url;
+      else window.open(url, '_blank');
+    } catch (e) {
+      setError(e.message); pendingTab?.close();
+    }
+    setConnectingBank(false);
   };
 
   const handleDeleteAccount = async () => {
@@ -893,74 +815,43 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
           )}
         </div>
 
-        {/* ── Stored Bank Account ── */}
+        {/* ── Payout account (Stripe Connect) ── */}
         <div className="card p-6">
           <div className="flex items-center gap-2 mb-1">
             <Building size={18} className="text-ink-600" />
-            <h3 className="font-display font-semibold text-title-s text-ink-900">Stored bank account</h3>
+            <h3 className="font-display font-semibold text-title-s text-ink-900">Payout account</h3>
           </div>
           <p className="text-body-s text-content-subtle mb-4 leading-relaxed">
-            Used for withdrawals. Bank details are saved via Stripe. Only the last 4 digits are visible.
+            Used for withdrawals. Your bank details are collected and held entirely by Stripe — fetchr
+            never sees your account or routing number.
           </p>
 
-          {profile?.bank_account_last4 ? (
-            <div>
-              <div className="flex items-center justify-between bg-success-tint rounded-md p-4 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-surface rounded-md flex items-center justify-center border border-line">
-                    <Building size={18} className="text-ink-600" />
-                  </div>
-                  <div>
-                    <p className="text-body-s font-bold text-ink-900">
-                      Bank account •••• {profile.bank_account_last4}
-                    </p>
-                    <p className="text-micro text-content-muted mt-0.5">
-                      {profile.bank_account_holder || 'Saved account'} · {profile.bank_account_country || ''}
-                    </p>
-                    <p className="text-micro text-success flex items-center gap-1 mt-0.5">
-                      <CheckCircle size={11} /> Saved · used for withdrawals
-                    </p>
-                  </div>
-                </div>
-                <button onClick={removeBank}
-                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-danger-tint transition-colors">
-                  <Trash2 size={15} className="text-danger" />
-                </button>
+          {connectStatus === null ? (
+            <div className="h-16 bg-surface-sunken rounded-md animate-pulse" />
+          ) : connectStatus.payoutsEnabled ? (
+            <div className="flex items-center gap-3 bg-success-tint rounded-md p-4">
+              <div className="w-10 h-10 bg-surface rounded-md flex items-center justify-center border border-line">
+                <Building size={18} className="text-ink-600" />
               </div>
-              <button onClick={() => setShowBankForm(true)}
-                className="text-body-s text-content font-semibold hover:text-ink-700 underline underline-offset-2">
-                Replace bank account
-              </button>
+              <div>
+                <p className="text-body-s font-bold text-ink-900">Connected via Stripe</p>
+                <p className="text-micro text-success flex items-center gap-1 mt-0.5">
+                  <CheckCircle size={11} /> Ready to receive withdrawals
+                </p>
+              </div>
             </div>
           ) : (
             <>
               <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
                 <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
                 <p className="text-body-s text-info-500">
-                  No bank account saved. Add one to enable withdrawals.
+                  {connectStatus.connected ? 'Onboarding not finished yet.' : 'No bank account connected.'} Required to enable withdrawals.
                 </p>
               </div>
-              <button onClick={() => setShowBankForm(true)} className="btn-secondary">
-                <Building size={14} /> Add bank account
+              <button onClick={startBankConnect} disabled={connectingBank} className="btn-secondary disabled:opacity-50">
+                <Building size={14} /> {connectingBank ? 'Opening Stripe…' : 'Connect your bank via Stripe'}
               </button>
             </>
-          )}
-
-          {showBankForm && (
-            <BottomSheet title="Bank account" onClose={() => setShowBankForm(false)}>
-              <div className="p-5">
-                <SaveBankForm
-                  profile={profile}
-                  onSuccess={(result) => {
-                    setShowBankForm(false);
-                    fetchProfile();
-                    setSuccess(`Bank account ****${result.last4} saved.`);
-                    setTimeout(() => setSuccess(''), 4000);
-                  }}
-                  onCancel={() => setShowBankForm(false)}
-                />
-              </div>
-            </BottomSheet>
           )}
         </div>
 
