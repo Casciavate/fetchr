@@ -31,12 +31,7 @@ const SYSTEM_MSG_PREFIXES = [
 const isSystemMessage = (content) => SYSTEM_MSG_PREFIXES.some(p => content?.startsWith(p));
 
 // Deal-event styling for system messages — a tone + icon per event family,
-// mirroring the handoff's DealEvent card (whole-card tone tint, not just an
-// icon chip). Tones follow this app's own StatusPill/AdvisoryBanner
-// vocabulary (neutral/success/signal/danger) rather than DealEvent's literal
-// names, since 'signal' is already this app's "your turn, needs a response"
-// color everywhere else (StatusPill, btn-signal) — a pending cancellation
-// request reads the same way, so it maps to signal, not a one-off "warning".
+// mirroring the handoff's DealEvent card instead of a plain grey bubble.
 const getSystemEventStyle = (content) => {
   if (content?.startsWith('Deal amended') || content?.startsWith('✏️')) return { icon: Edit2, tone: 'neutral' };
   if (content?.startsWith('Deal completed') || content?.startsWith('Delivery confirmed by') || content?.startsWith('🎉'))
@@ -44,26 +39,19 @@ const getSystemEventStyle = (content) => {
   if (content?.startsWith('Match accepted') || content?.startsWith('Terms agreed') || content?.startsWith('✅'))
     return { icon: CheckCircle, tone: 'success' };
   if (content?.startsWith('Cancellation request:') || content?.startsWith('⚠️'))
-    return { icon: AlertTriangle, tone: 'signal' };
-  // A declined cancellation means the deal continues as before — that's a
-  // relief, not a danger, so it reads as success rather than red. An agreed
-  // cancellation is just a neutral, final outcome (no money moved either way).
-  if (content?.startsWith('Cancellation declined:')) return { icon: CheckCircle, tone: 'success' };
-  if (content?.startsWith('Cancellation agreed:') || content?.startsWith('❌'))
-    return { icon: XCircle, tone: 'neutral' };
+    return { icon: AlertTriangle, tone: 'warning' };
+  if (content?.startsWith('Cancellation agreed:') || content?.startsWith('Cancellation declined:') || content?.startsWith('❌'))
+    return { icon: XCircle, tone: 'danger' };
   if (content?.startsWith('🔒')) return { icon: Lock, tone: 'success' };
   if (content?.startsWith('⏳')) return { icon: Circle, tone: 'neutral' };
   return { icon: Info, tone: 'neutral' };
 };
 
-// All-semantic pairs (never a literal ink-* shade mixed with a semantic
-// surface) so the whole card stays readable under system dark mode — see
-// the render site below for why that mixing is specifically dangerous here.
 const EVENT_TONE_CLASSES = {
-  neutral: { card: 'bg-surface-sunken border-line', icon: 'text-content-muted' },
-  success: { card: 'bg-success-tint border-transparent', icon: 'text-success' },
-  signal: { card: 'bg-accent-tint border-transparent', icon: 'text-accent' },
-  danger: { card: 'bg-danger-tint border-transparent', icon: 'text-danger' },
+  neutral: 'bg-ink-100 text-ink-700',
+  success: 'bg-success-tint text-success',
+  warning: 'bg-warning-tint text-warning',
+  danger: 'bg-danger-tint text-danger',
 };
 
 // ── Deal Details Modal ──
@@ -1040,15 +1028,48 @@ const Messages = ({ session, focusMatchId }) => {
             </div>
 
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Deal details — always visible. The one contextual action
-                  (agree terms/pay escrow/upload proof/confirm delivery)
-                  lives in a single place now — the action bar above the
-                  composer — instead of also being duplicated as small
-                  per-status buttons here, which had started to drift from
-                  getBlockedAction()'s own precedence. */}
+              {/* Deal details — always visible */}
               <button onClick={() => setShowDealDetails(true)} className="btn-secondary px-2.5 text-label">
                 <Info size={12} /> Deal
               </button>
+
+              {/* Agree Terms — the pending action is the one Signal button on this screen.
+                  Mobile surfaces this same action via the sticky bar below the thread. */}
+              {activeMatch.status === 'accepted' && !myTermsAgreed && (
+                <button onClick={agreeToTerms} className="hidden md:inline-flex btn-signal px-3 text-label">
+                  <CheckCircle size={12} /> Agree terms
+                </button>
+              )}
+
+              {/* Pay Escrow — SENDER ONLY */}
+              {isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
+                <button onClick={() => { setShowPayment(!showPayment); setShowCancelRequest(false); }}
+                  className={`hidden md:inline-flex ${showPayment ? 'btn-secondary px-3 text-label' : 'btn-signal px-3 text-label'}`}>
+                  <Shield size={12} /> Pay escrow
+                </button>
+              )}
+
+              {/* Upload Proof — traveller only */}
+              {isTraveler(activeMatch) && activeMatch.status === 'in_escrow' && (
+                <button onClick={() => setShowProofModal(true)} className="hidden md:inline-flex btn-signal px-3 text-label">
+                  <Camera size={12} /> Upload proof
+                </button>
+              )}
+
+              {/* Confirm Delivery — blocked until the flight has actually taken place */}
+              {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && (
+                <button onClick={handleCompleteDeal}
+                  disabled={submittingComplete || myCompleted || !flightHasDeparted(activeMatch)}
+                  title={!flightHasDeparted(activeMatch) ? `Available once the flight on ${new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} has taken place` : undefined}
+                  className={`hidden md:inline-flex ${
+                    myCompleted || !flightHasDeparted(activeMatch)
+                      ? 'items-center gap-1 h-11 px-3 rounded-md text-label font-display font-semibold bg-ink-100 text-ink-400 cursor-not-allowed'
+                      : 'btn-signal px-3 text-label'
+                  }`}>
+                  <CheckCircle size={12} />
+                  {myCompleted ? 'Waiting' : !flightHasDeparted(activeMatch) ? 'Not yet flown' : otherCompleted ? 'Confirm & release' : 'Confirm delivery'}
+                </button>
+              )}
 
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
                 className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
@@ -1057,20 +1078,9 @@ const Messages = ({ session, focusMatchId }) => {
             </div>
           </div>
 
-          {/* Pinned deal stub — mobile only; route, amount, escrow state, tap for
-              the full ticket. Left edge takes the same state-driven tone color
-              as the design system's DealStub/CargoTag ticket motif (signal =
-              your turn, success = funds secured, danger = a cancellation needs
-              a response) — kept the StatusPill on the right instead of
-              DealStub's bare chevron, since "whose turn is it" is more useful
-              here than a plain expand affordance. */}
+          {/* Pinned deal stub — mobile only; route, amount, escrow state, tap for the full ticket */}
           <button onClick={() => setShowDealDetails(true)}
-            className={`md:hidden flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left border-l-[3px] ${
-              cancelRequest ? 'border-l-danger'
-                : blockedAction ? 'border-l-accent'
-                : ['in_escrow', 'proof_uploaded', 'completed'].includes(activeMatch.status) ? 'border-l-success'
-                : 'border-l-transparent'
-            }`}>
+            className="md:hidden flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left">
             <div className="flex-1 min-w-0">
               <p className="font-mono text-body-s font-semibold text-ink-900">
                 {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
@@ -1140,12 +1150,6 @@ const Messages = ({ session, focusMatchId }) => {
           {/* Escrow panel — SENDER ONLY */}
           {showPayment && isShipper(activeMatch) && activeMatch.status === 'terms_agreed' && (
             <div className="border-b border-line bg-surface-sunken overflow-y-auto max-h-96 flex-shrink-0">
-              <div className="flex justify-end px-3 pt-2">
-                <button onClick={() => setShowPayment(false)} aria-label="Close"
-                  className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface transition text-content-muted">
-                  <X size={16} />
-                </button>
-              </div>
               <EscrowPayment match={activeMatch} session={session}
                 onPaymentComplete={async () => { setShowPayment(false); await fetchMatches(); if (activeMatch) await fetchMessages(activeMatch.id); }} />
             </div>
@@ -1222,23 +1226,18 @@ const Messages = ({ session, focusMatchId }) => {
               }
               if (isSystemMessage(msg.content)) {
                 const { icon: EventIcon, tone } = getSystemEventStyle(msg.content);
-                const toneClasses = EVENT_TONE_CLASSES[tone];
                 return (
                   <div key={msg.id} className="flex justify-center">
-                    {/* Whole card carries the tone tint (matching DealEvent),
-                        not just the icon chip — every class here is semantic
-                        (card bg, icon, body, timestamp) so it stays paired and
-                        readable under system dark mode. A literal ink-* shade
-                        mixed with any of these would reproduce the black-on-
-                        black bug this card used to have when it was a flat
-                        bg-ink-50 + text-ink-900 pairing. */}
-                    <div className={`flex items-start gap-2.5 border rounded-lg px-3.5 py-2.5 max-w-sm w-full ${toneClasses.card}`}>
-                      <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${toneClasses.icon}`}>
+                    {/* bg-ink-50, not bg-surface-sunken — that semantic token goes
+                        near-black under system dark mode while text-ink-900 stays
+                        literal-dark, producing the black-on-black bug. */}
+                    <div className="flex items-start gap-2.5 bg-ink-50 border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
+                      <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${EVENT_TONE_CLASSES[tone]}`}>
                         <EventIcon size={14} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-body-s text-content leading-relaxed">{msg.content}</p>
-                        <p className="font-mono text-micro text-content-subtle mt-0.5">
+                        <p className="text-body-s text-ink-900 leading-relaxed">{msg.content}</p>
+                        <p className="font-mono text-micro text-ink-500 mt-0.5">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                         </p>
                       </div>
@@ -1271,14 +1270,11 @@ const Messages = ({ session, focusMatchId }) => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input — replaced by the single blocked action (same one
-              getBlockedAction() already computes) on every viewport, not
-              just mobile: one prominent, unambiguous next step instead of
-              a normal composer, with an explicit escape hatch to just
-              message instead. */}
+          {/* Input — mobile replaces this with the single blocked action while one
+              exists, per the handoff; desktop always shows the composer. */}
           <div className="border-t border-line flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             {blockedAction && !mobileComposerOpen ? (
-              <div className="p-3 space-y-2">
+              <div className="md:hidden p-3 space-y-2">
                 <button onClick={blockedAction.onClick} className="btn-signal w-full">
                   <blockedAction.icon size={16} /> {blockedAction.label}
                 </button>
@@ -1287,11 +1283,11 @@ const Messages = ({ session, focusMatchId }) => {
                   Message instead
                 </button>
               </div>
-            ) : (
-              <div className="p-3">
+            ) : null}
+            <div className={`${blockedAction && !mobileComposerOpen ? 'hidden' : ''} md:block p-3`}>
               {blockedAction && (
                 <button onClick={() => setMobileComposerOpen(false)}
-                  className="mb-2 flex items-center gap-1.5 text-label text-content-muted">
+                  className="md:hidden mb-2 flex items-center gap-1.5 text-label text-content-muted">
                   <blockedAction.icon size={12} /> Back to {blockedAction.label}
                 </button>
               )}
@@ -1306,7 +1302,6 @@ const Messages = ({ session, focusMatchId }) => {
                 </button>
               </div>
             </div>
-            )}
           </div>
         </div>
       ) : (
