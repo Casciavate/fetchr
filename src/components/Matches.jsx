@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Search, CheckCircle, XCircle, Ticket, MessageCircle,
-  ChevronRight, ChevronDown, ChevronUp, X, Award, Globe,
-  AlertTriangle, Info, List, LayoutGrid
+  ChevronRight, ChevronDown, ChevronUp, X, Award,
+  AlertTriangle, Info, List, LayoutGrid, Plane, Package
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
 import VerificationBadge from './shared/VerificationBadge';
@@ -12,6 +12,7 @@ import EmptyState from './shared/EmptyState';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Toast from './shared/Toast';
+import DealInfoSections from './shared/DealInfoSections';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
@@ -53,6 +54,7 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
   const [reviewsFor, setReviewsFor] = useState(null);
   const [acting, setActing] = useState({});
   const [viewingProfile, setViewingProfile] = useState(null);
+  const [showMoreProfile, setShowMoreProfile] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState('');
   const consumedFocusIdRef = useRef(null);
@@ -102,8 +104,15 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
 
   const fetchProfile = async (userId) => {
     setProfileLoading(true);
+    setShowMoreProfile(false);
+    // Whitelisted columns only — never nationality/phone (profiles also
+    // has no email column; that lives on auth.users and is never queried
+    // here), so a matched user's profile can never leak either, even by a
+    // future careless select('*').
     const { data } = await supabase
-      .from('profiles').select('*').eq('id', userId).single();
+      .from('profiles')
+      .select('id, full_name, avatar_url, bio, rating, total_reviews, response_rate, verified, languages')
+      .eq('id', userId).single();
     const { count: flightsCount } = await supabase
       .from('flights').select('id', { count: 'exact' }).eq('user_id', userId);
     const { count: dealsCount } = await supabase
@@ -418,47 +427,19 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {isExpanded && (
-            <div className="bg-surface-sunken rounded-md border border-line p-3 space-y-2">
-              {match.request?.description && (
-                <p className="text-body-s text-content-muted">{match.request.description}</p>
+            <div className="space-y-3">
+              <DealInfoSections match={match} />
+
+              {match.flight?.available_kg != null && (
+                <div className="bg-surface-sunken rounded-md border border-line p-3 flex items-center justify-between text-body-s">
+                  <span className="text-content-subtle">
+                    {match.luggage_type ? `${match.luggage_type === 'carry_on' ? 'Hand' : 'Check-in'} allowance free` : 'Flight capacity free'}
+                  </span>
+                  <span className="font-mono font-medium text-content">{getFlightRemainingKg(match).toFixed(1)} kg</span>
+                </div>
               )}
-              <div className="grid grid-cols-2 gap-2 text-body-s">
-                <div>
-                  <p className="text-micro text-content-subtle">Category</p>
-                  <p className="font-medium text-content">{match.request?.category || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-micro text-content-subtle">Weight</p>
-                  <p className="font-mono font-medium text-content">{match.request?.weight_kg} kg</p>
-                </div>
-                {match.luggage_type && (
-                  <div>
-                    <p className="text-micro text-content-subtle">Luggage allowance</p>
-                    <p className="font-medium text-content">{match.luggage_type === 'carry_on' ? 'Hand luggage' : 'Check-in luggage'}</p>
-                  </div>
-                )}
-                {match.flight?.available_kg != null && (
-                  <div>
-                    <p className="text-micro text-content-subtle">
-                      {match.luggage_type ? `${match.luggage_type === 'carry_on' ? 'Hand' : 'Check-in'} allowance free` : 'Flight capacity free'}
-                    </p>
-                    <p className="font-mono font-medium text-content">
-                      {getFlightRemainingKg(match).toFixed(1)} kg
-                    </p>
-                  </div>
-                )}
-                {match.request?.dimensions && (
-                  <div>
-                    <p className="text-micro text-content-subtle">Dimensions</p>
-                    <p className="font-medium text-content">{match.request.dimensions}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-micro text-content-subtle">Airline</p>
-                  <p className="font-medium text-content">{match.flight?.airline || '—'}</p>
-                </div>
-              </div>
-              <div className="border-t border-line pt-2 space-y-1">
+
+              <div className="bg-surface-sunken rounded-md border border-line p-3 space-y-1">
                 <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>{match.request?.weight_kg}kg × ${resolveOptionPrice(match.flight, match.luggage_type)}/kg</span>
                   <span>${fees.transportFee.toFixed(2)}</span>
@@ -586,6 +567,26 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     return true;
   });
 
+  // Group by the listing this match is tied to (my flight if I'm the
+  // traveler, my request if I'm the shipper) — the same "Your flights" /
+  // "Your requests" structure Home's tiles and Messages' sidebar already
+  // use, so a match here is never a disconnected ticket: it's always shown
+  // under the exact flight/request card the user already recognizes from
+  // Home. Order groups by their most-relevant match (highest score) so an
+  // active listing with a strong match surfaces first.
+  const groupByListing = (list, idField, entityField) => {
+    const byId = new Map();
+    for (const m of list) {
+      const id = m[idField];
+      if (!byId.has(id)) byId.set(id, { entity: m[entityField], matches: [] });
+      byId.get(id).matches.push(m);
+    }
+    return Array.from(byId.values())
+      .sort((a, b) => Math.max(...b.matches.map(m => m.match_score || 0)) - Math.max(...a.matches.map(m => m.match_score || 0)));
+  };
+  const flightGroups = groupByListing(filteredMatches.filter(isTraveler), 'flight_id', 'flight');
+  const requestGroups = groupByListing(filteredMatches.filter(m => !isTraveler(m)), 'request_id', 'request');
+
   return (
     <div className="max-w-3xl mx-auto animate-fade-in">
       <Toast message={error} tone="error" />
@@ -632,17 +633,50 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
           body="Add a flight or shipment request and we'll find your match automatically." />
       ) : (
         <>
-          {/* Desktop always shows list — carousel is a mobile-only view */}
-          <div className="hidden md:block space-y-4">
-            {filteredMatches.map(m => renderMatchCard(m))}
-          </div>
-          <div className="md:hidden">
-            {viewMode === 'carousel' ? (
-              <CardStack items={filteredMatches} keyFn={m => m.id} renderItem={renderMatchCard} />
-            ) : (
-              <div className="space-y-4">
-                {filteredMatches.map(m => renderMatchCard(m))}
+          {/* List view (desktop always; mobile when not in carousel mode) —
+              grouped by listing so this reads as "your flight/request, and
+              the matches under it", the same structure as Home and Messages'
+              sidebar, instead of a flat pile of disconnected tickets. */}
+          <div className={viewMode === 'carousel' ? 'hidden md:block space-y-6' : 'space-y-6'}>
+            {flightGroups.length > 0 && (
+              <div className="space-y-3">
+                <p className="font-mono text-overline uppercase text-content-subtle px-1">Your flights</p>
+                {flightGroups.map(group => (
+                  <div key={`f-${group.entity?.id}`} className="space-y-3">
+                    <div className="flex items-center gap-1.5 px-1">
+                      <Plane size={12} className="text-ink-400 flex-shrink-0" />
+                      <p className="text-body-s font-semibold text-content-muted truncate">
+                        {group.entity?.from_code} → {group.entity?.to_code}
+                        {group.entity?.flight_date ? ` · ${new Date(group.entity.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : ''}
+                      </p>
+                    </div>
+                    <div className="space-y-4">{group.matches.map(m => renderMatchCard(m))}</div>
+                  </div>
+                ))}
               </div>
+            )}
+
+            {requestGroups.length > 0 && (
+              <div className="space-y-3">
+                <p className="font-mono text-overline uppercase text-content-subtle px-1">Your requests</p>
+                {requestGroups.map(group => (
+                  <div key={`r-${group.entity?.id}`} className="space-y-3">
+                    <div className="flex items-center gap-1.5 px-1">
+                      <Package size={12} className="text-ink-400 flex-shrink-0" />
+                      <p className="text-body-s font-semibold text-content-muted truncate">{group.entity?.item_name}</p>
+                    </div>
+                    <div className="space-y-4">{group.matches.map(m => renderMatchCard(m))}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Carousel — mobile-only, one match at a time; browsing mode, so
+              it stays a flat swipeable stack rather than grouped sections. */}
+          <div className="md:hidden">
+            {viewMode === 'carousel' && (
+              <CardStack items={filteredMatches} keyFn={m => m.id} renderItem={renderMatchCard} />
             )}
           </div>
         </>
@@ -711,20 +745,26 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
                   ))}
                 </div>
 
-                <div className="space-y-2.5 mb-5">
-                  {viewingProfile?.nationality && (
-                    <div className="flex items-center gap-2.5 text-body-m text-content-muted">
-                      <Globe size={15} className="text-ink-400 flex-shrink-0" />
-                      <span>{viewingProfile.nationality}</span>
-                    </div>
-                  )}
-                  {viewingProfile?.languages?.length > 0 && (
-                    <div className="flex items-center gap-2.5 text-body-m text-content-muted">
-                      <Award size={15} className="text-ink-400 flex-shrink-0" />
-                      <span>{viewingProfile.languages.join(', ')}</span>
-                    </div>
-                  )}
-                </div>
+                {/* Additional details — non-sensitive only. Nationality,
+                    email and phone are never shown here regardless of what
+                    the query returns; only languages currently qualify. */}
+                {viewingProfile?.languages?.length > 0 && (
+                  <div className="mb-5">
+                    <button onClick={() => setShowMoreProfile(!showMoreProfile)}
+                      className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-1">
+                      {showMoreProfile ? 'Hide additional details' : 'View additional details'}
+                      {showMoreProfile ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {showMoreProfile && (
+                      <div className="bg-surface-sunken rounded-md border border-line p-3 mt-2">
+                        <div className="flex items-center gap-2.5 text-body-m text-content-muted">
+                          <Award size={15} className="text-ink-400 flex-shrink-0" />
+                          <span>Speaks {viewingProfile.languages.join(', ')}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <button onClick={() => setViewingProfile(null)} className="btn-primary w-full py-3">
                   Close profile

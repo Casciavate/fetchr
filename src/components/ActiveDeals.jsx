@@ -187,6 +187,16 @@ const ActiveDeals = ({ session, onNavigate }) => {
     return STAGE_INFO[s] || STAGE_INFO['accepted'];
   };
 
+  // Same flight-departed gate Messages.jsx's getBlockedAction() and
+  // handleCompleteDeal() enforce — without it this pill/section could tell
+  // the user "Your turn · Confirm delivery" for a deal Chat would actually
+  // refuse to let them confirm yet (flight hasn't flown), one screen
+  // claiming an action is ready when another blocks it.
+  const flightHasDeparted = (deal) => {
+    if (!deal?.flight?.flight_date) return true;
+    return deal.flight.flight_date <= new Date().toISOString().split('T')[0];
+  };
+
   const myActionNeeded = (deal) => {
     const isTrav = isTraveler(deal);
     const status = deal.deal_stage || deal.status;
@@ -198,7 +208,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
     if (status === 'in_escrow') return isTrav; // traveller needs to upload proof
     if (status === 'proof_uploaded') {
       const myDone = isTrav ? deal.traveler_completed : deal.shipper_completed;
-      return !myDone;
+      return !myDone && flightHasDeparted(deal);
     }
     return false;
   };
