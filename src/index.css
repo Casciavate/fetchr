@@ -101,6 +101,18 @@
   --font-sans:    "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* Type-scale steps as raw CSS vars — same values as the text-* Tailwind
+     utilities below (tailwind.config.js), sourced verbatim from the
+     Claude Design system's tokens/typography.css. Only the steps
+     CargoTag.jsx actually references; everything else in this app reads
+     the scale via Tailwind classes instead. */
+  --text-overline:0.625rem; --ls-overline:0.16em;
+  --text-micro:0.6875rem;
+  --text-title-s:1rem;
+  --text-code-l:1.25rem;    --ls-code-xl:-0.02em;
+  --text-num-m:0.875rem;
+  --text-num-l:1.25rem;     --ls-num-l:-0.01em;
+
   /* ── Space ──────────────────────────────── */
   --space-px:1px;  --space-0-5:2px; --space-1:4px;  --space-2:8px;
   --space-3:12px;  --space-4:16px;  --space-5:20px; --space-6:24px;

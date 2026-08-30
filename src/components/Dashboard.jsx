@@ -21,6 +21,7 @@ import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Barcode from './shared/Barcode';
+import CargoTag from './shared/CargoTag';
 import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
@@ -49,6 +50,23 @@ const BareGlyph = ({ size = 20 }) => (
     <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
   </svg>
 );
+
+// Maps shipment_requests.category (see NewRequest.jsx's CATEGORIES) to a
+// CargoTag categoryIcon name.
+const CATEGORY_ICONS = {
+  'Electronics': 'Smartphone',
+  'Clothing & Fashion': 'Shirt',
+  'Cosmetics & Beauty': 'Sparkles',
+  'Food & Beverages': 'UtensilsCrossed',
+  'Books & Stationery': 'BookOpen',
+  'Toys & Games': 'Gamepad2',
+  'Medical & Pharmacy': 'Pill',
+  'Jewelry & Accessories': 'Gem',
+  'Sports & Fitness': 'Dumbbell',
+  'Home & Living': 'Home',
+  'Documents': 'FileText',
+  'Other': 'Package',
+};
 
 const AirlineLogo = ({ airline }) => {
   const code = AIRLINE_CODES[airline];
@@ -493,17 +511,40 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
 
     const renderFlightTile = (flight) => {
       const free = remainingKg(flight);
-      // Confirmed = deals both sides have agreed terms on (or beyond);
-      // potential = matches on this flight that haven't been mutually
-      // confirmed yet — computed live from the same allMatches this whole
-      // screen already fetches, never a stale/duplicated total.
       const myMatches = allMatches.filter(m => m.flight_id === flight.id);
-      const confirmedEarnings = myMatches
-        .filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status))
-        .reduce((sum, m) => sum + calcFees(m).travelerReceives, 0);
-      const potentialEarnings = myMatches
-        .filter(m => ['pending', 'awaiting_other', 'accepted'].includes(m.status))
-        .reduce((sum, m) => sum + calcFees(m).travelerReceives, 0);
+      const dealWeightKg = (m) => Number(m.agreed_weight_kg || m.request?.weight_kg || 0);
+      // Accumulate in order, skipping any deal that would push the running
+      // total past the kg budget — the same capacity kg is never counted
+      // into more than one deal's earnings.
+      const sumCappedByWeight = (matches, capKg) => {
+        let usedKg = 0, total = 0;
+        for (const m of matches) {
+          const w = dealWeightKg(m);
+          if (usedKg + w > capKg) continue;
+          usedKg += w;
+          total += calcFees(m).travelerReceives;
+        }
+        return total;
+      };
+      const totalCapacityKg = Number(flight.available_kg) || 0;
+      // Potential Earnings — deals both users have agreed/accepted
+      // (terms_agreed+). Already capacity-validated server-side at accept
+      // time (enforce_flight_capacity), capped again here defensively
+      // against the flight's current advertised capacity.
+      const potentialEarnings = sumCappedByWeight(
+        myMatches.filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status)),
+        totalCapacityKg
+      );
+      // Open Deals — matched but not yet mutually accepted/agreed.
+      // 'accepted' matches already have their weight reserved (booked_kg,
+      // server-validated) so they count in full; 'pending'/'awaiting_other'
+      // ones haven't claimed anything yet and could jointly overrepresent
+      // what's actually still free, so only those are capped against the
+      // flight's current remaining capacity.
+      const acceptedNotAgreed = myMatches.filter(m => m.status === 'accepted');
+      const openDeals =
+        acceptedNotAgreed.reduce((sum, m) => sum + calcFees(m).travelerReceives, 0) +
+        sumCappedByWeight(myMatches.filter(m => ['pending', 'awaiting_other'].includes(m.status)), free);
       return (
         <div className="ticket cursor-pointer"
           onClick={(e) => { e.stopPropagation(); navigate('flights', { focusFlightId: flight.id }); }}>
@@ -545,15 +586,16 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
               <span className="flex items-center gap-1.5 text-body-s text-content-muted"><Weight size={14} /> Remaining capacity</span>
               <span className={`font-mono font-semibold text-num-m ${free <= 0 ? 'text-danger' : 'text-success'}`}>{free.toFixed(1)} kg</span>
             </div>
-            {(confirmedEarnings > 0 || potentialEarnings > 0) && (
+            {potentialEarnings > 0 && (
               <div className="flex items-center justify-between text-body-s">
-                <span className="text-content-muted">Earnings</span>
-                <span className="font-mono font-semibold text-num-m text-success">
-                  ${confirmedEarnings.toFixed(2)}
-                  {potentialEarnings > 0 && (
-                    <span className="text-content-subtle font-normal"> +${potentialEarnings.toFixed(2)} potential</span>
-                  )}
-                </span>
+                <span className="text-content-muted">Potential Earnings</span>
+                <span className="font-mono font-semibold text-num-m text-success">${potentialEarnings.toFixed(2)}</span>
+              </div>
+            )}
+            {openDeals > 0 && (
+              <div className="flex items-center justify-between text-body-s">
+                <span className="text-content-muted">Open Deals</span>
+                <span className="font-mono font-semibold text-num-m text-content-subtle">${openDeals.toFixed(2)}</span>
               </div>
             )}
           </div>
@@ -562,74 +604,30 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
     };
 
     const renderRequestTile = (request) => {
-      // Same confirmed/potential split as the flight tile's earnings, on
-      // the shipper's side of the same calcFees breakdown — live from
-      // allMatches, never the request's own stale advertised budget once
-      // a real match exists.
+      // Potential spend = the most this request could cost, i.e. the
+      // single most expensive eligible match — a user ultimately picks
+      // one deal, so summing every candidate overstates it. Falls back to
+      // the request's own advertised budget only when there's no match yet.
       const myMatches = allMatches.filter(m => m.request_id === request.id);
-      const confirmedSpend = myMatches
-        .filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status))
-        .reduce((sum, m) => sum + calcFees(m).shipperPays, 0);
-      const potentialSpend = myMatches
-        .filter(m => ['pending', 'awaiting_other', 'accepted'].includes(m.status))
-        .reduce((sum, m) => sum + calcFees(m).shipperPays, 0);
+      const spendAmounts = myMatches.map(m => calcFees(m).shipperPays);
       const advertisedBudget = request.max_budget || (request.budget_per_kg ? request.budget_per_kg * request.weight_kg : 0);
-      const totalSpend = (confirmedSpend + potentialSpend) || advertisedBudget;
+      const maxSpend = spendAmounts.length > 0 ? Math.max(...spendAmounts) : advertisedBudget;
 
       return (
-        <div className="ticket cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); navigate('my-requests', { focusRequestId: request.id }); }}>
-          <div className="h-9 bg-ink-900 flex items-center justify-between px-3.5">
-            <div className="flex items-center gap-1.5">
-              <BareGlyph size={15} />
-              <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
-            </div>
-            <span className="font-mono text-[10px] text-ink-300 uppercase">REQUEST · #{request.id.slice(0, 6).toUpperCase()}</span>
-          </div>
-          <div className="px-4 py-3.5 space-y-3.5">
-            {/* Cargo-container visual — the item "shipped" inside a
-                corrugated container, luggage-tag label hanging off it. */}
-            <div className="relative rounded-lg border-2 border-ink-900 overflow-hidden">
-              <div className="h-2" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #DC5518 0 8px, #a83c12 8px 16px)' }} />
-              <div className="py-5 flex items-center justify-center bg-ink-800">
-                <Package size={30} className="text-paper-100" strokeWidth={1.5} />
-              </div>
-              <div className="h-2" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #DC5518 0 8px, #a83c12 8px 16px)' }} />
-              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-paper-100 border border-ink-900 rounded px-2.5 py-1 shadow-sm max-w-[85%]">
-                <p className="font-mono text-[10px] font-bold text-ink-900 truncate">{request.item_name}</p>
-              </div>
-            </div>
-            <p className="text-center text-micro text-content-subtle pt-1">{request.category}</p>
-
-            <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-              <div className="min-w-0">
-                <p className="font-mono text-overline uppercase text-ink-400">From</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{request.from_code}</p>
-              </div>
-              <div className="flex items-center justify-center pt-4">
-                <div className="w-7 border-t border-dashed border-line-perf" />
-              </div>
-              <div className="min-w-0 text-right">
-                <p className="font-mono text-overline uppercase text-ink-400">To</p>
-                <p className="font-mono font-semibold text-code-l text-ink-900 leading-none mt-0.5">{request.to_code}</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between border-t border-line pt-2.5 text-body-s">
-              <span className="text-content-muted">Needed by</span>
-              <span className="font-mono font-semibold text-ink-900">
-                {request.needed_by
-                  ? new Date(request.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                  : '—'}
-              </span>
-            </div>
-            {totalSpend > 0 && (
-              <div className="flex items-center justify-between text-body-s">
-                <span className="text-content-muted">Potential spend</span>
-                <span className="font-mono font-semibold text-num-m text-ink-900">${totalSpend.toFixed(2)}</span>
-              </div>
-            )}
-          </div>
-        </div>
+        <CargoTag
+          itemName={request.item_name}
+          category={request.category}
+          categoryIcon={CATEGORY_ICONS[request.category] || 'Package'}
+          from={{ code: request.from_code, city: request.from_city }}
+          to={{ code: request.to_code, city: request.to_city }}
+          neededBy={request.needed_by
+            ? new Date(request.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+            : '—'}
+          spend={`$${maxSpend.toFixed(2)}`}
+          interactive
+          style={{ cursor: 'pointer' }}
+          onClick={(e) => { e.stopPropagation(); navigate('my-requests', { focusRequestId: request.id }); }}
+        />
       );
     };
 
