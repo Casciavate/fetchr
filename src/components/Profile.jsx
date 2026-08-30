@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
@@ -466,9 +468,18 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
 
   const startVerification = async () => {
     setStartingVerification(true); setVerificationError('');
+    // On web, a tab opened via window.open() only counts as user-initiated
+    // (bypassing the popup blocker) if it happens synchronously inside the
+    // click handler — opening it AFTER the awaited fetch below is exactly
+    // what silently got blocked. Open a blank tab now, redirect it once we
+    // have the real URL. Capacitor's native WKWebView doesn't support
+    // window.open at all (that's the "nothing happens" on iOS), so native
+    // uses the Browser plugin's real modal instead and skips this.
+    const isNative = Capacitor.isNativePlatform();
+    const pendingTab = isNative ? null : window.open('', '_blank');
     try {
       const { data: { session: authSession } } = await supabase.auth.getSession();
-      if (!authSession) { setVerificationError('Session expired. Please sign in again.'); setStartingVerification(false); return; }
+      if (!authSession) { setVerificationError('Session expired. Please sign in again.'); setStartingVerification(false); pendingTab?.close(); return; }
       const res = await fetch(
         'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-identity',
         {
@@ -478,12 +489,16 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
         }
       );
       const result = await res.json();
-      if (!res.ok || result.error) { setVerificationError(result.error || 'Could not start verification.'); setStartingVerification(false); return; }
-      if (result.alreadyVerified) { setStartingVerification(false); return; }
-      // Stripe's hosted document+selfie flow — opened in a new tab/system
-      // browser rather than navigating the app away from itself.
-      window.open(result.url, '_blank');
-    } catch (e) { setVerificationError('Network error. Please try again.'); }
+      if (!res.ok || result.error) { setVerificationError(result.error || 'Could not start verification.'); setStartingVerification(false); pendingTab?.close(); return; }
+      if (result.alreadyVerified) { setStartingVerification(false); pendingTab?.close(); return; }
+      if (isNative) {
+        await Browser.open({ url: result.url });
+      } else if (pendingTab) {
+        pendingTab.location.href = result.url;
+      } else {
+        window.open(result.url, '_blank');
+      }
+    } catch (e) { setVerificationError('Network error. Please try again.'); pendingTab?.close(); }
     setStartingVerification(false);
   };
 
