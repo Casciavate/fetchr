@@ -120,6 +120,7 @@ const NewRequest = ({ session }) => {
     item_name: '',
     description: '',
     category: '',
+    is_liquid: false,
     from_city: '', from_code: '',
     to_city: '', to_code: '',
     weight_kg: '',
@@ -232,6 +233,7 @@ const NewRequest = ({ session }) => {
       item_name: form.item_name,
       description: form.description,
       category: form.category,
+      is_liquid: form.is_liquid,
       from_city: form.from_city || form.from_code,
       from_code: form.from_code.toUpperCase(),
       to_city: form.to_city || form.to_code,
@@ -378,6 +380,19 @@ const NewRequest = ({ session }) => {
                 </button>
               ))}
             </div>
+            <label className="flex items-center gap-2 mt-2.5 text-body-s text-content-muted cursor-pointer">
+              <input type="checkbox" checked={form.is_liquid}
+                onChange={e => setForm({ ...form, is_liquid: e.target.checked })}
+                className="w-4 h-4 rounded border-line-strong" />
+              Contains liquids, gels or aerosols (drinks, perfume, cosmetics...)
+            </label>
+            {form.is_liquid && (
+              <p className="text-micro text-content-subtle mt-1">
+                Airport security only allows liquids past the gate if they're bought duty-free
+                after check-in — so this can only be carried as hand luggage when it's a Shop
+                &amp; Ship item the traveller buys airside. Otherwise it needs to go check-in.
+              </p>
+            )}
           </div>
 
           <div>

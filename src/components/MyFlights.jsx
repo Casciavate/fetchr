@@ -211,6 +211,7 @@ const MyFlights = ({ session, onAddFlight }) => {
       categories: flight.categories || [],
       notes: (flight.notes || '').replace(/\nLuggage options:.*$/s, '').trim(),
       delivery_type: flight.delivery_type || 'handover',
+      fill_priority: flight.fill_priority || '',
       shop_and_ship_fee: flight.shop_and_ship_fee?.toString() || '',
       handover_location_departure: flight.handover_location_departure || '',
       handover_location_arrival: flight.handover_location_arrival || '',
@@ -267,10 +268,12 @@ const MyFlights = ({ session, onAddFlight }) => {
         type: l.type,
         available_kg: parseFloat(l.available_kg),
         price_per_kg: parseFloat(l.price_per_kg),
+        booked_kg: parseFloat(l.booked_kg) || 0,
       })),
       categories: editForm.categories,
       notes: [editForm.notes, `Luggage options: ${luggageJson}`].filter(Boolean).join('\n'),
       delivery_type: editForm.delivery_type,
+      fill_priority: editForm.fill_priority || null,
       shop_and_ship_fee: parseFloat(editForm.shop_and_ship_fee) || 0,
       handover_location_departure: editForm.handover_location_departure,
       handover_location_arrival: editForm.handover_location_arrival,
@@ -593,6 +596,31 @@ const MyFlights = ({ session, onAddFlight }) => {
                             />
                           ))}
                         </div>
+
+                        {editLuggage.some(l => l.type === 'carry_on') && editLuggage.some(l => l.type === 'checkin') && (
+                          <div className="mt-3">
+                            <label className="block text-label text-content-muted mb-2 uppercase">
+                              Which do you want to fill first?
+                            </label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { value: 'carry_on', label: 'Hand luggage' },
+                                { value: 'checkin', label: 'Check-in' },
+                                { value: '', label: 'No preference' },
+                              ].map(opt => (
+                                <button key={opt.value} type="button"
+                                  onClick={() => setEditForm({ ...editForm, fill_priority: opt.value })}
+                                  className={`px-2 py-2 rounded-md text-label font-semibold border transition-all ${
+                                    (editForm.fill_priority || '') === opt.value
+                                      ? 'bg-ink-900 text-paper-100 border-ink-900'
+                                      : 'bg-surface border-line text-content-muted'
+                                  }`}>
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div>

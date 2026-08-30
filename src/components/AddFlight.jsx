@@ -235,6 +235,7 @@ const AddFlight = ({ session }) => {
     safetyAcknowledged: false,
     delivery_type: 'handover',
     shop_and_ship_fee: '',
+    fill_priority: '',
     handover_location_departure: '',
     handover_location_arrival: '',
   });
@@ -479,6 +480,7 @@ const AddFlight = ({ session }) => {
       categories: form.categories,
       notes: [form.notes, `Luggage options: ${luggageJson}`].filter(Boolean).join('\n'),
       status: 'active',
+      fill_priority: form.fill_priority || null,
       delivery_type: form.delivery_type,
       shop_and_ship_fee: parseFloat(form.shop_and_ship_fee) || 0,
       handover_location_departure: form.handover_location_departure,
@@ -495,7 +497,7 @@ const AddFlight = ({ session }) => {
       from_city: '', from_code: '', to_city: '', to_code: '',
       flight_date: '', flight_number: '', airline: '',
       categories: [], notes: '', safetyAcknowledged: false,
-      delivery_type: 'handover', shop_and_ship_fee: '',
+      delivery_type: 'handover', shop_and_ship_fee: '', fill_priority: '',
       handover_location_departure: '', handover_location_arrival: '',
     });
     setLuggageOptions([]);
@@ -870,6 +872,34 @@ const AddFlight = ({ session }) => {
                   <p className="text-body-m font-semibold text-ink-900">{totalKg.toFixed(1)} kg total</p>
                   <p className="text-body-s text-success font-semibold">${totalNet.toFixed(2)} net</p>
                 </div>
+              </div>
+            )}
+
+            {hasCarryOn && hasCheckin && (
+              <div className="mt-3">
+                <label className="block text-label text-content-muted mb-2 uppercase">
+                  Which do you want to fill first?
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'carry_on', label: 'Hand luggage' },
+                    { value: 'checkin', label: 'Check-in' },
+                    { value: '', label: 'No preference' },
+                  ].map(opt => (
+                    <button key={opt.value} type="button"
+                      onClick={() => setForm({ ...form, fill_priority: opt.value })}
+                      className={`px-2 py-2 rounded-md text-label font-semibold border transition-all ${
+                        (form.fill_priority || '') === opt.value
+                          ? 'bg-ink-900 text-paper-100 border-ink-900'
+                          : 'bg-surface border-line text-content-muted'
+                      }`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-micro text-content-subtle mt-1">
+                  When a request could go in either, we'll offer this one first (still won't overfill it).
+                </p>
               </div>
             )}
           </div>

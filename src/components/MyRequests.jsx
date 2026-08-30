@@ -109,6 +109,7 @@ const MyRequests = ({ session, onNewRequest }) => {
     setEditingId(req.id);
     setEditForm({
       item_name: req.item_name || '', category: req.category || '',
+      is_liquid: req.is_liquid || false,
       description: req.description || '', weight_kg: req.weight_kg || '',
       budget_per_kg: req.budget_per_kg || '', max_budget: req.max_budget || '',
       needed_by: req.needed_by || '', notes: req.notes || '',
@@ -128,6 +129,7 @@ const MyRequests = ({ session, onNewRequest }) => {
     const req = requests.find(r => r.id === id);
     const updates = {
       item_name: editForm.item_name, category: editForm.category,
+      is_liquid: editForm.is_liquid,
       description: editForm.description || null,
       weight_kg: parseFloat(editForm.weight_kg),
       budget_per_kg: parseFloat(editForm.budget_per_kg) || null,
@@ -326,6 +328,12 @@ const MyRequests = ({ session, onNewRequest }) => {
                             </button>
                           ))}
                         </div>
+                        <label className="flex items-center gap-2 mt-2 text-body-s text-content-muted cursor-pointer">
+                          <input type="checkbox" checked={editForm.is_liquid}
+                            onChange={e => setEditForm({ ...editForm, is_liquid: e.target.checked })}
+                            className="w-4 h-4 rounded border-line-strong" />
+                          Contains liquids, gels or aerosols
+                        </label>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">

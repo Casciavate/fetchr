@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   CheckCircle, Star, Package, Plane, ChevronDown,
-  ChevronUp, Award, TrendingUp
+  ChevronUp, Award, TrendingUp, Ban
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
@@ -75,7 +75,12 @@ const Completed = ({ session, focusDealId }) => {
         shipper:profiles!matches_shipper_id_fkey(*)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .eq('status', 'completed')
+      // Deals cancelled by mutual agreement after being accepted
+      // (status='rejected', deal_stage='cancelled' — see Messages.jsx's
+      // agreeCancellation) still show up here with a Cancelled stamp, but
+      // stay out of the earned/spent totals below and out of Profile's
+      // completed-deal counts (those only ever count status='completed').
+      .in('status', ['completed', 'rejected'])
       .order('created_at', { ascending: false });
     if (data) setDeals(data);
 
@@ -101,6 +106,7 @@ const Completed = ({ session, focusDealId }) => {
 
   const isTraveler = (deal) => deal.traveler_id === session.user.id;
   const getOtherParty = (deal) => isTraveler(deal) ? deal.shipper : deal.traveler;
+  const isCancelled = (deal) => deal.status === 'rejected';
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -127,11 +133,14 @@ const Completed = ({ session, focusDealId }) => {
     setSubmittingRating(prev => ({ ...prev, [dealId]: false }));
   };
 
-  const totalEarned = deals
+  const completedDeals = deals.filter(d => !isCancelled(d));
+  const cancelledDeals = deals.filter(isCancelled);
+
+  const totalEarned = completedDeals
     .filter(d => isTraveler(d))
     .reduce((sum, d) => sum + calcFees(d).travelerReceives, 0);
 
-  const totalSpent = deals
+  const totalSpent = completedDeals
     .filter(d => !isTraveler(d))
     .reduce((sum, d) => sum + calcFees(d).shipperPays, 0);
 
@@ -144,16 +153,17 @@ const Completed = ({ session, focusDealId }) => {
   return (
     <div className="max-w-3xl mx-auto animate-fade-in">
       <div className="mb-6">
-        <h1 className="font-display font-bold text-title-l text-ink-900">Completed deals</h1>
+        <h1 className="font-display font-bold text-title-l text-ink-900">Deal history</h1>
         <p className="text-body-s text-content-muted mt-0.5">
-          {deals.length} deal{deals.length !== 1 ? 's' : ''} completed
+          {completedDeals.length} completed{cancelledDeals.length > 0 ? ` · ${cancelledDeals.length} cancelled` : ''}
         </p>
       </div>
 
-      {/* Stats */}
+      {/* Stats — cancelled deals never count here (no delivery happened,
+          any escrow was refunded), only completedDeals feed these. */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {[
-          { label: 'Total deals', value: deals.length, icon: Award, bg: 'bg-ink-100', fg: 'text-ink-700', mono: false },
+          { label: 'Completed', value: completedDeals.length, icon: Award, bg: 'bg-ink-100', fg: 'text-ink-700', mono: false },
           { label: 'Total earned', value: `$${totalEarned.toFixed(0)}`, icon: TrendingUp, bg: 'bg-success-tint', fg: 'text-success', mono: true },
           { label: 'Total spent', value: `$${totalSpent.toFixed(0)}`, icon: Package, bg: 'bg-info-50', fg: 'text-info-500', mono: true },
         ].map((s, i) => (
@@ -170,13 +180,14 @@ const Completed = ({ session, focusDealId }) => {
       </div>
 
       {deals.length === 0 ? (
-        <EmptyState icon={CheckCircle} title="No completed deals yet"
+        <EmptyState icon={CheckCircle} title="No deals yet"
           body="Your completed deliveries will appear here." />
       ) : (
         <div className="space-y-3">
           {deals.map(deal => {
             const other = getOtherParty(deal);
             const fees = calcFees(deal);
+            const cancelled = isCancelled(deal);
             const isExpanded = expandedId === deal.id;
             const currentRating = ratings[deal.id] || 0;
             const currentComment = comments[deal.id] || '';
@@ -184,8 +195,12 @@ const Completed = ({ session, focusDealId }) => {
             const hasRated = !!myReview;
 
             return (
-              <div key={deal.id} className="relative ticket border-b-[3px] border-b-success">
-                {isExpanded && <span className="stamp text-success" aria-hidden="true">Delivered</span>}
+              <div key={deal.id} className={`relative ticket border-b-[3px] ${cancelled ? 'border-b-danger opacity-80' : 'border-b-success'}`}>
+                {isExpanded && (
+                  <span className={`stamp ${cancelled ? 'text-danger' : 'text-success'}`} aria-hidden="true">
+                    {cancelled ? 'Cancelled' : 'Delivered'}
+                  </span>
+                )}
 
                 {/* Header row */}
                 <div
@@ -193,8 +208,8 @@ const Completed = ({ session, focusDealId }) => {
                   onClick={() => setExpandedId(isExpanded ? null : deal.id)}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-success-tint rounded-md flex items-center justify-center flex-shrink-0">
-                        <CheckCircle size={20} className="text-success" />
+                      <div className={`w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 ${cancelled ? 'bg-danger-tint' : 'bg-success-tint'}`}>
+                        {cancelled ? <Ban size={20} className="text-danger" /> : <CheckCircle size={20} className="text-success" />}
                       </div>
                       <div>
                         <p className="font-display font-semibold text-title-s text-ink-900">
@@ -210,14 +225,20 @@ const Completed = ({ session, focusDealId }) => {
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className={`font-mono font-semibold text-num-m ${isTraveler(deal) ? 'text-success' : 'text-ink-900'}`}>
-                          {isTraveler(deal) ? '+' : ''}${isTraveler(deal)
-                            ? fees.travelerReceives.toFixed(2)
-                            : fees.shipperPays.toFixed(2)}
-                        </p>
-                        <p className="text-micro text-content-subtle">
-                          {isTraveler(deal) ? 'earned' : 'paid'}
-                        </p>
+                        {cancelled ? (
+                          <p className="font-mono font-semibold text-num-m text-danger">Cancelled</p>
+                        ) : (
+                          <>
+                            <p className={`font-mono font-semibold text-num-m ${isTraveler(deal) ? 'text-success' : 'text-ink-900'}`}>
+                              {isTraveler(deal) ? '+' : ''}${isTraveler(deal)
+                                ? fees.travelerReceives.toFixed(2)
+                                : fees.shipperPays.toFixed(2)}
+                            </p>
+                            <p className="text-micro text-content-subtle">
+                              {isTraveler(deal) ? 'earned' : 'paid'}
+                            </p>
+                          </>
+                        )}
                       </div>
                       {isExpanded
                         ? <ChevronUp size={16} className="text-ink-400" />
@@ -264,61 +285,69 @@ const Completed = ({ session, focusDealId }) => {
                       </div>
                     </div>
 
-                    {/* Fee breakdown — never show the other side's cut */}
-                    <div className="bg-surface rounded-md p-3 border border-line space-y-1.5">
-                      <p className="font-display font-semibold text-title-s text-ink-900 mb-2">Deal breakdown</p>
-                      <div className="flex justify-between font-mono text-num-m text-content-muted">
-                        <span>
-                          {deal.agreed_weight_kg || deal.request?.weight_kg}kg ×
-                          ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
-                        </span>
-                        <span>${fees.transportFee.toFixed(2)}</span>
+                    {cancelled ? (
+                      <div className="bg-danger-tint rounded-md p-3 border border-line">
+                        <p className="text-body-s text-danger font-medium">
+                          This deal was cancelled by mutual agreement after being accepted. Any escrow paid was refunded — it doesn't count toward completed deals or earnings.
+                        </p>
                       </div>
-                      {fees.isPurchase && (
+                    ) : (
+                      /* Fee breakdown — never show the other side's cut */
+                      <div className="bg-surface rounded-md p-3 border border-line space-y-1.5">
+                        <p className="font-display font-semibold text-title-s text-ink-900 mb-2">Deal breakdown</p>
                         <div className="flex justify-between font-mono text-num-m text-content-muted">
-                          <span>Shop &amp; ship service fee</span>
-                          <span>${fees.shopFee.toFixed(2)}</span>
+                          <span>
+                            {deal.agreed_weight_kg || deal.request?.weight_kg}kg ×
+                            ${deal.agreed_price_per_kg || resolveOptionPrice(deal.flight, deal.luggage_type)}/kg
+                          </span>
+                          <span>${fees.transportFee.toFixed(2)}</span>
                         </div>
-                      )}
-                      {fees.isPurchase && fees.purchasePrice > 0 && (
-                        <div className="flex justify-between font-mono text-num-m text-content-muted">
-                          <span>Item purchase price{isTraveler(deal) ? ' (reimbursed)' : ''}</span>
-                          <span>${fees.purchasePrice.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {isTraveler(deal) ? (
-                        <>
+                        {fees.isPurchase && (
                           <div className="flex justify-between font-mono text-num-m text-content-muted">
-                            <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
-                            <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
+                            <span>Shop &amp; ship service fee</span>
+                            <span>${fees.shopFee.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between font-mono font-bold text-num-m text-success border-t border-line pt-1.5">
-                            <span>You received</span>
-                            <span>+${fees.travelerReceives.toFixed(2)}</span>
-                          </div>
-                        </>
-                      ) : (
-                        <>
+                        )}
+                        {fees.isPurchase && fees.purchasePrice > 0 && (
                           <div className="flex justify-between font-mono text-num-m text-content-muted">
-                            <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
-                            <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                            <span>Item purchase price{isTraveler(deal) ? ' (reimbursed)' : ''}</span>
+                            <span>${fees.purchasePrice.toFixed(2)}</span>
                           </div>
-                          {fees.isPurchase && fees.purchasePrice > 0 && (
+                        )}
+                        {isTraveler(deal) ? (
+                          <>
                             <div className="flex justify-between font-mono text-num-m text-content-muted">
-                              <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
-                              <span>${fees.sourcingFee.toFixed(2)}</span>
+                              <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
+                              <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
                             </div>
-                          )}
-                          <div className="flex justify-between font-mono font-bold text-num-m text-ink-900 border-t border-line pt-1.5">
-                            <span>You paid</span>
-                            <span>${fees.shipperPays.toFixed(2)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                            <div className="flex justify-between font-mono font-bold text-num-m text-success border-t border-line pt-1.5">
+                              <span>You received</span>
+                              <span>+${fees.travelerReceives.toFixed(2)}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between font-mono text-num-m text-content-muted">
+                              <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                              <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                            </div>
+                            {fees.isPurchase && fees.purchasePrice > 0 && (
+                              <div className="flex justify-between font-mono text-num-m text-content-muted">
+                                <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                                <span>${fees.sourcingFee.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-mono font-bold text-num-m text-ink-900 border-t border-line pt-1.5">
+                              <span>You paid</span>
+                              <span>${fees.shipperPays.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {/* Proof photo */}
-                    {deal.proof_photo_url && (
+                    {!cancelled && deal.proof_photo_url && (
                       <div>
                         <p className="text-label text-content-muted mb-2">Delivery proof</p>
                         <a href={deal.proof_photo_url} target="_blank" rel="noreferrer">
@@ -343,11 +372,14 @@ const Completed = ({ session, focusDealId }) => {
                             onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
                         </div>
                       </div>
-                      <StatusPill tone="success" icon={CheckCircle}>Completed</StatusPill>
+                      {cancelled
+                        ? <StatusPill tone="danger" icon={Ban}>Cancelled</StatusPill>
+                        : <StatusPill tone="success" icon={CheckCircle}>Completed</StatusPill>
+                      }
                     </div>
 
-                    {/* Rating */}
-                    {!hasRated ? (
+                    {/* Rating — only for deals that actually happened */}
+                    {!cancelled && (!hasRated ? (
                       <div>
                         <p className="text-label text-content-muted mb-2">
                           Rate your experience with {other?.full_name?.split(' ')[0] || 'this user'}
@@ -396,10 +428,10 @@ const Completed = ({ session, focusDealId }) => {
                           <p className="text-body-s text-content-muted italic pl-6">"{myReview.comment}"</p>
                         )}
                       </div>
-                    )}
+                    ))}
 
                     <p className="text-micro text-content-subtle text-center">
-                      Completed on {new Date(deal.created_at).toLocaleDateString('en-GB', {
+                      {cancelled ? 'Cancelled on' : 'Completed on'} {new Date(deal.created_at).toLocaleDateString('en-GB', {
                         day: '2-digit', month: 'long', year: 'numeric'
                       })}
                     </p>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Search, CheckCircle, XCircle,
+  Search, CheckCircle, XCircle, Ticket,
   ChevronRight, ChevronDown, ChevronUp, X, Award, Globe,
   AlertTriangle, Info, List, LayoutGrid
 } from 'lucide-react';
@@ -493,12 +493,10 @@ const Matches = ({ session, onNavigate }) => {
                 onClick={() => handleAccept(match.id)}
                 disabled={!!acting[match.id]}
                 className="btn-primary flex-[2] disabled:opacity-50">
-                <CheckCircle size={15} />
+                <Ticket size={15} />
                 {acting[match.id] === 'accepting'
-                  ? 'Accepting'
-                  : otherHasAcceptedFull
-                    ? 'Confirm & start chat'
-                    : 'Accept match'
+                  ? 'Issuing pass'
+                  : 'Issue boarding pass'
                 }
               </button>
             </div>
