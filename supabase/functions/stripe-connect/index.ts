@@ -12,32 +12,66 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ── Correct fee calculation ──
-// Fetchr fee = % of (transport + shop fee) ONLY — NOT on item purchase price
-// Shipper pays = transport + shop fee + item purchase
-// Traveler receives = transport + shop fee - fetchr fee + item purchase
-const calcFees = (match, overrideAmount = null) => {
-  const pricePerKg = parseFloat(match.agreed_price_per_kg || match.flight?.price_per_kg || 0)
-  const weightKg = parseFloat(match.agreed_weight_kg || match.request?.weight_kg || 0)
-  const transportFee = overrideAmount !== null ? overrideAmount : pricePerKg * weightKg
+// ── fetchr two-sided pricing model ──
+// KEEP IN SYNC WITH src/lib/fees.js's calcFees. This edge function can't
+// import from src/, so this is a hand-kept, structurally identical mirror
+// of that file. If you change the formula there, change it here too —
+// same constants, same order of operations, same field names on the
+// returned object.
+const MINIMUM_DEAL_SIZE = 15.00
+const REVENUE_FLOOR = 8.00
+const SHIPPER_SERVICE_FEE_PCT = 0.15
+const TRAVELER_PLATFORM_FEE_PCT = 0.05
+const SOURCING_FEE_PCT = 0.06
+
+const calcFees = (match) => {
+  const pricePerKg = parseFloat(match.agreed_price_per_kg ?? match.flight?.price_per_kg ?? 0) || 0
+  const weightKg = parseFloat(match.agreed_weight_kg ?? match.request?.weight_kg ?? 0) || 0
+  const transportFee = pricePerKg * weightKg
 
   const isPurchase = !!(match.request?.requires_purchase)
-  const purchasePrice = isPurchase ? (parseFloat(match.request?.purchase_price) || 0) : 0
   const shopFee = isPurchase
-    ? parseFloat(match.agreed_shop_fee || match.flight?.shop_and_ship_fee || 0)
+    ? (parseFloat(match.agreed_shop_fee ?? match.flight?.shop_and_ship_fee ?? 0) || 0)
     : 0
+  const purchasePrice = isPurchase ? (parseFloat(match.request?.purchase_price) || 0) : 0
 
-  const fetchrBase = transportFee + shopFee
-  let fetchrPct = 0.10
-  if (fetchrBase >= 500) fetchrPct = 0.07
-  else if (fetchrBase >= 200) fetchrPct = 0.085
-  else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12
-  const fetchrFee = fetchrBase * fetchrPct
+  // Purchase price is never commissionable.
+  const commissionBase = transportFee + shopFee
 
-  const totalShipperPays = transportFee + shopFee + purchasePrice
-  const travelerReceives = transportFee + shopFee - fetchrFee + purchasePrice
+  let shipperServiceFee = commissionBase * SHIPPER_SERVICE_FEE_PCT
+  const travelerPlatformFee = commissionBase * TRAVELER_PLATFORM_FEE_PCT
+  const sourcingFee = purchasePrice * SOURCING_FEE_PCT
 
-  return { transportFee, shopFee, purchasePrice, fetchrBase, fetchrFee, fetchrPct, totalShipperPays, travelerReceives, isPurchase }
+  // Revenue floor: shortfall loaded onto the shipper's service fee only.
+  const baseRevenue = shipperServiceFee + travelerPlatformFee + sourcingFee
+  let floorApplied = false
+  if (baseRevenue > 0 && baseRevenue < REVENUE_FLOOR) {
+    shipperServiceFee += (REVENUE_FLOOR - baseRevenue)
+    floorApplied = true
+  }
+
+  const shipperPays = transportFee + shopFee + purchasePrice + shipperServiceFee + sourcingFee
+  const travelerReceives = transportFee + shopFee + purchasePrice - travelerPlatformFee
+  const fetchrRevenue = shipperServiceFee + travelerPlatformFee + sourcingFee
+
+  // The invariant this shared formula exists to guarantee — see
+  // src/lib/fees.js for the full explanation. Always logged (never
+  // thrown) here: an edge function crashing mid-request is worse than a
+  // logged inconsistency, and Deno doesn't have a NODE_ENV dev/prod split
+  // the way CRA does.
+  const invariantDiff = shipperPays - travelerReceives - fetchrRevenue
+  if (Math.abs(invariantDiff) > 0.01) {
+    console.error(`calcFees invariant violated: shipperPays(${shipperPays.toFixed(2)}) - travelerReceives(${travelerReceives.toFixed(2)}) !== fetchrRevenue(${fetchrRevenue.toFixed(2)}), diff=${invariantDiff.toFixed(4)}`)
+  }
+
+  return {
+    transportFee, shopFee, purchasePrice, isPurchase,
+    commissionBase,
+    shipperServiceFee, travelerPlatformFee, sourcingFee,
+    floorApplied,
+    shipperPays, travelerReceives, fetchrRevenue,
+    belowMinimum: commissionBase < MINIMUM_DEAL_SIZE,
+  }
 }
 
 // High-value deals require both parties to have completed Stripe Identity
@@ -367,7 +401,10 @@ Deno.serve(async (req) => {
       if (match.status !== 'terms_agreed') throw new Error('This deal is not ready for escrow payment')
 
       const fees = calcFees(match)
-      const totalDollars = fees.totalShipperPays
+      if (fees.belowMinimum) {
+        throw new Error(`This deal's transport + shop fee total is below fetchr's $${MINIMUM_DEAL_SIZE.toFixed(2)} minimum deal size — escrow can't be paid.`)
+      }
+      const totalDollars = fees.shipperPays
       const totalCents = Math.round(totalDollars * 100)
       await requireVerifiedForHighValue(match, totalDollars)
 
@@ -399,18 +436,25 @@ Deno.serve(async (req) => {
         currency,
         customer: customerId,
         capture_method: 'manual', // ESCROW: held until delivery confirmed
+        // Full fee-component breakdown, written once at creation time —
+        // capture_payment reads this back (via the mirrored escrow_hold
+        // transaction below, since a wallet-only escrow has no PaymentIntent
+        // at all) instead of ever recomputing, so an amendment made after
+        // payment can't desync what was actually charged from what gets
+        // released.
         metadata: {
           match_id: matchId,
-          total_usd: totalDollars.toString(),
+          shipper_pays: totalDollars.toString(),
           card_amount_usd: cardAmountDollars.toString(),
           wallet_contribution_usd: walletContribution.toString(),
-          transport_fee_usd: fees.transportFee.toString(),
-          shop_fee_usd: fees.shopFee.toString(),
-          purchase_price_usd: fees.purchasePrice.toString(),
-          fetchr_base_usd: fees.fetchrBase.toString(),
-          fetchr_fee_usd: fees.fetchrFee.toString(),
-          fetchr_pct: Math.round(fees.fetchrPct * 100).toString(),
-          traveler_receives_usd: fees.travelerReceives.toString(),
+          transport_fee: fees.transportFee.toString(),
+          shop_fee: fees.shopFee.toString(),
+          purchase_price: fees.purchasePrice.toString(),
+          shipper_service_fee: fees.shipperServiceFee.toString(),
+          traveler_platform_fee: fees.travelerPlatformFee.toString(),
+          sourcing_fee: fees.sourcingFee.toString(),
+          fetchr_revenue: fees.fetchrRevenue.toString(),
+          traveler_receives: fees.travelerReceives.toString(),
           traveler_id: match.traveler_id,
           shipper_id: match.shipper_id,
         },
@@ -443,7 +487,10 @@ Deno.serve(async (req) => {
           transport_fee: fees.transportFee,
           shop_fee: fees.shopFee,
           purchase_price: fees.purchasePrice,
-          fetchr_fee: fees.fetchrFee,
+          shipper_service_fee: fees.shipperServiceFee,
+          traveler_platform_fee: fees.travelerPlatformFee,
+          sourcing_fee: fees.sourcingFee,
+          fetchr_revenue: fees.fetchrRevenue,
           traveler_receives: fees.travelerReceives,
           traveler_name: travelerProfile?.full_name,
           shipper_name: shipperProfile?.full_name,
@@ -451,20 +498,13 @@ Deno.serve(async (req) => {
         },
       })
 
-      // Post correct escrow message to chat
-      const escrowMsgLines = [
-        `🔒 ESCROW SECURED: $${totalDollars.toFixed(2)} is now held securely.`,
-        ``,
-        `Transport: $${fees.transportFee.toFixed(2)}`,
-        fees.isPurchase && fees.shopFee > 0 ? `Shop & ship fee: $${fees.shopFee.toFixed(2)}` : null,
-        fees.isPurchase && fees.purchasePrice > 0 ? `Item purchase: $${fees.purchasePrice.toFixed(2)}` : null,
-        `Fetchr fee (${Math.round(fees.fetchrPct * 100)}% on $${fees.fetchrBase.toFixed(2)}): −$${fees.fetchrFee.toFixed(2)}`,
-        ``,
-        `Traveler receives on delivery: $${fees.travelerReceives.toFixed(2)}`,
-      ].filter(l => l !== null).join('\n')
-
+      // Neutral shared-chat message only — no fee breakdown here, since
+      // both parties read this thread and each side's own cut is never
+      // shown to the other (see the UI-side deal-details views instead).
       await adminClient.from('messages').insert({
-        match_id: matchId, sender_id: user.id, content: escrowMsgLines, is_read: false,
+        match_id: matchId, sender_id: user.id,
+        content: `🔒 ESCROW SECURED: $${totalDollars.toFixed(2)} is now held securely. Both parties can view their own breakdown in the deal details.`,
+        is_read: false,
       })
 
       return new Response(JSON.stringify({
@@ -473,8 +513,10 @@ Deno.serve(async (req) => {
         paymentIntentId: paymentIntent.id,
         breakdown: {
           transportFee: fees.transportFee, shopFee: fees.shopFee,
-          purchasePrice: fees.purchasePrice, fetchrFee: fees.fetchrFee,
-          travelerReceives: fees.travelerReceives, total: totalDollars,
+          purchasePrice: fees.purchasePrice,
+          shipperServiceFee: fees.shipperServiceFee,
+          sourcingFee: fees.sourcingFee,
+          shipperPays: totalDollars,
         },
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -492,50 +534,51 @@ Deno.serve(async (req) => {
       if (match.status !== 'terms_agreed') throw new Error('This deal is not ready for escrow payment')
 
       const fees = calcFees(match)
-      await requireVerifiedForHighValue(match, fees.totalShipperPays)
+      if (fees.belowMinimum) {
+        throw new Error(`This deal's transport + shop fee total is below fetchr's $${MINIMUM_DEAL_SIZE.toFixed(2)} minimum deal size — escrow can't be paid.`)
+      }
+      await requireVerifiedForHighValue(match, fees.shipperPays)
       const safeBalance = await getVerifiedBalance(user.id)
-      if (safeBalance < fees.totalShipperPays - 0.01) {
+      if (safeBalance < fees.shipperPays - 0.01) {
         throw new Error(`Insufficient wallet balance. Available: $${safeBalance.toFixed(2)}`)
       }
       const { data: profile } = await adminClient.from('profiles').select('wallet_balance, full_name').eq('id', user.id).single()
 
-      const newBalance = (profile?.wallet_balance || 0) - fees.totalShipperPays
+      const newBalance = (profile?.wallet_balance || 0) - fees.shipperPays
       await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
 
       const walletEscrowId = `wallet_escrow_${Date.now()}_${matchId.slice(0, 8)}`
       await adminClient.from('matches').update({
         status: 'in_escrow', deal_stage: 'in_escrow',
         payment_intent_id: walletEscrowId,
-        escrow_amount: fees.totalShipperPays,
+        escrow_amount: fees.shipperPays,
       }).eq('id', matchId)
 
+      // Identical breakdown shape to the card path (create_payment_intent)
+      // — capture_payment reads both the same way, so a wallet-paid and a
+      // card-paid escrow must always produce identical numbers.
       const { data: travelerProfile } = await adminClient.from('profiles').select('full_name').eq('id', match.traveler_id).single()
       await adminClient.from('transactions').insert({
-        user_id: match.shipper_id, type: 'escrow_hold', amount: fees.totalShipperPays,
+        user_id: match.shipper_id, type: 'escrow_hold', amount: fees.shipperPays,
         description: `Escrow held (wallet): ${match.request?.item_name}`,
         match_id: matchId, status: 'pending',
         metadata: {
           payment_method: 'wallet', wallet_escrow_id: walletEscrowId,
           transport_fee: fees.transportFee, shop_fee: fees.shopFee,
-          purchase_price: fees.purchasePrice, fetchr_fee: fees.fetchrFee,
+          purchase_price: fees.purchasePrice,
+          shipper_service_fee: fees.shipperServiceFee,
+          traveler_platform_fee: fees.travelerPlatformFee,
+          sourcing_fee: fees.sourcingFee,
+          fetchr_revenue: fees.fetchrRevenue,
           traveler_receives: fees.travelerReceives,
           traveler_name: travelerProfile?.full_name, shipper_name: profile?.full_name,
         },
       })
 
-      const escrowMsgLines = [
-        `🔒 ESCROW SECURED (Wallet): $${fees.totalShipperPays.toFixed(2)} is now held securely.`,
-        ``,
-        `Transport: $${fees.transportFee.toFixed(2)}`,
-        fees.isPurchase && fees.shopFee > 0 ? `Shop & ship fee: $${fees.shopFee.toFixed(2)}` : null,
-        fees.isPurchase && fees.purchasePrice > 0 ? `Item purchase: $${fees.purchasePrice.toFixed(2)}` : null,
-        `Fetchr fee (${Math.round(fees.fetchrPct * 100)}% on $${fees.fetchrBase.toFixed(2)}): −$${fees.fetchrFee.toFixed(2)}`,
-        ``,
-        `Traveler receives on delivery: $${fees.travelerReceives.toFixed(2)}`,
-      ].filter(l => l !== null).join('\n')
-
       await adminClient.from('messages').insert({
-        match_id: matchId, sender_id: user.id, content: escrowMsgLines, is_read: false,
+        match_id: matchId, sender_id: user.id,
+        content: `🔒 ESCROW SECURED (Wallet): $${fees.shipperPays.toFixed(2)} is now held securely. Both parties can view their own breakdown in the deal details.`,
+        is_read: false,
       })
 
       return new Response(JSON.stringify({ success: true, newBalance }),
@@ -593,11 +636,12 @@ Deno.serve(async (req) => {
         transportFee: Number(escrowTx.metadata.transport_fee) || 0,
         shopFee: Number(escrowTx.metadata.shop_fee) || 0,
         purchasePrice: Number(escrowTx.metadata.purchase_price) || 0,
-        fetchrFee: Number(escrowTx.metadata.fetchr_fee) || 0,
+        shipperServiceFee: Number(escrowTx.metadata.shipper_service_fee) || 0,
+        travelerPlatformFee: Number(escrowTx.metadata.traveler_platform_fee) || 0,
+        sourcingFee: Number(escrowTx.metadata.sourcing_fee) || 0,
+        fetchrRevenue: Number(escrowTx.metadata.fetchr_revenue) || 0,
         travelerReceives: Number(escrowTx.metadata.traveler_receives) || 0,
       }
-      fees.fetchrPct = (fees.transportFee + fees.shopFee) > 0
-        ? fees.fetchrFee / (fees.transportFee + fees.shopFee) : 0
 
       if (!isWalletEscrow) {
         await stripe.paymentIntents.capture(paymentIntentId)
@@ -613,7 +657,9 @@ Deno.serve(async (req) => {
         wallet_balance: (travelerProfile?.wallet_balance || 0) + fees.travelerReceives,
       }).eq('id', match.traveler_id)
 
-      // Full transaction detail for traveler
+      // Two rows: the traveler's payout, and fetchr's FULL revenue in one
+      // row (shipper service fee + traveler platform fee + sourcing fee
+      // combined) — not just one side's fee, per the two-sided model.
       await adminClient.from('transactions').insert([
         {
           user_id: match.traveler_id, type: 'escrow_release',
@@ -625,23 +671,23 @@ Deno.serve(async (req) => {
             transport_fee: fees.transportFee,
             shop_fee: fees.shopFee,
             purchase_price_reimbursement: fees.purchasePrice,
-            fetchr_fee_deducted: fees.fetchrFee,
-            fetchr_pct: Math.round(fees.fetchrPct * 100),
+            traveler_platform_fee_deducted: fees.travelerPlatformFee,
             shipper_name: shipperProfile?.full_name,
             shipper_id: match.shipper_id,
             traveler_name: travelerProfile?.full_name,
-            breakdown: `Transport $${fees.transportFee.toFixed(2)} + Shop fee $${fees.shopFee.toFixed(2)} + Purchase $${fees.purchasePrice.toFixed(2)} - Fetchr fee $${fees.fetchrFee.toFixed(2)}`,
+            breakdown: `Transport $${fees.transportFee.toFixed(2)} + Shop fee $${fees.shopFee.toFixed(2)} + Purchase $${fees.purchasePrice.toFixed(2)} - Platform fee $${fees.travelerPlatformFee.toFixed(2)}`,
           },
         },
         {
-          user_id: match.shipper_id, type: 'fetchr_fee',
-          amount: fees.fetchrFee,
-          description: `Fetchr service fee: ${match.request?.item_name}`,
+          user_id: match.shipper_id, type: 'fetchr_revenue',
+          amount: fees.fetchrRevenue,
+          description: `Fetchr revenue: ${match.request?.item_name}`,
           match_id: match.id, status: 'completed',
           metadata: {
             payment_intent_id: paymentIntentId,
-            fetchr_pct: Math.round(fees.fetchrPct * 100),
-            fetchr_base: fees.fetchrBase,
+            shipper_service_fee: fees.shipperServiceFee,
+            traveler_platform_fee: fees.travelerPlatformFee,
+            sourcing_fee: fees.sourcingFee,
             traveler_name: travelerProfile?.full_name,
             shipper_name: shipperProfile?.full_name,
           },
@@ -655,10 +701,11 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         success: true,
         travelerReceives: fees.travelerReceives,
-        fetchrFee: fees.fetchrFee,
+        fetchrRevenue: fees.fetchrRevenue,
         breakdown: {
           transportFee: fees.transportFee, shopFee: fees.shopFee,
-          purchasePrice: fees.purchasePrice, fetchrFee: fees.fetchrFee,
+          purchasePrice: fees.purchasePrice,
+          travelerPlatformFee: fees.travelerPlatformFee,
           travelerReceives: fees.travelerReceives,
         },
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })

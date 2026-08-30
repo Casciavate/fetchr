@@ -10,7 +10,7 @@ import { TicketSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
 import ReviewsSheet from './shared/ReviewsSheet';
-import { calcFees } from './EscrowPayment';
+import { calcFees } from '../lib/fees';
 
 const STEPS = [
   { key: 'matched', label: 'Matched' },
@@ -239,15 +239,15 @@ const ActiveDeals = ({ session, onNavigate }) => {
     const status = deal.deal_stage || deal.status;
     if (status === 'terms_agreed') {
       return !isTrav
-        ? `You'll pay $${fees.totalShipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
+        ? `You'll pay $${fees.shipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
         : `Nothing to do yet — ${otherName} pays into escrow before you fly.`;
     }
     if (status === 'in_escrow') {
-      return `$${fees.totalShipperPays.toFixed(2)} is held by fetchr. Neither side can move it alone.`;
+      return `$${fees.shipperPays.toFixed(2)} is held by fetchr. Neither side can move it alone.`;
     }
     if (status === 'proof_uploaded') {
       return needsAction
-        ? `Confirm you received it and we release $${fees.totalShipperPays.toFixed(2)} to ${otherName}.`
+        ? `Confirm you received it and we release $${fees.shipperPays.toFixed(2)} to ${otherName}.`
         : `Waiting on ${otherName} to confirm delivery.`;
     }
     return getStage(deal).desc;
@@ -303,7 +303,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
             const escrowSentence = getEscrowSentence(deal, isTrav, otherName, needsAction, fees);
 
             const isExpanded = expandedId === deal.id || (deals.length === 1 && expandedId === null);
-            const amount = isTrav ? fees.travelerReceives : fees.totalShipperPays;
+            const amount = isTrav ? fees.travelerReceives : fees.shipperPays;
 
             return (
               <div key={deal.id} className="ticket relative">
@@ -363,7 +363,7 @@ const ActiveDeals = ({ session, onNavigate }) => {
                         <DollarSign size={10} /> {isTrav ? 'You receive' : 'You pay'}
                       </p>
                       <p className="font-mono font-semibold text-num-m text-ink-900">
-                        ${(isTrav ? fees.travelerReceives : fees.totalShipperPays).toFixed(2)}
+                        ${(isTrav ? fees.travelerReceives : fees.shipperPays).toFixed(2)}
                       </p>
                       <p className="text-body-s text-content-muted">
                         ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg

@@ -7,6 +7,7 @@ import {
 import RatingDisplay from './shared/RatingDisplay';
 import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
+import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
 
 const Earnings = ({ session }) => {
   const [loading, setLoading] = useState(true);
@@ -49,18 +50,13 @@ const Earnings = ({ session }) => {
     let totalEarned = 0, totalFees = 0, thisMonth = 0, lastMonth = 0;
 
     deals.forEach(deal => {
-      const subtotal = (deal.agreed_price_per_kg || deal.flight?.price_per_kg || 0) *
-                       (deal.agreed_weight_kg || deal.request?.weight_kg || 0);
-      let fetchrPct = 0.10;
-      if (subtotal >= 500) fetchrPct = 0.07;
-      else if (subtotal >= 200) fetchrPct = 0.085;
-      else if (subtotal < 20) fetchrPct = 0.12;
-      const fee = subtotal * fetchrPct;
+      const fees = calcFees(deal);
+      const subtotal = fees.transportFee + fees.shopFee + fees.purchasePrice;
       totalEarned += subtotal;
-      totalFees += fee;
+      totalFees += fees.travelerPlatformFee;
       const d = new Date(deal.created_at);
-      if (d >= thisStart) thisMonth += subtotal - fee;
-      if (d >= lastStart && d <= lastEnd) lastMonth += subtotal - fee;
+      if (d >= thisStart) thisMonth += fees.travelerReceives;
+      if (d >= lastStart && d <= lastEnd) lastMonth += fees.travelerReceives;
     });
 
     const net = totalEarned - totalFees;
@@ -74,16 +70,18 @@ const Earnings = ({ session }) => {
 
   useEffect(() => { fetchEarnings(); }, []);
 
+  // Traveler-only screen — always the traveler's own numbers: gross
+  // (transport + shop fee + purchase reimbursement), the 5% platform fee
+  // deducted from their payout, and what they actually received net.
   const getDealFees = (deal) => {
-    const subtotal = (deal.agreed_price_per_kg || deal.flight?.price_per_kg || 0) *
-                     (deal.agreed_weight_kg || deal.request?.weight_kg || 0);
-    let fetchrPct = 0.10;
-    if (subtotal >= 500) fetchrPct = 0.07;
-    else if (subtotal >= 200) fetchrPct = 0.085;
-    else if (subtotal < 20) fetchrPct = 0.12;
-    const fee = subtotal * fetchrPct;
-    const net = subtotal - fee;
-    return { subtotal, fee, net, fetchrPct: Math.round(fetchrPct * 100) };
+    const fees = calcFees(deal);
+    return {
+      subtotal: fees.transportFee + fees.shopFee + fees.purchasePrice,
+      fee: fees.travelerPlatformFee,
+      net: fees.travelerReceives,
+      pct: Math.round(TRAVELER_PLATFORM_FEE_PCT * 100),
+      isPurchase: fees.isPurchase, shopFee: fees.shopFee, purchasePrice: fees.purchasePrice,
+    };
   };
 
   const filtered = completedDeals.filter(d => {
@@ -241,7 +239,7 @@ const Earnings = ({ session }) => {
         ) : (
           <div className="space-y-2">
             {filtered.map(deal => {
-              const { subtotal, fee, net } = getDealFees(deal);
+              const { subtotal, fee, net, isPurchase, shopFee, purchasePrice } = getDealFees(deal);
               const isExp = expandedId === deal.id;
               const shipper = deal.shipper;
 
@@ -369,10 +367,22 @@ const Earnings = ({ session }) => {
                             {kg(deal.agreed_weight_kg || deal.request?.weight_kg)} ×
                             ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
                           </span>
-                          <span>{money(subtotal)}</span>
+                          <span>{money(subtotal - shopFee - purchasePrice)}</span>
                         </div>
+                        {isPurchase && (
+                          <div className="flex justify-between text-content-muted">
+                            <span>Shop &amp; ship service fee</span>
+                            <span>{money(shopFee)}</span>
+                          </div>
+                        )}
+                        {isPurchase && purchasePrice > 0 && (
+                          <div className="flex justify-between text-content-muted">
+                            <span>Item purchase reimbursement</span>
+                            <span>{money(purchasePrice)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-danger">
-                          <span>fetchr fee</span>
+                          <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
                           <span>−{money(fee)}</span>
                         </div>
                         <div className="flex justify-between font-bold text-success border-t border-line pt-1.5">

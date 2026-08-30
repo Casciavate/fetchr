@@ -24,7 +24,7 @@ import WalletScreen from './Wallet';
 // weight out of the bundle every regular user downloads.
 const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
 import { AIRLINE_CODES } from './shared/airlines';
-import { calcFees } from './EscrowPayment';
+import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
 import { RowSkeleton } from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
@@ -417,7 +417,7 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
       const other = getOtherParty(deal);
       const ref = (deal.id || '').slice(0, 6).toUpperCase();
       const fees = yourTurn.kind === 'deal' ? calcFees(deal) : null;
-      const amount = fees ? (isShipper(deal) ? fees.totalShipperPays : fees.travelerReceives) : null;
+      const amount = fees ? (isShipper(deal) ? fees.shipperPays : fees.travelerReceives) : null;
       const cardKey = `${yourTurn.kind}:${deal.id}`;
       const isExpanded = expandedHeroKey === cardKey;
       return (
@@ -490,9 +490,27 @@ case 'matches': return <Matches session={session} onNavigate={navigate} />;
                     <span>Item</span><span>${fees.purchasePrice.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-mono text-num-m text-content-muted">
-                  <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span><span>−${fees.fetchrFee.toFixed(2)}</span>
-                </div>
+                {/* Fee line diverges by viewer — never show the other
+                    side's cut (see EscrowPayment/Messages for the same rule). */}
+                {isShipper(deal) ? (
+                  <>
+                    <div className="flex justify-between font-mono text-num-m text-content-muted">
+                      <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                      <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                    </div>
+                    {fees.isPurchase && fees.purchasePrice > 0 && (
+                      <div className="flex justify-between font-mono text-num-m text-content-muted">
+                        <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                        <span>${fees.sourcingFee.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
+                    <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

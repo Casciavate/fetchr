@@ -6,7 +6,8 @@ import {
   Camera, Lock, Info, X, Edit2, ShoppingBag, MapPin, Phone,
   Circle, Zap
 } from 'lucide-react';
-import EscrowPayment, { ProofUploadModal, calcFees } from './EscrowPayment';
+import EscrowPayment, { ProofUploadModal } from './EscrowPayment';
+import { calcFees, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
 import SkeletonList from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
@@ -65,21 +66,17 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   });
   const [saving, setSaving] = useState(false);
 
-  const pricePerKg = parseFloat(form.agreed_price_per_kg) || 0;
-  const weightKg = parseFloat(form.agreed_weight_kg) || 0;
-  const dealValue = pricePerKg * weightKg;
-  const isPurchase = match.request?.requires_purchase;
-  const purchasePrice = parseFloat(match.request?.purchase_price) || 0;
-  const shopFee = parseFloat(form.agreed_shop_fee || match.agreed_shop_fee || match.flight?.shop_and_ship_fee) || 0;
-  // Fetchr fee on transport + shop fee ONLY, not purchase price
-  const fetchrBase = dealValue + (isPurchase ? shopFee : 0);
-  let fetchrPct = 0.10;
-  if (fetchrBase >= 500) fetchrPct = 0.07;
-  else if (fetchrBase >= 200) fetchrPct = 0.085;
-  else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12;
-  const fetchrFee = fetchrBase * fetchrPct;
-  const travelerReceives = fetchrBase - fetchrFee + (isPurchase ? purchasePrice : 0);
-  const totalShipperPays = dealValue + (isPurchase ? shopFee + purchasePrice : 0);
+  // Reflects the form's currently-edited values while amending, falling
+  // back to the locked-in match otherwise — same shape calcFees expects
+  // everywhere else.
+  const fees = calcFees({
+    agreed_price_per_kg: form.agreed_price_per_kg || match.agreed_price_per_kg || match.flight?.price_per_kg,
+    agreed_weight_kg: form.agreed_weight_kg || match.agreed_weight_kg || match.request?.weight_kg,
+    agreed_shop_fee: form.agreed_shop_fee || match.agreed_shop_fee || match.flight?.shop_and_ship_fee,
+    request: match.request,
+  });
+  const { isPurchase, purchasePrice, shopFee } = fees;
+  const dealValue = fees.transportFee;
 
   const handleSave = async () => {
     setSaving(true);
@@ -330,50 +327,60 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                 <DollarSign size={13} /> Financial summary
               </p>
               <div className="space-y-2 text-body-s">
-                {/* 1. Transport */}
+                {/* Transport — both sides see this */}
                 <div className="flex justify-between text-content-muted font-mono">
                   <span>{match.agreed_weight_kg || match.request?.weight_kg} kg × ${match.agreed_price_per_kg || match.flight?.price_per_kg}/kg</span>
                   <span className="font-semibold text-ink-900">${dealValue.toFixed(2)}</span>
                 </div>
-                {/* 2. Shop & ship fee */}
                 {isPurchase && (
                   <div className="flex justify-between text-content-muted">
                     <span>Shop & ship service fee</span>
                     <span className="font-mono font-semibold">{shopFee > 0 ? `$${shopFee.toFixed(2)}` : <span className="text-warning">TBD — set in Amend</span>}</span>
                   </div>
                 )}
-                {/* 3. Item purchase price */}
                 {isPurchase && purchasePrice > 0 && (
                   <div className="flex justify-between text-content-muted">
-                    <span>Item purchase price</span>
+                    <span>Item purchase price{isTrav ? ' (reimbursed)' : ''}</span>
                     <span className="font-mono font-semibold text-ink-900">${purchasePrice.toFixed(2)}</span>
                   </div>
                 )}
-                {/* 4. Sender pays total */}
-                <div className="border-t border-line pt-2">
-                  <div className="flex justify-between font-mono font-bold text-ink-900">
-                    <span>Sender pays total</span>
-                    <span>${totalShipperPays.toFixed(2)}</span>
-                  </div>
-                </div>
-                {/* 5. Fetchr fee (on transport + shop only) */}
-                <div className="bg-surface rounded-md p-3 space-y-1.5 text-micro mt-1 border border-line">
-                  <p className="text-content-subtle font-mono uppercase tracking-wide">Distribution</p>
-                  <div className="flex justify-between font-mono text-content-muted">
-                    <span>fetchr fee ({Math.round(fetchrPct * 100)}%) on ${fetchrBase.toFixed(2)}</span>
-                    <span>−${fetchrFee.toFixed(2)}</span>
-                  </div>
-                  {isPurchase && purchasePrice > 0 && (
-                    <div className="flex justify-between font-mono text-content-muted">
-                      <span>Item purchase reimbursement</span>
-                      <span>+${purchasePrice.toFixed(2)}</span>
+
+                {/* Fee lines diverge below — never show the shipper's cut to
+                    the traveller (or vice versa): each side only sees the
+                    fee that changes their own number. */}
+                {!isTrav ? (
+                  <>
+                    <div className="flex justify-between text-content-muted">
+                      <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                      <span className="font-mono">${fees.shipperServiceFee.toFixed(2)}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between font-mono font-bold text-success border-t border-line pt-1.5">
-                    <span>Traveller receives</span>
-                    <span>${travelerReceives.toFixed(2)}</span>
-                  </div>
-                </div>
+                    {isPurchase && purchasePrice > 0 && (
+                      <div className="flex justify-between text-content-muted">
+                        <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                        <span className="font-mono">${fees.sourcingFee.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-line pt-2">
+                      <div className="flex justify-between font-mono font-bold text-ink-900">
+                        <span>Total you pay</span>
+                        <span>${fees.shipperPays.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-content-muted">
+                      <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
+                      <span className="font-mono">−${fees.travelerPlatformFee.toFixed(2)}</span>
+                    </div>
+                    <div className="border-t border-line pt-2">
+                      <div className="flex justify-between font-mono font-bold text-success">
+                        <span>You receive</span>
+                        <span>${fees.travelerReceives.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
               {match.agreed_notes && (
                 <div className="mt-3 pt-3 border-t border-line">
@@ -705,13 +712,7 @@ const Messages = ({ session, focusMatchId }) => {
       await supabase.from('matches').update({
         status: 'completed', traveler_completed: true, shipper_completed: true, deal_stage: 'completed',
       }).eq('id', activeMatch.id);
-      const dealValue = (activeMatch.agreed_price_per_kg || activeMatch.flight?.price_per_kg || 0) *
-        (activeMatch.agreed_weight_kg || activeMatch.request?.weight_kg || 0);
-      let fetchrPct = 0.10;
-      if (dealValue >= 500) fetchrPct = 0.07;
-      else if (dealValue >= 200) fetchrPct = 0.085;
-      else if (dealValue < 20) fetchrPct = 0.12;
-      const travelerReceives = dealValue * (1 - fetchrPct);
+      const { travelerReceives } = calcFees(activeMatch);
       const { data: msg } = await supabase.from('messages').insert([{
         match_id: activeMatch.id, sender_id: session.user.id,
         content: `Deal completed. Both sides confirmed delivery — $${travelerReceives.toFixed(2)} has been released to the traveller's wallet.`,
@@ -805,7 +806,7 @@ const Messages = ({ session, focusMatchId }) => {
     if (activeMatch.status === 'accepted' && !myTermsAgreed)
       return { label: 'Agree terms', icon: CheckCircle, onClick: agreeToTerms };
     if (isShipper(activeMatch) && activeMatch.status === 'terms_agreed')
-      return { label: `Pay escrow · $${calcFees(activeMatch).totalShipperPays.toFixed(2)}`, icon: Lock,
+      return { label: `Pay escrow · $${calcFees(activeMatch).shipperPays.toFixed(2)}`, icon: Lock,
         onClick: () => { setShowPayment(true); setShowCancelRequest(false); } };
     if (isTraveler(activeMatch) && activeMatch.status === 'in_escrow')
       return { label: 'Upload proof', icon: Camera, onClick: () => setShowProofModal(true) };
@@ -1011,7 +1012,7 @@ const Messages = ({ session, focusMatchId }) => {
               </p>
               <p className="text-label text-content-subtle truncate">
                 {isShipper(activeMatch) ? 'You pay' : 'You receive'} $
-                {(isShipper(activeMatch) ? calcFees(activeMatch).totalShipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
+                {(isShipper(activeMatch) ? calcFees(activeMatch).shipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
               </p>
             </div>
             <StatusPill tone={blockedAction ? 'signal' : activeMatch.status === 'completed' ? 'success' : 'neutral'} className="flex-shrink-0">
@@ -1055,7 +1056,7 @@ const Messages = ({ session, focusMatchId }) => {
               <Shield size={14} className="flex-shrink-0 mt-0.5 text-info-500" />
               <p className="text-body-s leading-relaxed text-info-500">
                 {isShipper(activeMatch)
-                  ? `You'll pay $${calcFees(activeMatch).totalShipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
+                  ? `You'll pay $${calcFees(activeMatch).shipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
                   : `Nothing to do yet — ${getOtherParty(activeMatch)?.full_name || 'the sender'} pays into escrow before you fly.`}
               </p>
             </div>

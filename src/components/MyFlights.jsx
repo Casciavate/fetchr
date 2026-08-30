@@ -10,6 +10,7 @@ import Toast from './shared/Toast';
 import EmptyState from './shared/EmptyState';
 import AdvisoryBanner from './shared/AdvisoryBanner';
 import { TicketSkeleton } from './shared/Skeleton';
+import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -73,19 +74,27 @@ const getLuggageOptions = (flight) => {
   return [];
 };
 
-const getNetEarnings = (kg, ppk) => {
+// Potential-earnings estimate shown before any real deal exists — no
+// match/request to run through calcFees, so this builds the minimal
+// synthetic shape calcFees expects and lets it do the actual math. Was
+// previously its own copy of the old percentage-tier model AND ignored
+// shop_and_ship_fee entirely, understating potential earnings on any
+// flight offering Shop & Ship.
+const getNetEarnings = (kg, ppk, shopFee = 0, offersShopShip = false) => {
   if (!kg || !ppk) return null;
-  const gross = parseFloat(kg) * parseFloat(ppk);
-  let pct = 0.10;
-  if (gross >= 500) pct = 0.07;
-  else if (gross >= 200) pct = 0.085;
-  else if (gross < 20 && gross > 0) pct = 0.12;
-  return { gross, net: gross * (1 - pct), fee: gross * pct, pct: Math.round(pct * 100) };
+  const fees = calcFees({
+    agreed_price_per_kg: ppk,
+    agreed_weight_kg: kg,
+    agreed_shop_fee: shopFee,
+    request: { requires_purchase: offersShopShip, purchase_price: 0 },
+  });
+  const gross = fees.transportFee + fees.shopFee;
+  return { gross, net: fees.travelerReceives, fee: fees.travelerPlatformFee, pct: Math.round(TRAVELER_PLATFORM_FEE_PCT * 100) };
 };
 
-const LuggageEditCard = ({ opt, index, onChange, onRemove }) => {
+const LuggageEditCard = ({ opt, index, onChange, onRemove, shopFee, offersShopShip }) => {
   const isCarryOn = opt.type === 'carry_on';
-  const earnings = getNetEarnings(opt.available_kg, opt.price_per_kg);
+  const earnings = getNetEarnings(opt.available_kg, opt.price_per_kg, shopFee, offersShopShip);
 
   return (
     <div className="rounded-md border border-line-strong bg-surface-sunken p-4 space-y-3">
@@ -335,10 +344,16 @@ const MyFlights = ({ session, onAddFlight }) => {
             const totalKg = luggageOpts.reduce((s, l) => s + parseFloat(l.available_kg || 0), 0);
             const bookedKg = parseFloat(flight.booked_kg || 0);
             const remainingKg = Math.max(0, totalKg - bookedKg);
+            const offersShopShip = flight.delivery_type === 'both';
+            const shopShipFee = offersShopShip ? (parseFloat(flight.shop_and_ship_fee) || 0) : 0;
+            // Shop & ship fee is a flat one-time fee per deal, not per
+            // luggage tranche — summed once here rather than inside the
+            // per-option reduce below, which would double (or triple) it
+            // if a flight offers both carry-on and check-in space.
             const totalNet = luggageOpts.reduce((s, l) => {
               const e = getNetEarnings(l.available_kg, l.price_per_kg);
               return s + (e?.net || 0);
-            }, 0);
+            }, 0) + (shopShipFee > 0 ? shopShipFee * (1 - TRAVELER_PLATFORM_FEE_PCT) : 0);
             const ref = flight.id.slice(0, 6).toUpperCase();
 
             return (
@@ -441,6 +456,25 @@ const MyFlights = ({ session, onAddFlight }) => {
                             </div>
                           );
                         })}
+                        {offersShopShip && shopShipFee > 0 && (
+                          <div className="flex items-center justify-between p-3 rounded-md bg-surface-sunken border border-line">
+                            <div className="flex items-center gap-2">
+                              <ShoppingBag size={15} className="text-ink-600" />
+                              <div>
+                                <p className="text-body-s font-semibold text-ink-900">Shop &amp; ship service fee</p>
+                                <p className="text-body-s text-content-muted font-mono">
+                                  ${shopShipFee.toFixed(2)} flat, when a sender needs an item bought
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right font-mono">
+                              <p className="text-body-s font-bold text-success">
+                                +${(shopShipFee * (1 - TRAVELER_PLATFORM_FEE_PCT)).toFixed(2)}
+                              </p>
+                              <p className="text-micro text-content-subtle">net ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}% fee)</p>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {luggageOpts.length > 1 && (
@@ -544,6 +578,8 @@ const MyFlights = ({ session, onAddFlight }) => {
                               index={i}
                               onChange={updateLuggageOption}
                               onRemove={removeLuggageOption}
+                              shopFee={editForm.delivery_type === 'both' ? (parseFloat(editForm.shop_and_ship_fee) || 0) : 0}
+                              offersShopShip={editForm.delivery_type === 'both'}
                             />
                           ))}
                         </div>

@@ -48,28 +48,86 @@ Key paths:
 
 ## Fee logic — authoritative, do not re-derive
 
+Two-sided pricing: shipper and traveler each pay/lose a *different* fee,
+on top of/deducted from a shared base. Purchase price is never
+commissionable — fetchr never takes a cut of the item's own cost, only of
+the service (moving it, and optionally buying it).
+
 ```
-transportFee   = weight_kg × price_per_kg
-shopFee        = traveler's service fee for buying the item (matches.agreed_shop_fee)
-purchasePrice  = cost of the item itself (shipment_requests.purchase_price)
+transportFee   = agreed_weight_kg × agreed_price_per_kg
+shopFee        = matches.agreed_shop_fee (0 if not a shop & ship deal)
+purchasePrice  = shipment_requests.purchase_price (0 if not a shop & ship deal)
+commissionBase = transportFee + shopFee     // purchase price NEVER commissionable
 
-fetchrBase     = transportFee + shopFee        // NEVER includes purchasePrice
-fetchrPct      = <$20 → 12% | <$200 → 10% | <$500 → 8.5% | ≥$500 → 7%
-fetchrFee      = fetchrBase × fetchrPct
+shipperServiceFee   = commissionBase × 15%   // paid by shipper, ON TOP
+travelerPlatformFee = commissionBase × 5%    // deducted from traveler payout
+sourcingFee         = purchasePrice × 6%     // paid by shipper, ON TOP, 0 if no purchase
 
-shipperPays       = transportFee + shopFee + purchasePrice
-travelerReceives  = transportFee + shopFee − fetchrFee + purchasePrice
-fetchrRevenue     = fetchrFee
+// Revenue floor $8.00 — shortfall added to the SHIPPER side only, never
+// inflates the traveler's deduction:
+baseRevenue = shipperServiceFee + travelerPlatformFee + sourcingFee
+if (baseRevenue < 8.00) shipperServiceFee += (8.00 - baseRevenue)
+
+shipperPays      = transportFee + shopFee + purchasePrice + shipperServiceFee + sourcingFee
+travelerReceives = transportFee + shopFee + purchasePrice - travelerPlatformFee
+fetchrRevenue    = shipperServiceFee + travelerPlatformFee + sourcingFee
+escrowHeld       = shipperPays
 ```
 
-Worked example — transport $20, shop fee $40, item $200:
-fetchrBase $60 → fee $6 (10%) → shipper pays $260, traveler receives $254.
+**Invariant, checked at runtime in `calcFees()` itself** (throws in dev,
+logs in prod/edge — never trust a caller to re-check this):
+`shipperPays - travelerReceives === fetchrRevenue` (within 1 cent). If a
+fee is ever charged to one side without landing somewhere, this is where
+it gets caught.
 
-A past bug applied the percentage to the $260 total (giving $22.10). That is wrong.
+**Minimum deal size $15.00** on `commissionBase` (not total deal value) —
+escrow payment is blocked entirely below this, before the $8 floor logic
+even runs.
 
-The canonical implementation is `calcFees()`, exported from
-`src/components/EscrowPayment.jsx` and duplicated in the edge function.
-If you change one, change both.
+Worked examples:
+1. Plain carry, 4kg × $15/kg = $60 transport, no purchase: shipperServiceFee
+   $9, travelerPlatformFee $3, sourcing $0 (floor not needed, revenue $12) →
+   shipperPays $69.00, travelerReceives $57.00, fetchrRevenue $12.00.
+2. Shop & ship, $20 transport + $40 shop fee + $200 item: base $60 →
+   shipperServiceFee $9, travelerPlatformFee $3, sourcing $12 (revenue $24) →
+   shipperPays $281.00, travelerReceives $257.00, fetchrRevenue $24.00.
+3. Floor case, $15 transport, no purchase: base revenue $2.25 + $0.75 =
+   $3.00, below $8 → shortfall $5.00 loaded onto shipperServiceFee ($7.25) →
+   shipperPays $22.25, travelerReceives $14.25, fetchrRevenue $8.00.
+4. $10 transport, no purchase: commissionBase $10 < $15 minimum → escrow
+   payment rejected outright.
+
+The canonical implementation is `calcFees()` in `src/lib/fees.js` —
+**every** frontend component that touches deal money imports it from
+there (EscrowPayment, Messages' DealDetailsModal, Matches' match preview,
+Dashboard's hero card, ActiveDeals, Completed, Earnings, MyFlights'
+potential-earnings estimate). There must never be a second
+implementation of this formula in `src/`. The edge function keeps its
+own hand-kept, structurally identical mirror (`supabase/functions/stripe-connect/index.ts`,
+same constants and field names) since it can't import from `src/`. If
+you change one, change both.
+
+**UI rule — each side sees only what affects their own number.** Never
+show the traveler the shipper's service fee or sourcing fee, and never
+show the shipper the traveler's platform fee (this includes not showing
+the other side's *total*, like "traveller receives $X", next to figures
+the viewer already knows — the missing fee becomes trivially derivable by
+subtraction). Shared chat messages (escrow secured, delivery released)
+state neutral totals only, never a fee breakdown, since both parties read
+the same thread.
+
+Stripe flow: the PaymentIntent amount equals `shipperPays` in cents,
+converted from dollars exactly once, same as before. `capture_payment`
+never recomputes fees from live match/flight/request data (those remain
+editable pre-agreement) — it reads the full breakdown back from the
+`escrow_hold` transaction's metadata, written once at escrow-creation
+time by both `create_payment_intent` and `escrow_from_wallet` identically,
+so an amendment made after payment can never desync what was charged from
+what gets released. On capture, `transactions` gets an `escrow_release`
+row (traveler, `travelerReceives`) and a `fetchr_revenue` row (the full
+`fetchrRevenue`, not just one side's fee) — the old `fetchr_fee` type is
+retired; anything reading transaction types (admin dashboard's revenue
+query, `admin_user_stats()`, `admin_kpi_timeseries()`) needs the rename.
 
 ## Deal lifecycle
 

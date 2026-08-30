@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
         { count: activeDealsCount },
         { count: completedDealsCount },
       ] = await Promise.all([
-        adminClient.from('transactions').select('amount').eq('type', 'fetchr_fee').eq('status', 'completed'),
+        adminClient.from('transactions').select('amount').eq('type', 'fetchr_revenue').eq('status', 'completed'),
         adminClient.from('transactions').select('amount').eq('type', 'escrow_hold').eq('status', 'pending'),
         adminClient.from('profiles').select('wallet_balance'),
         adminClient.from('profiles').select('id', { count: 'exact', head: true }),

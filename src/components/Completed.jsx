@@ -9,6 +9,7 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
+import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Barcode strip, docs/BRAND.md §7.7 item 5 / Assumptions #8 — same
 // treatment as the active-deal ticket, carried through to the completed
@@ -106,18 +107,6 @@ const Completed = ({ session, focusDealId }) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getDealValue = (deal) => {
-    return (deal.agreed_price_per_kg || deal.flight?.price_per_kg || 0) *
-      (deal.agreed_weight_kg || deal.request?.weight_kg || 0);
-  };
-
-  const getFetchrPct = (value) => {
-    if (value >= 500) return 0.07;
-    if (value >= 200) return 0.085;
-    if (value < 20 && value > 0) return 0.12;
-    return 0.10;
-  };
-
   // Inserting into `reviews` — a DB trigger (recalc_profile_rating) recomputes
   // the reviewee's profiles.rating/total_reviews server-side. The previous
   // version tried to update the OTHER party's profile row directly from the
@@ -140,14 +129,11 @@ const Completed = ({ session, focusDealId }) => {
 
   const totalEarned = deals
     .filter(d => isTraveler(d))
-    .reduce((sum, d) => {
-      const v = getDealValue(d);
-      return sum + v * (1 - getFetchrPct(v));
-    }, 0);
+    .reduce((sum, d) => sum + calcFees(d).travelerReceives, 0);
 
   const totalSpent = deals
     .filter(d => !isTraveler(d))
-    .reduce((sum, d) => sum + getDealValue(d), 0);
+    .reduce((sum, d) => sum + calcFees(d).shipperPays, 0);
 
   if (loading) return (
     <div className="max-w-3xl mx-auto space-y-3">
@@ -190,10 +176,7 @@ const Completed = ({ session, focusDealId }) => {
         <div className="space-y-3">
           {deals.map(deal => {
             const other = getOtherParty(deal);
-            const dealValue = getDealValue(deal);
-            const fetchrPct = getFetchrPct(dealValue);
-            const fetchrFee = dealValue * fetchrPct;
-            const travelerReceives = dealValue - fetchrFee;
+            const fees = calcFees(deal);
             const isExpanded = expandedId === deal.id;
             const currentRating = ratings[deal.id] || 0;
             const currentComment = comments[deal.id] || '';
@@ -229,8 +212,8 @@ const Completed = ({ session, focusDealId }) => {
                       <div className="text-right">
                         <p className={`font-mono font-semibold text-num-m ${isTraveler(deal) ? 'text-success' : 'text-ink-900'}`}>
                           {isTraveler(deal) ? '+' : ''}${isTraveler(deal)
-                            ? travelerReceives.toFixed(2)
-                            : dealValue.toFixed(2)}
+                            ? fees.travelerReceives.toFixed(2)
+                            : fees.shipperPays.toFixed(2)}
                         </p>
                         <p className="text-micro text-content-subtle">
                           {isTraveler(deal) ? 'earned' : 'paid'}
@@ -281,7 +264,7 @@ const Completed = ({ session, focusDealId }) => {
                       </div>
                     </div>
 
-                    {/* Fee breakdown */}
+                    {/* Fee breakdown — never show the other side's cut */}
                     <div className="bg-surface rounded-md p-3 border border-line space-y-1.5">
                       <p className="font-display font-semibold text-title-s text-ink-900 mb-2">Deal breakdown</p>
                       <div className="flex justify-between font-mono text-num-m text-content-muted">
@@ -289,24 +272,48 @@ const Completed = ({ session, focusDealId }) => {
                           {deal.agreed_weight_kg || deal.request?.weight_kg}kg ×
                           ${deal.agreed_price_per_kg || deal.flight?.price_per_kg}/kg
                         </span>
-                        <span>${dealValue.toFixed(2)}</span>
+                        <span>${fees.transportFee.toFixed(2)}</span>
                       </div>
+                      {fees.isPurchase && (
+                        <div className="flex justify-between font-mono text-num-m text-content-muted">
+                          <span>Shop &amp; ship service fee</span>
+                          <span>${fees.shopFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {fees.isPurchase && fees.purchasePrice > 0 && (
+                        <div className="flex justify-between font-mono text-num-m text-content-muted">
+                          <span>Item purchase price{isTraveler(deal) ? ' (reimbursed)' : ''}</span>
+                          <span>${fees.purchasePrice.toFixed(2)}</span>
+                        </div>
+                      )}
                       {isTraveler(deal) ? (
                         <>
                           <div className="flex justify-between font-mono text-num-m text-content-muted">
-                            <span>fetchr fee ({Math.round(fetchrPct * 100)}%)</span>
-                            <span>−${fetchrFee.toFixed(2)}</span>
+                            <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
+                            <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-mono font-bold text-num-m text-success border-t border-line pt-1.5">
                             <span>You received</span>
-                            <span>+${travelerReceives.toFixed(2)}</span>
+                            <span>+${fees.travelerReceives.toFixed(2)}</span>
                           </div>
                         </>
                       ) : (
-                        <div className="flex justify-between font-mono font-bold text-num-m text-ink-900 border-t border-line pt-1.5">
-                          <span>You paid</span>
-                          <span>${dealValue.toFixed(2)}</span>
-                        </div>
+                        <>
+                          <div className="flex justify-between font-mono text-num-m text-content-muted">
+                            <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                            <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                          </div>
+                          {fees.isPurchase && fees.purchasePrice > 0 && (
+                            <div className="flex justify-between font-mono text-num-m text-content-muted">
+                              <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                              <span>${fees.sourcingFee.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between font-mono font-bold text-num-m text-ink-900 border-t border-line pt-1.5">
+                            <span>You paid</span>
+                            <span>${fees.shipperPays.toFixed(2)}</span>
+                          </div>
+                        </>
                       )}
                     </div>
 

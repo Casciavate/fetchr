@@ -7,6 +7,7 @@ import {
   Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
 } from 'lucide-react';
 import AdvisoryBanner from './shared/AdvisoryBanner';
+import { calcFees, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
@@ -22,45 +23,6 @@ const CARD_ELEMENT_OPTIONS = {
     invalid: { color: '#B0301C', iconColor: '#B0301C' },
   },
   hidePostalCode: true,
-};
-
-// ── Correct fee logic ──
-// Fetchr fee = % of (transport fee + shop & ship fee) ONLY — NOT on item purchase price
-// Shipper pays = transport + shop & ship + item purchase
-// Traveler receives = transport + shop & ship - Fetchr fee + item purchase (reimbursement)
-export const calcFees = (match) => {
-  const pricePerKg = parseFloat(match.agreed_price_per_kg || match.flight?.price_per_kg || 0);
-  const weightKg = parseFloat(match.agreed_weight_kg || match.request?.weight_kg || 0);
-  const transportFee = pricePerKg * weightKg;
-
-  const isPurchase = !!(match.request?.requires_purchase);
-  const purchasePrice = isPurchase ? (parseFloat(match.request?.purchase_price) || 0) : 0;
-  const shopFee = isPurchase
-    ? parseFloat(match.agreed_shop_fee || match.flight?.shop_and_ship_fee || 0)
-    : 0;
-
-  // Fetchr fee only on transport + shop fee
-  const fetchrBase = transportFee + shopFee;
-  let fetchrPct = 0.10;
-  if (fetchrBase >= 500) fetchrPct = 0.07;
-  else if (fetchrBase >= 200) fetchrPct = 0.085;
-  else if (fetchrBase < 20 && fetchrBase > 0) fetchrPct = 0.12;
-  const fetchrFee = fetchrBase * fetchrPct;
-
-  const totalShipperPays = transportFee + shopFee + purchasePrice;
-  const travelerReceives = transportFee + shopFee - fetchrFee + purchasePrice;
-
-  return {
-    transportFee,
-    shopFee,
-    purchasePrice,
-    fetchrBase,
-    fetchrFee,
-    fetchrPct,
-    totalShipperPays,
-    travelerReceives,
-    isPurchase,
-  };
 };
 
 // ── Proof Upload Modal ──
@@ -234,7 +196,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
 
   const walletBalance = profile?.wallet_balance || 0;
   const hasSavedCard = !!(profile?.stripe_payment_method_id);
-  const canPayFullWithWallet = walletBalance >= fees.totalShipperPays;
+  const canPayFullWithWallet = walletBalance >= fees.shipperPays;
   const showCardForm = (paymentMethod === 'card' || paymentMethod === 'split') && (!hasSavedCard || useNewCard);
 
   const callStripe = async (action, data) => {
@@ -257,7 +219,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
     setLoading(true); setError('');
 
     try {
-      const total = fees.totalShipperPays;
+      const total = fees.shipperPays;
 
       // Wallet-only payment
       if (paymentMethod === 'wallet') {
@@ -327,9 +289,9 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
         <Lock size={28} className="text-info-500" />
       </div>
       <p className="font-display font-bold text-title-s text-content mb-1">Escrow secured</p>
-      <p className="text-body-s text-content-muted mb-3 font-mono">${fees.totalShipperPays.toFixed(2)} is held by fetchr.</p>
+      <p className="text-body-s text-content-muted mb-3 font-mono">${fees.shipperPays.toFixed(2)} is held by fetchr.</p>
       <div className="bg-info-50 rounded-md p-3 text-body-s text-info-500">
-        Neither side can move it alone. The traveller receives <span className="font-mono">${fees.travelerReceives.toFixed(2)}</span> once delivery is confirmed.
+        Neither side can move it alone. It's released to the traveller once delivery is confirmed.
       </div>
     </div>
   );
@@ -341,7 +303,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       </div>
       <p className="font-display font-bold text-title-m text-content mb-1">Escrow secured</p>
       <p className="text-body-s text-content-muted">
-        <span className="font-mono">${fees.totalShipperPays.toFixed(2)}</span> is held by fetchr. The traveller receives <span className="font-mono">${fees.travelerReceives.toFixed(2)}</span> once delivery is confirmed.
+        <span className="font-mono">${fees.shipperPays.toFixed(2)}</span> is held by fetchr, released to the traveller once delivery is confirmed.
       </p>
     </div>
   );
@@ -354,10 +316,20 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       </div>
 
       <div className="text-body-s text-info-500 bg-info-50 rounded-md p-3">
-        You'll pay <span className="font-mono font-semibold">${fees.totalShipperPays.toFixed(2)}</span> now. We hold it until you both confirm delivery.
+        You'll pay <span className="font-mono font-semibold">${fees.shipperPays.toFixed(2)}</span> now. We hold it until you both confirm delivery.
       </div>
 
-      {/* Payment breakdown */}
+      {fees.belowMinimum && (
+        <AdvisoryBanner tone="error">
+          This deal's transport + shop fee total is below fetchr's ${MINIMUM_DEAL_SIZE.toFixed(2)} minimum deal size —
+          escrow can't be paid until the agreed terms reach at least ${MINIMUM_DEAL_SIZE.toFixed(2)}.
+        </AdvisoryBanner>
+      )}
+
+      {/* Payment breakdown — shipper-only figures. Never show what the
+          traveller's platform fee is: the shipper already sees transport
+          + shop + purchase price, so showing "traveller receives" too
+          would make that fee trivially derivable by subtraction. */}
       <div className="ticket">
         <div className="bg-surface-sunken px-4 py-2.5 border-b border-line">
           <p className="text-overline font-mono text-content-muted uppercase tracking-wide">Payment breakdown</p>
@@ -378,7 +350,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
             <div className="flex justify-between text-content-muted">
               <span className="flex items-center gap-1.5 font-mono text-num-m">
                 <ShoppingBag size={12} className="text-ink-400" />
-                Shop fee
+                Shop &amp; ship service fee
               </span>
               <span className="font-mono text-num-m">{fees.shopFee > 0 ? `$${fees.shopFee.toFixed(2)}` : 'TBD'}</span>
             </div>
@@ -389,37 +361,33 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
             <div className="flex justify-between text-content-muted">
               <span className="flex items-center gap-1.5 font-mono text-num-m">
                 <Package size={12} className="text-ink-400" />
-                Item
+                Item purchase price
               </span>
               <span className="font-mono text-num-m">${fees.purchasePrice.toFixed(2)}</span>
             </div>
           )}
 
-          {/* fetchr fee — deduction shown, not netted */}
+          {/* Fetchr service fee — deduction shown, not netted */}
           <div className="flex justify-between text-content-muted">
-            <span className="font-mono text-num-m">fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span>
-            <span className="font-mono text-num-m">−${fees.fetchrFee.toFixed(2)}</span>
+            <span className="font-mono text-num-m">
+              Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}
+            </span>
+            <span className="font-mono text-num-m">${fees.shipperServiceFee.toFixed(2)}</span>
           </div>
+
+          {/* Sourcing fee — only when there's a purchase */}
+          {fees.isPurchase && fees.purchasePrice > 0 && (
+            <div className="flex justify-between text-content-muted">
+              <span className="font-mono text-num-m">Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+              <span className="font-mono text-num-m">${fees.sourcingFee.toFixed(2)}</span>
+            </div>
+          )}
 
           <div className="border-t border-line pt-2 mt-1">
             <div className="flex justify-between font-mono font-bold text-content text-num-l">
-              <span className="font-sans font-bold text-num-m">You pay</span>
-              <span>${fees.totalShipperPays.toFixed(2)}</span>
+              <span className="font-sans font-bold text-num-m">Total you pay</span>
+              <span>${fees.shipperPays.toFixed(2)}</span>
             </div>
-          </div>
-
-          {/* Traveller's side — shown for transparency before payment;
-              still written so the amount is never presented as the reader's own. */}
-          <div className="bg-surface-sunken rounded-md p-3 mt-1">
-            <div className="flex justify-between font-mono font-bold text-success">
-              <span className="font-sans font-bold">Traveller receives</span>
-              <span>${fees.travelerReceives.toFixed(2)}</span>
-            </div>
-            {fees.isPurchase && fees.purchasePrice > 0 && (
-              <p className="text-micro text-content-subtle mt-1">
-                Includes ${fees.purchasePrice.toFixed(2)} item reimbursement.
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -459,7 +427,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
               <Zap size={20} className="text-ink-600 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-body-s font-bold text-content">Wallet + card</p>
-                <p className="text-micro text-content-subtle font-mono">${walletBalance.toFixed(2)} wallet + ${(fees.totalShipperPays - walletBalance).toFixed(2)} card</p>
+                <p className="text-micro text-content-subtle font-mono">${walletBalance.toFixed(2)} wallet + ${(fees.shipperPays - walletBalance).toFixed(2)} card</p>
               </div>
               {paymentMethod === 'split' && <CheckCircle size={16} className="text-ink-900 flex-shrink-0" />}
             </button>
@@ -504,11 +472,11 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <button onClick={handlePay}
-        disabled={loading || !stripe || ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady)}
+        disabled={loading || !stripe || fees.belowMinimum || ((paymentMethod === 'card' || paymentMethod === 'split') && showCardForm && !cardReady)}
         className="w-full btn-signal disabled:opacity-50">
         {loading
           ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>
-          : <><Lock size={15} /> Pay ${fees.totalShipperPays.toFixed(2)} escrow</>
+          : <><Lock size={15} /> Pay ${fees.shipperPays.toFixed(2)} escrow</>
         }
       </button>
 

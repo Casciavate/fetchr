@@ -12,6 +12,7 @@ import EmptyState from './shared/EmptyState';
 import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Toast from './shared/Toast';
+import { calcFees, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
 // where the tile would double up on the surface-inverse fill.
@@ -234,17 +235,6 @@ const Matches = ({ session, onNavigate }) => {
     return data?.publicUrl;
   };
 
-  const getFeePreview = (match) => {
-    const agreedPrice = (match.flight?.price_per_kg || 0) *
-      (match.request?.weight_kg || 0);
-    let fetchrPct = 0.10;
-    if (agreedPrice >= 500) fetchrPct = 0.07;
-    else if (agreedPrice >= 200) fetchrPct = 0.085;
-    else if (agreedPrice < 20 && agreedPrice > 0) fetchrPct = 0.12;
-    const fetchrFee = agreedPrice * fetchrPct;
-    const travelerReceives = agreedPrice - fetchrFee;
-    return { agreedPrice, fetchrFee, fetchrPct, travelerReceives };
-  };
 
   if (loading && matches.length === 0) return (
     <div className="flex flex-col items-center justify-center py-24">
@@ -259,7 +249,7 @@ const Matches = ({ session, onNavigate }) => {
   const renderMatchCard = (match) => {
     const other = getOtherParty(match);
     const avatarUrl = getAvatarUrl(other);
-    const fees = getFeePreview(match);
+    const fees = calcFees(match);
     const iAmTraveler = isTraveler(match);
     const iHaveAccepted = iAmTraveler
       ? match.traveler_accepted
@@ -422,12 +412,40 @@ const Matches = ({ session, onNavigate }) => {
               <div className="border-t border-line pt-2 space-y-1">
                 <div className="flex justify-between font-mono text-num-m text-content-muted">
                   <span>{match.request?.weight_kg}kg × ${match.flight?.price_per_kg}/kg</span>
-                  <span>${fees.agreedPrice.toFixed(2)}</span>
+                  <span>${fees.transportFee.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-mono text-num-m text-content-muted">
-                  <span>fetchr fee ({Math.round(fees.fetchrPct * 100)}%)</span>
-                  <span>−${fees.fetchrFee.toFixed(2)}</span>
-                </div>
+                {fees.isPurchase && (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Shop &amp; ship service fee</span>
+                    <span>${fees.shopFee.toFixed(2)}</span>
+                  </div>
+                )}
+                {fees.isPurchase && fees.purchasePrice > 0 && (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Item purchase price{iAmTraveler ? ' (reimbursed)' : ''}</span>
+                    <span>${fees.purchasePrice.toFixed(2)}</span>
+                  </div>
+                )}
+                {/* Never show the other side's cut — see EscrowPayment/Messages for the same rule */}
+                {!iAmTraveler ? (
+                  <>
+                    <div className="flex justify-between font-mono text-num-m text-content-muted">
+                      <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                      <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                    </div>
+                    {fees.isPurchase && fees.purchasePrice > 0 && (
+                      <div className="flex justify-between font-mono text-num-m text-content-muted">
+                        <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                        <span>${fees.sourcingFee.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Platform fee ({Math.round(TRAVELER_PLATFORM_FEE_PCT * 100)}%)</span>
+                    <span>−${fees.travelerPlatformFee.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -442,7 +460,7 @@ const Matches = ({ session, onNavigate }) => {
               {iAmTraveler ? 'You receive' : 'You pay'}
             </span>
             <span className="font-mono font-bold text-num-l text-ink-900">
-              ${(iAmTraveler ? fees.travelerReceives : fees.agreedPrice).toFixed(2)}
+              ${(iAmTraveler ? fees.travelerReceives : fees.shipperPays).toFixed(2)}
             </span>
           </div>
 
