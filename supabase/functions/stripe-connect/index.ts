@@ -362,19 +362,34 @@ Deno.serve(async (req) => {
       const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
       if (!account.payouts_enabled) throw new Error('Your connected bank account is not ready to receive payouts yet — finish onboarding in Stripe first.')
 
-      // The actual money movement, done BEFORE any DB write: if this
-      // throws, nothing else in this action has happened yet, so a failed
-      // transfer can never silently vanish wallet balance.
-      const transfer = await stripe.transfers.create({
-        amount: Math.round(netAmount * 100),
-        currency: 'usd',
-        destination: profile.stripe_connect_account_id,
-        description: `fetchr wallet withdrawal for ${user.email}`,
-        metadata: { supabase_user_id: user.id, gross_amount_usd: amount.toString(), fee_usd: fee.toString() },
-      })
+      // Atomic, race-safe debit BEFORE the transfer: a plain read-then-write
+      // of wallet_balance let two concurrent withdrawals both pass the
+      // safeBalance check above and both transfer real money out, since the
+      // second write just clobbered the first with the same stale snapshot.
+      // adjust_wallet_balance does the check-and-decrement in one UPDATE, so
+      // Postgres's row lock serializes concurrent calls — the loser gets
+      // 'Insufficient wallet balance' here, before any Stripe transfer
+      // happens, rather than after.
+      const { data: newBalance, error: debitError } = await adminClient
+        .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -amount })
+      if (debitError) throw new Error(`Withdrawal of $${amount.toFixed(2)} exceeds your available balance.`)
 
-      const newBalance = safeBalance - amount
-      await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
+      let transfer
+      try {
+        transfer = await stripe.transfers.create({
+          amount: Math.round(netAmount * 100),
+          currency: 'usd',
+          destination: profile.stripe_connect_account_id,
+          description: `fetchr wallet withdrawal for ${user.email}`,
+          metadata: { supabase_user_id: user.id, gross_amount_usd: amount.toString(), fee_usd: fee.toString() },
+        })
+      } catch (transferError) {
+        // The debit already landed but the real transfer didn't — credit
+        // it back rather than silently vanishing the user's balance.
+        await adminClient.rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
+        throw transferError
+      }
+
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'withdrawal', amount,
         description: 'Withdrawal to connected bank account',

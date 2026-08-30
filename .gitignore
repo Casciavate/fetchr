@@ -1,7 +1,11 @@
 node_modules/
 .env
+.env.*
+!.env.example
 build/
 .DS_Store
+supabase/.temp/
+*.local
 
 # iOS / Xcode / CocoaPods (Capacitor)
 ios/App/Pods/
