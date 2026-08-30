@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import StatusPill from './shared/StatusPill';
 import Toast from './shared/Toast';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 const ADMIN_FN_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/admin-dashboard';
 
@@ -204,11 +205,7 @@ const AdminDashboard = () => {
         ))}
       </div>
 
-      {error && (
-        <div className="bg-danger-tint border border-void-100 text-danger text-body-s rounded-md p-3">
-          {error}
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       {tab === 'overview' && (
         loading && !overview ? (

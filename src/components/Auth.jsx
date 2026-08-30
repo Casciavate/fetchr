@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plane, Package, DollarSign, Mail, Lock, Eye, EyeOff, ArrowRight, Shield, X, AlertTriangle } from 'lucide-react';
+import { Plane, Package, DollarSign, Mail, Lock, Eye, EyeOff, ArrowRight, Shield, X } from 'lucide-react';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 export const TC_SECTIONS = [
   {
@@ -275,11 +276,7 @@ const Auth = () => {
               </div>
             )}
 
-            {error && (
-              <div className="bg-danger-tint text-danger text-body-s px-4 py-3 rounded-md">
-                {error}
-              </div>
-            )}
+            {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
             {success && (
               <div className="bg-success-tint text-success text-body-s px-4 py-3 rounded-md">
                 {success}
@@ -352,14 +349,9 @@ const Auth = () => {
                   <p>{section.body}</p>
                 </div>
               ))}
-              <div className="bg-danger-tint rounded-md p-4 border-l-[3px] border-void-500">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-                  <p className="text-danger font-semibold text-body-s">
-                    Important: by creating a fetchr account you acknowledge that you have read, understood, and agree to all of these Terms &amp; Conditions. Violation may result in immediate account termination and referral to law enforcement authorities.
-                  </p>
-                </div>
-              </div>
+              <AdvisoryBanner tone="error">
+                <span className="font-semibold">Important: by creating a fetchr account you acknowledge that you have read, understood, and agree to all of these Terms &amp; Conditions.</span> Violation may result in immediate account termination and referral to law enforcement authorities.
+              </AdvisoryBanner>
             </div>
             <div className="px-6 pb-6 space-y-2">
               <button onClick={() => { setShowTC(false); setTcAgreed(true); }}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { AIRLINE_CODES } from './shared/airlines';
 import {
-  Plane, Edit2, Trash2, Plus, AlertTriangle,
+  Plane, Edit2, Trash2, Plus,
   CheckCircle, DollarSign, X, Save,
   MapPin, ShoppingBag, Briefcase, Package, Weight, Handshake
 } from 'lucide-react';
@@ -425,25 +425,19 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
                   </div>
 
                   {flight.status === 'expired' && (
-                    <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
-                      <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-                      <p className="text-body-s text-warning">
-                        This flight already departed. It's kept here because it has deal history.
-                      </p>
-                    </div>
+                    <AdvisoryBanner tone="warning">
+                      This flight already departed. It's kept here because it has deal history.
+                    </AdvisoryBanner>
                   )}
 
                   {hasActiveMatch(flight.id) && (
-                    <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
-                      <AlertTriangle size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-body-s text-info-500">
-                        {bookedKg > 0
-                          ? `${bookedKg.toFixed(1)}kg already committed to an active deal — ${remainingKg.toFixed(1)}kg still free for other matches. `
-                          : 'Active deal in progress — '}
-                        This flight can't be deleted or edited here. Any change to price or
-                        terms needs to go through the Messages tab for that deal.
-                      </p>
-                    </div>
+                    <AdvisoryBanner tone="info">
+                      {bookedKg > 0
+                        ? `${bookedKg.toFixed(1)}kg already committed to an active deal — ${remainingKg.toFixed(1)}kg still free for other matches. `
+                        : 'Active deal in progress — '}
+                      This flight can't be deleted or edited here. Any change to price or
+                      terms needs to go through the Messages tab for that deal.
+                    </AdvisoryBanner>
                   )}
 
                   {/* View mode */}
@@ -535,7 +529,7 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
                       )}
 
                       {flight.delivery_type === 'both' && (
-                        <div className="flex items-center gap-2 bg-info-50 text-info-500 rounded-md px-3 py-2 text-body-s font-semibold">
+                        <div className="flex items-center gap-2 bg-[var(--info-tint)] text-[var(--info)] rounded-md px-3 py-2 text-body-s font-semibold">
                           <ShoppingBag size={12} /> Shop &amp; Ship available
                           {flight.shop_and_ship_fee > 0 ? ` · $${flight.shop_and_ship_fee} service fee` : ''}
                         </div>

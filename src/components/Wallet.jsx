@@ -6,12 +6,13 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import { supabase } from '../supabaseClient';
 import {
   WalletCards, DollarSign, ArrowDownCircle, ArrowUpCircle,
-  CreditCard, CheckCircle, Clock, Lock, AlertTriangle,
+  CreditCard, CheckCircle, Clock, Lock,
   ChevronRight, Building, Plus
 } from 'lucide-react';
 import BottomSheet from './shared/BottomSheet';
 import Toast from './shared/Toast';
 import EmptyState from './shared/EmptyState';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 import { RowSkeleton } from './shared/Skeleton';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
@@ -282,31 +283,20 @@ const TopUpForm = ({ profile, onSuccess, onClose }) => {
         <p className="text-micro text-content-subtle mt-1.5 flex items-center gap-1">
           <Lock size={10} /> Card details encrypted by Stripe — never stored on fetchr servers
         </p>
-        <div className="bg-info-50 border border-line rounded-md p-3 mt-2">
-          <p className="text-label text-info-500 font-bold">Test mode</p>
-          <p className="text-body-s text-info-500 mt-0.5">
-            Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC<br />
-            3DS auth: <strong>4000 0025 0000 3155</strong> · Any future date · Any 3-digit CVC
-          </p>
-        </div>
+        <AdvisoryBanner tone="warning" title="Test mode" className="mt-2">
+          Standard: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC<br />
+          3DS auth: <strong>4000 0025 0000 3155</strong> · Any future date · Any 3-digit CVC
+        </AdvisoryBanner>
       </div>
 
       {/* Info shown when saved card is selected */}
       {hasSavedCard && !useNewCard && (
-        <div className="bg-info-50 border border-line rounded-md p-3 flex items-start gap-2">
-          <Lock size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-          <p className="text-body-s text-info-500">
-            Tap Pay to charge your saved card. If your bank requires 3DS verification, a secure popup will appear automatically.
-          </p>
-        </div>
+        <AdvisoryBanner tone="info">
+          Tap Pay to charge your saved card. If your bank requires 3DS verification, a secure popup will appear automatically.
+        </AdvisoryBanner>
       )}
 
-      {error && (
-        <div className="bg-danger-tint border border-line rounded-md p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-          <p className="text-danger text-body-s">{error}</p>
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <div className="flex gap-2">
         <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
@@ -502,12 +492,7 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
         )}
       </div>
 
-      {error && (
-        <div className="bg-danger-tint border border-line rounded-md p-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-          <p className="text-danger text-body-s">{error}</p>
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
       <div className="flex gap-2">
         <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>

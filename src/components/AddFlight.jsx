@@ -6,10 +6,11 @@ import ImportFlights from './ImportFlights';
 import RoutePicker from './shared/RoutePicker';
 import DatePicker from './shared/DatePicker';
 import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 import {
   Plane, Search, MapPin, DollarSign,
-  CheckCircle, AlertCircle, ShoppingBag,
-  Briefcase, Package, Plus, X, Weight, AlertTriangle,
+  CheckCircle, ShoppingBag,
+  Briefcase, Package, Plus, X, Weight,
   Radar, ChevronDown, PenLine, Handshake
 } from 'lucide-react';
 
@@ -597,11 +598,7 @@ const AddFlight = ({ session }) => {
         ))}
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 bg-danger-tint border-l-[3px] border-danger text-danger text-body-m px-4 py-3 rounded-r mb-4">
-          <AlertCircle size={16} className="flex-shrink-0" /> {error}
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error" className="mb-4">{error}</AdvisoryBanner>}
       {successMsg && (
         <div className="flex items-center gap-2 bg-success-tint text-success text-body-m px-4 py-3 rounded-md mb-4">
           <CheckCircle size={16} className="flex-shrink-0" /> {successMsg}
@@ -934,11 +931,8 @@ const AddFlight = ({ session }) => {
           </div>
 
           {/* Safety declaration */}
-          <div className="bg-warning-tint border-l-[3px] border-warn-400 rounded-r p-4">
-            <p className="text-body-s font-semibold text-warning mb-3 flex items-center gap-1.5">
-              <AlertTriangle size={13} /> Safety & legal declaration
-            </p>
-            <div className="flex items-start gap-3">
+          <AdvisoryBanner tone="warning" title="Safety & legal declaration">
+            <div className="flex items-start gap-3 mt-1">
               <input type="checkbox" id="safety-flight"
                 checked={form.safetyAcknowledged}
                 onChange={e => setForm({ ...form, safetyAcknowledged: e.target.checked })}
@@ -951,7 +945,7 @@ const AddFlight = ({ session }) => {
                 I accept full legal responsibility. fetchr bears no liability.
               </label>
             </div>
-          </div>
+          </AdvisoryBanner>
 
           <div className="flex gap-3">
             <button onClick={() => setStep(1)} className="btn-secondary flex-1 py-3">Back</button>

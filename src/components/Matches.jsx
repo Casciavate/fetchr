@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import {
   Search, CheckCircle, XCircle, Ticket, MessageCircle,
   ChevronRight, ChevronDown, ChevronUp, X, Award,
-  AlertTriangle, Info, List, LayoutGrid, Plane, Package
+  List, LayoutGrid, Plane, Package
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
 import VerificationBadge from './shared/VerificationBadge';
@@ -13,6 +13,7 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import CardStack from './shared/CardStack';
 import Toast from './shared/Toast';
 import DealInfoSections from './shared/DealInfoSections';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
@@ -390,28 +391,17 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
               </p>
             </div>
           ) : match.flight?.delivery_type === 'both' && match.request?.requires_purchase ? (
-            <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
-              <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-              <p className="text-body-s text-info-500">
-                <span className="font-semibold">Shop & Ship available</span> — the traveller can buy at the destination.
-              </p>
-            </div>
+            <AdvisoryBanner tone="info">
+              <span className="font-semibold">Shop & Ship available</span> — the traveller can buy at the destination.
+            </AdvisoryBanner>
           ) : match.request?.requires_purchase && match.flight?.delivery_type !== 'both' ? (
-            <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
-              <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-              <div className="text-body-s text-warning">
-                <p className="font-semibold">Shop & Ship doesn't match</p>
-                <p>Sender wants a purchase; this traveller only offers handover. Resolve this in chat once matched.</p>
-              </div>
-            </div>
+            <AdvisoryBanner tone="warning" title="Shop & Ship doesn't match">
+              Sender wants a purchase; this traveller only offers handover. Resolve this in chat once matched.
+            </AdvisoryBanner>
           ) : !match.request?.requires_purchase && match.flight?.delivery_type === 'both' ? (
-            <div className="flex items-start gap-2 bg-warning-tint rounded-r px-2.5 py-2 border-l-[3px] border-warn-400">
-              <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-              <div className="text-body-s text-warning">
-                <p className="font-semibold">Shop & Ship doesn't match</p>
-                <p>This flight offers Shop & Ship, but the request is handover only. Resolve this in chat once matched.</p>
-              </div>
-            </div>
+            <AdvisoryBanner tone="warning" title="Shop & Ship doesn't match">
+              This flight offers Shop & Ship, but the request is handover only. Resolve this in chat once matched.
+            </AdvisoryBanner>
           ) : null}
 
           {/* Person row */}
@@ -514,12 +504,9 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
           {!iHaveAccepted ? (
             <div className="space-y-2">
               {!capacityOk && (
-                <div className="flex items-start gap-2 bg-danger-tint border-l-[3px] border-danger rounded-r px-2.5 py-2">
-                  <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-                  <p className="text-body-s text-danger">
-                    No remaining luggage space on this flight for {neededKg}kg — another deal already took it.
-                  </p>
-                </div>
+                <AdvisoryBanner tone="error">
+                  No remaining luggage space on this flight for {neededKg}kg — another deal already took it.
+                </AdvisoryBanner>
               )}
               <div className="flex gap-2">
                 <button
@@ -547,9 +534,9 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
             // explicitly agree terms there. Never auto-opens chat; only
             // this deliberate click does.
             <div className="space-y-2">
-              <div className="flex items-center gap-2 bg-info-50 rounded-md px-3 py-2.5">
-                <MessageCircle size={16} className="text-info-500 flex-shrink-0" />
-                <p className="text-body-s text-info-500 font-medium">
+              <div className="flex items-center gap-2 bg-[var(--info-tint)] rounded-md px-3 py-2.5">
+                <MessageCircle size={16} className="text-[var(--info)] flex-shrink-0" />
+                <p className="text-body-s text-[var(--info)] font-medium">
                   {(() => {
                     const myTerms = iAmTraveler ? match.terms_agreed_traveler : match.terms_agreed_shipper;
                     const otherTerms = iAmTraveler ? match.terms_agreed_shipper : match.terms_agreed_traveler;

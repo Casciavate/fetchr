@@ -9,7 +9,7 @@ import {
   Check, Award, Package, Plane, Camera,
   CreditCard, CheckCircle, Trash2, AlertTriangle,
   ChevronDown, ChevronUp, ChevronRight, Building, Lock,
-  Info, LogOut, TrendingUp, Shield
+  LogOut, TrendingUp, Shield
 } from 'lucide-react';
 import VerificationBadge from './shared/VerificationBadge';
 import RatingDisplay from './shared/RatingDisplay';
@@ -128,12 +128,9 @@ const SaveCardForm = ({ session, onSuccess, onCancel }) => {
         </p>
       </div>
 
-      <div className="bg-info-50 rounded-md p-3">
-        <p className="text-body-s font-semibold text-info-500">Test mode</p>
-        <p className="text-body-s text-info-500 mt-0.5">
-          Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC
-        </p>
-      </div>
+      <AdvisoryBanner tone="warning" title="Test mode">
+        Card: <strong>4242 4242 4242 4242</strong> · Any future date · Any 3-digit CVC
+      </AdvisoryBanner>
 
       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
@@ -785,12 +782,9 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
             </div>
           ) : (
             <>
-              <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
-                <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-                <p className="text-body-s text-info-500">
-                  No card saved. Add one to enable top ups and payments.
-                </p>
-              </div>
+              <AdvisoryBanner tone="info" className="mb-4">
+                No card saved. Add one to enable top ups and payments.
+              </AdvisoryBanner>
               <button onClick={() => setShowCardForm(true)} className="btn-secondary">
                 <CreditCard size={14} /> Add card
               </button>
@@ -842,12 +836,9 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
             </div>
           ) : (
             <>
-              <div className="bg-info-50 rounded-md p-3 mb-4 flex items-start gap-2">
-                <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-                <p className="text-body-s text-info-500">
-                  {connectStatus.connected ? 'Onboarding not finished yet.' : 'No bank account connected.'} Required to enable withdrawals.
-                </p>
-              </div>
+              <AdvisoryBanner tone="info" className="mb-4">
+                {connectStatus.connected ? 'Onboarding not finished yet.' : 'No bank account connected.'} Required to enable withdrawals.
+              </AdvisoryBanner>
               <button onClick={startBankConnect} disabled={connectingBank} className="btn-secondary disabled:opacity-50">
                 <Building size={14} /> {connectingBank ? 'Opening Stripe…' : 'Connect your bank via Stripe'}
               </button>
@@ -889,13 +880,10 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
           </div>
 
           {!canDelete ? (
-            <div className="bg-warning-tint border-l-[3px] border-warn-400 rounded-r p-4">
-              <p className="text-body-s font-semibold text-warning mb-1">Account cannot be deleted yet</p>
-              <p className="text-body-s text-warning leading-relaxed">
-                {stats.dealsOngoing > 0 && `Complete or cancel your ${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''} first. `}
-                {(profile?.wallet_balance || 0) > 0 && `Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`}
-              </p>
-            </div>
+            <AdvisoryBanner tone="warning" title="Account cannot be deleted yet">
+              {stats.dealsOngoing > 0 && `Complete or cancel your ${stats.dealsOngoing} active deal${stats.dealsOngoing > 1 ? 's' : ''} first. `}
+              {(profile?.wallet_balance || 0) > 0 && `Withdraw your $${(profile?.wallet_balance || 0).toFixed(2)} wallet balance first.`}
+            </AdvisoryBanner>
           ) : (
             <button onClick={() => { setShowDeleteAccount(true); setError(''); }}
               className="flex items-center gap-2 border border-void-200 text-danger rounded-md px-4 py-2.5 text-body-s font-semibold hover:bg-danger-tint transition-colors">

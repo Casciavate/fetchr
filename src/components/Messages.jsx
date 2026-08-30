@@ -12,6 +12,7 @@ import StatusPill from './shared/StatusPill';
 import SkeletonList from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
 import DealInfoSections from './shared/DealInfoSections';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 const STAGES = [
   { id: 'matched', label: 'Matched', icon: Zap },
@@ -130,10 +131,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
           {editing ? (
             <div className="bg-surface rounded-lg border border-line-strong p-4 space-y-3">
               <p className="font-display font-semibold text-title-s text-ink-900 mb-1">Amend deal terms</p>
-              <div className="flex items-start gap-2 bg-warning-tint border-l-[3px] border-warn-400 rounded-r px-2.5 py-2">
-                <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-                <p className="text-body-s text-warning">Amending resets both parties' agreement. You will both need to re-agree to terms.</p>
-              </div>
+              <AdvisoryBanner tone="warning">Amending resets both parties' agreement. You will both need to re-agree to terms.</AdvisoryBanner>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">Price/kg ($)</label>
@@ -1005,43 +1003,35 @@ const Messages = ({ session, focusMatchId }) => {
               doesn't offer, or the flight offers one the sender never asked
               for. */}
           {activeMatch.status === 'accepted' && shopShipMismatch(activeMatch) && activeMatch.shop_ship_included == null && (
-            <div className="px-4 py-3 flex flex-col gap-2 bg-warning-tint border-l-[3px] border-warn-400 flex-shrink-0">
-              <div className="flex items-start gap-2">
-                <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-                <p className="text-body-s text-warning leading-relaxed">
-                  <span className="font-semibold">Shop & Ship doesn't match: </span>
-                  {activeMatch.request?.requires_purchase
-                    ? 'the sender wants the traveller to buy the item, but this flight only offers handover.'
-                    : 'the traveller offers to buy items on this flight, but this request is handover only.'}
-                  {' '}Agree how to handle it before continuing.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => resolveShopShip(false)} className="btn-secondary flex-1 text-label">
-                  Handover only
-                </button>
-                <button onClick={() => resolveShopShip(true)} className="btn-secondary flex-1 text-label">
-                  Traveller will buy &amp; ship
-                </button>
-              </div>
+            <div className="px-4 pt-3 flex-shrink-0">
+              <AdvisoryBanner tone="warning" title="Shop & Ship doesn't match">
+                {activeMatch.request?.requires_purchase
+                  ? 'The sender wants the traveller to buy the item, but this flight only offers handover.'
+                  : 'The traveller offers to buy items on this flight, but this request is handover only.'}
+                {' '}Agree how to handle it before continuing.
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => resolveShopShip(false)} className="btn-secondary flex-1 text-label">
+                    Handover only
+                  </button>
+                  <button onClick={() => resolveShopShip(true)} className="btn-secondary flex-1 text-label">
+                    Traveller will buy &amp; ship
+                  </button>
+                </div>
+              </AdvisoryBanner>
             </div>
           )}
 
-          {/* Safety notice — §7.9 advisory banner. Reflects the resolved
-              Shop & Ship outcome (never the raw, possibly-mismatched
-              request field), and only shows once there's nothing left to
-              resolve. */}
+          {/* Safety notice — reflects the resolved Shop & Ship outcome
+              (never the raw, possibly-mismatched request field), and only
+              shows once there's nothing left to resolve. */}
           {activeMatch.status === 'accepted' && !(shopShipMismatch(activeMatch) && activeMatch.shop_ship_included == null) && (
-            <div className={`px-4 py-2.5 flex items-start gap-2 border-l-[3px] flex-shrink-0 ${isTraveler(activeMatch) ? 'bg-warning-tint border-warn-400' : 'bg-info-50 border-info-400'}`}>
-              {isTraveler(activeMatch)
-                ? <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
-                : <Info size={14} className="text-info-500 flex-shrink-0 mt-0.5" />}
-              <p className={`text-body-s leading-relaxed ${isTraveler(activeMatch) ? 'text-warning' : 'text-info-500'}`}>
+            <div className="px-4 pt-3 flex-shrink-0">
+              <AdvisoryBanner tone={isTraveler(activeMatch) ? 'warning' : 'info'}>
                 {resolvedIsPurchase(activeMatch)
                   ? isTraveler(activeMatch) ? 'Only purchase the item once escrow is confirmed paid.' : 'Once you agree terms and pay escrow, the traveller will purchase your item at the destination.'
                   : isTraveler(activeMatch) ? 'Only accept the item from the sender once escrow is confirmed paid.' : 'Hand the item to the traveller before their flight. Your payment is secured in escrow until both parties confirm delivery.'
                 }
-              </p>
+              </AdvisoryBanner>
             </div>
           )}
 
@@ -1061,23 +1051,21 @@ const Messages = ({ session, focusMatchId }) => {
 
           {/* Escrow pending notice — copy per BRAND.md §9.2 */}
           {activeMatch.status === 'terms_agreed' && (
-            <div className="px-4 py-2.5 flex items-start gap-2 border-l-[3px] border-info-400 bg-info-50 flex-shrink-0">
-              <Shield size={14} className="flex-shrink-0 mt-0.5 text-info-500" />
-              <p className="text-body-s leading-relaxed text-info-500">
+            <div className="px-4 pt-3 flex-shrink-0">
+              <AdvisoryBanner tone="info">
                 {isShipper(activeMatch)
                   ? `You'll pay $${calcFees(activeMatch).shipperPays.toFixed(2)} now. We hold it until you both confirm delivery.`
                   : `Nothing to do yet — ${getOtherParty(activeMatch)?.full_name || 'the sender'} pays into escrow before you fly.`}
-              </p>
+              </AdvisoryBanner>
             </div>
           )}
 
           {/* Flight-not-yet-flown notice — delivery can't be confirmed early */}
           {['proof_uploaded', 'in_escrow'].includes(activeMatch.status) && !myCompleted && !flightHasDeparted(activeMatch) && (
-            <div className="px-4 py-2.5 flex items-start gap-2 border-l-[3px] border-info-400 bg-info-50 flex-shrink-0">
-              <Plane size={14} className="flex-shrink-0 mt-0.5 text-info-500" />
-              <p className="text-body-s leading-relaxed text-info-500">
+            <div className="px-4 pt-3 flex-shrink-0">
+              <AdvisoryBanner tone="info">
                 Confirming delivery opens up on {new Date(activeMatch.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, once the flight has taken place.
-              </p>
+              </AdvisoryBanner>
             </div>
           )}
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import {
-  Package, Trash2, Plus, AlertTriangle, CheckCircle,
+  Package, Trash2, Plus, CheckCircle,
   MapPin, Weight, DollarSign, Calendar, ShoppingBag,
   Link, ChevronDown, ChevronUp, User, Phone, Shield,
   Plane, Clock, X, Edit2, Save
@@ -266,10 +266,7 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
                   </div>
 
                   {hasMatch && (
-                    <div className="flex items-start gap-2 bg-info-50 rounded-r px-2.5 py-2 border-l-[3px] border-info-400">
-                      <AlertTriangle size={14} className="text-info-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-body-s text-info-500">Active deal in progress — this request can't be edited or deleted until complete.</p>
-                    </div>
+                    <AdvisoryBanner tone="info">Active deal in progress — this request can't be edited or deleted until complete.</AdvisoryBanner>
                   )}
 
                   {editingId !== req.id && (

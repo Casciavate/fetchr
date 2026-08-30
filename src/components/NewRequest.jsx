@@ -4,11 +4,12 @@ import {
   Package, DollarSign,
   CheckCircle, AlertCircle, Camera, X,
   ShoppingBag, MapPin, Link, User, Phone,
-  AlertTriangle, Shield, Search, Info
+  Shield, Search, Info
 } from 'lucide-react';
 import RoutePicker from './shared/RoutePicker';
 import WeightInput from './shared/WeightInput';
 import DatePicker from './shared/DatePicker';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -347,11 +348,7 @@ const NewRequest = ({ session }) => {
         ))}
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 bg-danger-tint text-danger text-body-m px-4 py-3 rounded-md mb-4">
-          <AlertCircle size={16} className="flex-shrink-0" /> {error}
-        </div>
-      )}
+      {error && <AdvisoryBanner tone="error" className="mb-4">{error}</AdvisoryBanner>}
 
       {/* ── STEP 1 ── */}
       {step === 1 && (
@@ -585,15 +582,9 @@ const NewRequest = ({ session }) => {
           {/* Handover sub-flow */}
           {form.delivery_mode === 'handover' && (
             <div className="space-y-4">
-              <div className="bg-danger-tint rounded-r px-2.5 py-2.5 flex items-start gap-2 border-l-[3px] border-danger">
-                <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-body-s font-semibold text-danger mb-1">Item security notice</p>
-                  <p className="text-body-s text-danger leading-relaxed">
-                    Do not hand over the item until escrow is confirmed paid. Once the deal is matched and terms agreed, the sender must pay escrow before you release the item. The traveller's identity is logged in the deal — always verify it before releasing the item.
-                  </p>
-                </div>
-              </div>
+              <AdvisoryBanner tone="error" title="Item security notice">
+                Do not hand over the item until escrow is confirmed paid. Once the deal is matched and terms agreed, the sender must pay escrow before you release the item. The traveller's identity is logged in the deal — always verify it before releasing the item.
+              </AdvisoryBanner>
 
               <div>
                 <label className="block text-label text-content-muted mb-2 uppercase tracking-wide">
@@ -731,11 +722,8 @@ const NewRequest = ({ session }) => {
           )}
 
           {/* Safety declaration */}
-          <div className="bg-warning-tint rounded-r px-4 py-4 border-l-[3px] border-warn-400">
-            <p className="text-body-s font-semibold text-warning mb-3 flex items-center gap-1.5">
-              <Shield size={13} /> Safety &amp; legal declaration
-            </p>
-            <div className="flex items-start gap-3">
+          <AdvisoryBanner tone="warning" title="Safety & legal declaration">
+            <div className="flex items-start gap-3 mt-1">
               <input type="checkbox" id="safety-ack-req" checked={safetyAcknowledged}
                 onChange={e => setSafetyAcknowledged(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-ink-900 flex-shrink-0" />
@@ -751,17 +739,13 @@ const NewRequest = ({ session }) => {
               </label>
             </div>
             {!safetyAcknowledged && (
-              <p className="text-body-s text-warning font-semibold mt-3 flex items-center gap-1.5">
+              <p className="text-body-s font-semibold mt-3 flex items-center gap-1.5">
                 <AlertCircle size={12} /> You must accept this declaration to post the request.
               </p>
             )}
-          </div>
+          </AdvisoryBanner>
 
-          {error && (
-            <div className="flex items-center gap-2 bg-danger-tint text-danger text-body-m px-4 py-3 rounded-md">
-              <AlertCircle size={16} className="flex-shrink-0" /> {error}
-            </div>
-          )}
+          {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
           <div className="flex gap-3">
             <button onClick={() => setStep(2)} className="btn-secondary flex-1 py-3">Back</button>

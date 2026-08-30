@@ -104,15 +104,14 @@ export const ProofUploadModal = ({ match, session, onClose, onUploaded }) => {
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <div className="bg-info-50 rounded-md p-3">
-            <p className="text-label font-semibold text-info-500 mb-1 uppercase tracking-wide">What to upload</p>
-            <ul className="text-body-s text-info-500 space-y-0.5">
+          <AdvisoryBanner tone="info" title="What to upload">
+            <ul className="space-y-0.5">
               <li>Photo of the item</li>
               {isPurchase && <li>Purchase receipt from the store</li>}
               {isPurchase && <li>Photo of the purchased item</li>}
               <li>Any other delivery confirmation</li>
             </ul>
-          </div>
+          </AdvisoryBanner>
 
           <div>
             <label className="block text-label font-semibold text-content-muted mb-2 uppercase tracking-wide">Photos (up to 5)</label>
@@ -462,10 +461,9 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
           <div className="border-2 border-line-strong rounded-md px-4 py-3.5 focus-within:border-accent transition-all bg-surface">
             <CardElement options={{ ...CARD_ELEMENT_OPTIONS, wallets: { link: 'never' } }} onReady={() => setCardReady(true)} />
           </div>
-          <div className="bg-warning-tint border-l-[3px] border-warn-400 rounded-r p-3 mt-2">
-            <p className="text-body-s text-warning font-bold">Test mode</p>
-            <p className="text-body-s text-warning mt-0.5 font-mono">4242 4242 4242 4242 · any future date · any CVC</p>
-          </div>
+          <AdvisoryBanner tone="warning" title="Test mode" className="mt-2">
+            <span className="font-mono">4242 4242 4242 4242 · any future date · any CVC</span>
+          </AdvisoryBanner>
         </div>
       )}
 

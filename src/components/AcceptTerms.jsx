@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { AlertTriangle, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { TC_SECTIONS } from './Auth';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 
 // Shown once, full-screen, before Dashboard ever renders — for ANY account
 // that reached a session without profiles.terms_accepted_at being set.
@@ -56,14 +57,9 @@ const AcceptTerms = ({ session, onAccepted }) => {
               <p>{section.body}</p>
             </div>
           ))}
-          <div className="bg-danger-tint rounded-md p-4 border-l-[3px] border-void-500">
-            <div className="flex items-start gap-2">
-              <AlertTriangle size={14} className="text-danger flex-shrink-0 mt-0.5" />
-              <p className="text-danger font-semibold text-body-s">
-                By continuing you acknowledge that you have read, understood, and agree to all of these Terms &amp; Conditions. Violation may result in immediate account termination and referral to law enforcement authorities.
-              </p>
-            </div>
-          </div>
+          <AdvisoryBanner tone="error">
+            <span className="font-semibold">By continuing you acknowledge that you have read, understood, and agree to all of these Terms &amp; Conditions.</span> Violation may result in immediate account termination and referral to law enforcement authorities.
+          </AdvisoryBanner>
         </div>
 
         <div className="p-6 border-t border-line space-y-3 flex-shrink-0">
@@ -78,9 +74,7 @@ const AcceptTerms = ({ session, onAccepted }) => {
             </label>
           </div>
 
-          {error && (
-            <div className="bg-danger-tint text-danger text-body-s px-4 py-3 rounded-md">{error}</div>
-          )}
+          {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
           <button onClick={handleAccept} disabled={!agreed || loading}
             className="btn-primary w-full disabled:opacity-50">

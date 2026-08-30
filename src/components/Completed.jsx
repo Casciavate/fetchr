@@ -9,6 +9,7 @@ import ReviewsSheet from './shared/ReviewsSheet';
 import StatusPill from './shared/StatusPill';
 import EmptyState from './shared/EmptyState';
 import { TicketSkeleton } from './shared/Skeleton';
+import AdvisoryBanner from './shared/AdvisoryBanner';
 import Barcode from './shared/Barcode';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
@@ -257,11 +258,9 @@ const Completed = ({ session, focusDealId }) => {
                     </div>
 
                     {cancelled ? (
-                      <div className="bg-danger-tint rounded-md p-3 border border-line">
-                        <p className="text-body-s text-danger font-medium">
-                          This deal was cancelled by mutual agreement after being accepted. Any escrow paid was refunded — it doesn't count toward completed deals or earnings.
-                        </p>
-                      </div>
+                      <AdvisoryBanner tone="error">
+                        This deal was cancelled by mutual agreement after being accepted. Any escrow paid was refunded — it doesn't count toward completed deals or earnings.
+                      </AdvisoryBanner>
                     ) : (
                       /* Fee breakdown — never show the other side's cut */
                       <div className="bg-surface rounded-md p-3 border border-line space-y-1.5">
