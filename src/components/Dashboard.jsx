@@ -1,14 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '../supabaseClient';
-
-// Running inside the native iOS shell always gets the touch-optimized
-// bottom-nav layout, regardless of viewport width — a phone rotated to
-// landscape is still a phone, not a tablet/desktop, and the md: breakpoint
-// used to switch the whole nav paradigm (sidebar vs bottom tabs) based on
-// width alone, which is the wrong signal here. The web app (real browsers,
-// any width) keeps its existing responsive breakpoint behavior unchanged.
-const IS_NATIVE = Capacitor.isNativePlatform();
 import AddFlight from './AddFlight';
 import MyFlights from './MyFlights';
 import NewRequest from './NewRequest';
@@ -20,9 +12,6 @@ import Completed from './Completed';
 import Profile from './Profile';
 import Earnings from './Earnings';
 import WalletScreen from './Wallet';
-// Lazy-loaded: pulls in recharts, which only admins ever need — keeps that
-// weight out of the bundle every regular user downloads.
-const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
 import { AIRLINE_CODES } from './shared/airlines';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 import StatusPill from './shared/StatusPill';
@@ -38,6 +27,17 @@ import {
   ChevronRight, ChevronDown, ChevronUp, LogOut, CheckCircle, Search,
   Zap, ArrowUpRight, Lock, Camera, Ticket, Weight
 } from 'lucide-react';
+
+// Running inside the native iOS shell always gets the touch-optimized
+// bottom-nav layout, regardless of viewport width — a phone rotated to
+// landscape is still a phone, not a tablet/desktop, and the md: breakpoint
+// used to switch the whole nav paradigm (sidebar vs bottom tabs) based on
+// width alone, which is the wrong signal here. The web app (real browsers,
+// any width) keeps its existing responsive breakpoint behavior unchanged.
+const IS_NATIVE = Capacitor.isNativePlatform();
+// Lazy-loaded: pulls in recharts, which only admins ever need — keeps that
+// weight out of the bundle every regular user downloads.
+const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the sidebar lockup and
 // anywhere else the ink tile would double up.
