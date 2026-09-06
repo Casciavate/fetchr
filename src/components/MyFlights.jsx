@@ -4,13 +4,17 @@ import { AIRLINE_CODES } from './shared/airlines';
 import {
   Plane, Edit2, Trash2, Plus,
   CheckCircle, DollarSign, X, Save,
-  MapPin, ShoppingBag, Briefcase, Package, Weight, Handshake
+  MapPin, ShoppingBag, Briefcase, Package, Weight, Handshake,
+  Ban, CalendarClock,
 } from 'lucide-react';
 import Toast from './shared/Toast';
 import EmptyState from './shared/EmptyState';
 import AdvisoryBanner from './shared/AdvisoryBanner';
+import BottomSheet from './shared/BottomSheet';
 import { TicketSkeleton } from './shared/Skeleton';
 import { calcFees, TRAVELER_PLATFORM_FEE_PCT } from '../lib/fees';
+
+const STRIPE_CONNECT_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect';
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -171,6 +175,14 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  // Cancel/reschedule: a flight with a live deal used to be frozen solid —
+  // Edit and Delete are both disabled by hasActiveMatch, with no other way
+  // out if the traveller's plans changed. This is the escape hatch, gated
+  // on a required reason so the counterpart always gets a real explanation.
+  const [actionSheet, setActionSheet] = useState(null); // { flight, mode: 'cancel' | 'reschedule' }
+  const [actionReason, setActionReason] = useState('');
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [actioning, setActioning] = useState(false);
   const consumedFocusIdRef = useRef(null);
 
   // Deep-link from Home's flight tile — straight to this exact flight, no
@@ -189,7 +201,7 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     await supabase.rpc('expire_old_flights');
     const { data, error } = await supabase
       .from('flights').select('*').eq('user_id', session.user.id)
-      .in('status', ['active', 'expired'])
+      .in('status', ['active', 'expired', 'cancelled'])
       .order('flight_date', { ascending: true });
     if (!error && data) {
       setFlights(data);
@@ -307,6 +319,118 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     if (!error) setFlights(prev => prev.filter(f => f.id !== flightId));
   };
 
+  const openActionSheet = (flight, mode) => {
+    setActionSheet({ flight, mode });
+    setActionReason('');
+    setRescheduleDate(flight.flight_date ? flight.flight_date.slice(0, 10) : '');
+    setError('');
+  };
+  const closeActionSheet = () => { setActionSheet(null); setActionReason(''); setRescheduleDate(''); };
+
+  // Every match this flight is still party to that hasn't already reached a
+  // terminal state — pending/awaiting_other candidates the shipper never
+  // even opened chat on, right through to an active in_escrow deal. A
+  // completed deal is left alone (delivery already happened; cancelling the
+  // flight after the fact can't undo it).
+  const fetchActionableMatches = async (flightId) => {
+    const { data } = await supabase.from('matches')
+      .select('*, request:shipment_requests(needed_by, item_name)')
+      .eq('flight_id', flightId)
+      .not('status', 'in', '["completed","rejected"]');
+    return data || [];
+  };
+
+  const cancelFlight = async () => {
+    if (!actionReason.trim()) { setError('Tell the sender(s) why this flight is being cancelled.'); return; }
+    const flight = actionSheet.flight;
+    setActioning(true); setError('');
+
+    // Mark the flight cancelled FIRST — the escrow-refund edge action checks
+    // this row's own status as its authorization gate, so it has to already
+    // be true before any match gets touched.
+    await supabase.from('flights').update({
+      status: 'cancelled', cancellation_reason: actionReason, cancelled_at: new Date().toISOString(),
+    }).eq('id', flight.id);
+
+    const matches = await fetchActionableMatches(flight.id);
+    const { data: { session: auth } } = await supabase.auth.getSession();
+    const route = `${flight.from_code} → ${flight.to_code}`;
+    const dateStr = new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const chatWasOpen = (status) => ['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'].includes(status);
+
+    for (const match of matches) {
+      const hadEscrow = ['in_escrow', 'proof_uploaded'].includes(match.status) && match.payment_intent_id;
+      if (hadEscrow) {
+        await fetch(STRIPE_CONNECT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+          body: JSON.stringify({ action: 'cancel_payment_for_flight_cancellation', data: { matchId: match.id } }),
+        });
+      } else {
+        await supabase.from('matches').update({
+          status: 'rejected', deal_stage: 'cancelled', cancel_reason: 'flight_cancelled',
+        }).eq('id', match.id);
+      }
+      if (chatWasOpen(match.status)) {
+        await supabase.from('messages').insert({
+          match_id: match.id, sender_id: session.user.id,
+          content: `Cancellation: your traveller's flight ${route} on ${dateStr} was cancelled (${actionReason}). This deal has been closed${hadEscrow ? ' and your payment has been refunded.' : '.'}`,
+          is_read: false,
+        });
+      }
+    }
+
+    // Best-effort — the shipper's request stays 'open' throughout (it's
+    // never flipped on accept), so this just surfaces other candidate
+    // flights now that this one's gone. Same fire-and-forget pattern every
+    // other call site uses.
+    await supabase.rpc('find_matches');
+
+    closeActionSheet();
+    setSuccess('Flight cancelled. Affected senders have been notified.');
+    await fetchFlights();
+    setTimeout(() => setSuccess(''), 4000);
+    setActioning(false);
+  };
+
+  const rescheduleFlight = async () => {
+    if (!actionReason.trim()) { setError('Tell the sender(s) why this flight is being rescheduled.'); return; }
+    if (!rescheduleDate) { setError('Pick the new flight date.'); return; }
+    const flight = actionSheet.flight;
+    setActioning(true); setError('');
+
+    const oldDateStr = new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const newDateStr = new Date(rescheduleDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const route = `${flight.from_code} → ${flight.to_code}`;
+
+    await supabase.from('flights').update({
+      flight_date: rescheduleDate, reschedule_reason: actionReason, last_rescheduled_at: new Date().toISOString(),
+    }).eq('id', flight.id);
+
+    // Reschedule never auto-cancels anything — same "flag it, let the humans
+    // sort it out in chat" pattern as the Shop & Ship mismatch banner. The
+    // only thing this does beyond the date change is make sure both sides
+    // actually know it happened, with an extra nudge if it now misses the
+    // sender's own deadline.
+    const matches = await fetchActionableMatches(flight.id);
+    for (const match of matches) {
+      if (!['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'].includes(match.status)) continue;
+      const missesDeadline = match.request?.needed_by && rescheduleDate > match.request.needed_by;
+      await supabase.from('messages').insert({
+        match_id: match.id, sender_id: session.user.id,
+        content: `Flight rescheduled: ${route} now departs ${newDateStr} (was ${oldDateStr}). Reason: ${actionReason}.`
+          + (missesDeadline ? ` ⚠️ This is after your ${new Date(match.request.needed_by).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} deadline — you may want to discuss alternatives here.` : ''),
+        is_read: false,
+      });
+    }
+
+    closeActionSheet();
+    setSuccess('Flight rescheduled. Affected senders have been notified.');
+    await fetchFlights();
+    setTimeout(() => setSuccess(''), 4000);
+    setActioning(false);
+  };
+
   const toggleCategory = (cat) => {
     setEditForm(prev => ({
       ...prev,
@@ -323,6 +447,7 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     if (status === 'proof_uploaded') return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-accent-fill text-white font-mono text-overline uppercase">Proof uploaded</span>;
     if (status === 'terms_agreed') return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-ink-100 text-content-muted font-mono text-overline uppercase">Terms agreed</span>;
     if (status === 'accepted') return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-ink-100 text-content-muted font-mono text-overline uppercase">Deal active</span>;
+    if (flight.status === 'cancelled') return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-danger-tint text-danger font-mono text-overline uppercase">Cancelled</span>;
     if (flight.status === 'expired') return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-ink-100 text-content-muted font-mono text-overline uppercase">Flight passed</span>;
     return <span className="inline-flex items-center h-[22px] px-2 rounded-sm bg-success-tint text-success font-mono text-overline uppercase">Active</span>;
   };
@@ -427,6 +552,18 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
                   {flight.status === 'expired' && (
                     <AdvisoryBanner tone="warning">
                       This flight already departed. It's kept here because it has deal history.
+                    </AdvisoryBanner>
+                  )}
+
+                  {flight.status === 'cancelled' && (
+                    <AdvisoryBanner tone="error">
+                      You cancelled this flight{flight.cancellation_reason ? `: "${flight.cancellation_reason}"` : '.'} Any deals on it were closed and escrow refunded.
+                    </AdvisoryBanner>
+                  )}
+
+                  {flight.status === 'active' && flight.reschedule_reason && (
+                    <AdvisoryBanner tone="info">
+                      Rescheduled{flight.reschedule_reason ? `: "${flight.reschedule_reason}"` : ''} — affected senders were notified in chat.
                     </AdvisoryBanner>
                   )}
 
@@ -730,10 +867,10 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
                   )}
                 </div>
 
-                {editingFlight !== flight.id && (
+                {editingFlight !== flight.id && flight.status === 'active' && (
                   <>
                     <div className="perf" />
-                    <div className="px-4 pt-3.5 pb-4 space-y-3">
+                    <div className="px-4 pt-3.5 pb-4 space-y-2">
                       <div className="flex items-baseline justify-between">
                         <span className="font-mono text-body-m text-content-muted">Max net earnings</span>
                         <span className="font-mono font-bold text-num-l text-ink-900">${totalNet.toFixed(2)}</span>
@@ -750,6 +887,19 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
                           <Trash2 size={14} /> Delete
                         </button>
                       </div>
+                      {/* Unlike Edit/Delete above, these stay enabled even
+                          with an active deal — a real flight cancellation or
+                          reschedule doesn't wait for the deal to be free. */}
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={() => openActionSheet(flight, 'reschedule')}
+                          className="flex-1 btn-secondary text-label py-2">
+                          <CalendarClock size={13} /> Reschedule
+                        </button>
+                        <button onClick={() => openActionSheet(flight, 'cancel')}
+                          className="flex-1 btn-secondary text-label py-2 text-danger border-danger-fill/30 hover:bg-danger-tint">
+                          <Ban size={13} /> Cancel flight
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -757,6 +907,52 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
             );
           })}
         </div>
+      )}
+
+      {actionSheet && (
+        <BottomSheet
+          title={actionSheet.mode === 'cancel' ? 'Cancel this flight' : 'Reschedule this flight'}
+          onClose={actioning ? undefined : closeActionSheet}
+          footer={
+            <div className="flex gap-2">
+              <button onClick={closeActionSheet} disabled={actioning} className="flex-1 btn-secondary">Never mind</button>
+              <button
+                onClick={actionSheet.mode === 'cancel' ? cancelFlight : rescheduleFlight}
+                disabled={actioning}
+                className={`flex-[2] disabled:opacity-50 ${actionSheet.mode === 'cancel' ? 'btn-danger' : 'btn-primary'}`}>
+                {actioning
+                  ? 'Working…'
+                  : actionSheet.mode === 'cancel' ? 'Cancel flight & notify' : 'Reschedule & notify'}
+              </button>
+            </div>
+          }>
+          <div className="p-5 space-y-4">
+            {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
+            <p className="text-body-s text-content-muted">
+              {actionSheet.flight.from_code} → {actionSheet.flight.to_code} · {new Date(actionSheet.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+            {actionSheet.mode === 'cancel' ? (
+              <AdvisoryBanner tone="warning">
+                This closes every open deal on this flight. Any escrow already paid is refunded to the sender automatically. This can't be undone.
+              </AdvisoryBanner>
+            ) : (
+              <div>
+                <label className="block text-label text-content-muted mb-1.5 uppercase">New flight date</label>
+                <input type="date" value={rescheduleDate}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="input-field font-mono" />
+              </div>
+            )}
+            <div>
+              <label className="block text-label text-content-muted mb-1.5 uppercase">
+                Reason {actionSheet.mode === 'cancel' ? '(shown to the sender)' : '(shown to affected senders)'}
+              </label>
+              <textarea rows={3} value={actionReason} onChange={e => setActionReason(e.target.value)}
+                placeholder={actionSheet.mode === 'cancel' ? 'e.g. Airline cancelled the flight' : 'e.g. Airline moved the departure time'}
+                className="input-field resize-none" />
+            </div>
+          </div>
+        </BottomSheet>
       )}
     </div>
   );

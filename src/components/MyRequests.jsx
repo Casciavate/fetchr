@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import {
   Package, Trash2, Plus, CheckCircle,
   MapPin, Weight, DollarSign, Calendar, ShoppingBag,
-  Link, ChevronDown, ChevronUp, User, Phone, Shield,
+  Link, User, Phone, Shield,
   Plane, Clock, X, Edit2, Save
 } from 'lucide-react';
 import RatingDisplay from './shared/RatingDisplay';
@@ -241,16 +241,10 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
                     : 'No deadline'}
                   spend={advertisedBudget ? `$${advertisedBudget.toFixed(2)}` : 'Open'}
                   spendNote={advertisedBudget ? 'Your budget' : 'Open to offers · negotiate in chat'}
+                  expandable
+                  expanded={isExpanded}
+                  onToggleExpand={() => handleExpand(req.id)}
                 />
-
-                {/* Expand toggle — same interaction/markup as Matches'
-                    "View deal details" coupon pattern, not a separate
-                    action button among Edit/Delete. */}
-                <button onClick={() => handleExpand(req.id)}
-                  className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-1">
-                  {isExpanded ? 'Hide deal details' : 'View deal details'}
-                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
 
                 <div className="px-1 pt-1 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">

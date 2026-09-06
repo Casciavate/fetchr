@@ -747,7 +747,34 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── Cancel escrow ──
+    // Shared refund mechanics for both cancel paths below — same Stripe/
+    // wallet logic, only the authorization check before calling this
+    // differs. `match` needs at least id, shipper_id and request (for the
+    // description text).
+    const refundEscrow = async (match, paymentIntentId) => {
+      const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
+      if (!isWalletEscrow) {
+        await stripe.paymentIntents.cancel(paymentIntentId)
+      } else {
+        const { data: shipperProfile } = await adminClient.from('profiles').select('wallet_balance').eq('id', match.shipper_id).single()
+        const { data: escrowTx } = await adminClient.from('transactions')
+          .select('amount').eq('match_id', match.id).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
+        if (escrowTx) {
+          await adminClient.from('profiles').update({
+            wallet_balance: (shipperProfile?.wallet_balance || 0) + escrowTx.amount,
+          }).eq('id', match.shipper_id)
+          await adminClient.from('transactions').insert({
+            user_id: match.shipper_id, type: 'credit', amount: escrowTx.amount,
+            description: `Escrow refund: ${match.request?.item_name}`, match_id: match.id, status: 'completed',
+            metadata: { refund_type: 'wallet_escrow_cancellation' },
+          })
+        }
+      }
+      await adminClient.from('transactions').update({ status: 'refunded' })
+        .eq('match_id', match.id).eq('type', 'escrow_hold')
+    }
+
+    // ── Cancel escrow (mutual agreement) ──
     if (action === 'cancel_payment') {
       const { paymentIntentId, matchId } = data
       if (!matchId) throw new Error('matchId required')
@@ -766,35 +793,42 @@ Deno.serve(async (req) => {
       if (!pendingCancelReq || pendingCancelReq.requested_by === user.id) {
         throw new Error('Forbidden: cancellation must be agreed to by the other party first')
       }
-      const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
+      const { data: match } = await adminClient.from('matches').select('*, request:shipment_requests(*)').eq('id', matchId).maybeSingle()
+      if (match) await refundEscrow(match, paymentIntentId)
 
-      if (!isWalletEscrow) {
-        await stripe.paymentIntents.cancel(paymentIntentId)
-      } else {
-        // Refund wallet escrow back to shipper
-        const { data: match } = await adminClient.from('matches').select('*, request:shipment_requests(*)').eq('id', matchId).maybeSingle()
-        if (match) {
-          const { data: shipperProfile } = await adminClient.from('profiles').select('wallet_balance').eq('id', match.shipper_id).single()
-          const { data: escrowTx } = await adminClient.from('transactions')
-            .select('amount').eq('match_id', matchId).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
-          if (escrowTx) {
-            await adminClient.from('profiles').update({
-              wallet_balance: (shipperProfile?.wallet_balance || 0) + escrowTx.amount,
-            }).eq('id', match.shipper_id)
-            await adminClient.from('transactions').insert({
-              user_id: match.shipper_id, type: 'credit', amount: escrowTx.amount,
-              description: `Escrow refund: ${match.request?.item_name}`, match_id: matchId, status: 'completed',
-              metadata: { refund_type: 'wallet_escrow_cancellation' },
-            })
-          }
-        }
-      }
-
-      if (matchId) {
-        await adminClient.from('transactions').update({ status: 'refunded' })
-          .eq('match_id', matchId).eq('type', 'escrow_hold')
-      }
       return new Response(JSON.stringify({ success: true, refunded: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Cancel escrow because the traveller's own flight was cancelled ──
+    // Unlike cancel_payment above (gated on the OTHER party having agreed
+    // via cancellation_requests), this lets the traveller trigger the
+    // refund unilaterally — but the gate is an objective, already-committed
+    // fact (their flight's own `status` really is 'cancelled' in the DB),
+    // never just the caller's say-so. Refunding the shipper can't harm
+    // them, so no counterpart agreement is required, unlike a mutual
+    // cancellation of an otherwise-live deal.
+    if (action === 'cancel_payment_for_flight_cancellation') {
+      const { matchId } = data
+      if (!matchId) throw new Error('matchId required')
+      const { data: match } = await adminClient.from('matches')
+        .select('*, request:shipment_requests(*), flight:flights(*)').eq('id', matchId).maybeSingle()
+      if (!match) throw new Error('Match not found')
+      if (user.id !== match.traveler_id) throw new Error('Forbidden: only the traveller can trigger this')
+      if (!match.flight || match.flight.status !== 'cancelled' || match.flight.user_id !== user.id) {
+        throw new Error('Forbidden: this flight has not been cancelled')
+      }
+      if (!['in_escrow', 'proof_uploaded'].includes(match.status)) {
+        throw new Error('No escrow to refund for this deal')
+      }
+      const refunded = !!match.payment_intent_id
+      if (refunded) await refundEscrow(match, match.payment_intent_id)
+
+      await adminClient.from('matches').update({
+        status: 'rejected', deal_stage: 'cancelled', cancel_reason: 'flight_cancelled',
+      }).eq('id', matchId)
+
+      return new Response(JSON.stringify({ success: true, refunded }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

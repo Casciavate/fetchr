@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Package, Smartphone, Shirt, Sparkles, UtensilsCrossed, BookOpen,
-  Gamepad2, Pill, Gem, Dumbbell, Home, FileText, Plane,
+  Gamepad2, Pill, Gem, Dumbbell, Home, FileText, Plane, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 // Ported verbatim from the Claude Design "fetchr" design system
@@ -11,6 +11,17 @@ import {
 // icon names resolve through this small local map instead of importing one.
 // Do not alter the markup/styles below without updating the source design
 // project to match.
+//
+// The coupon block (expandable, couponLabel/couponValue, children) is a
+// local addition, not part of the ported design — every other ticket in
+// this app (the boarding-pass `.ticket`/`.perf` pattern) has an integrated
+// perforated coupon stub for its "view full deal details" affordance, but
+// this component previously had no equivalent, so callers bolted a plain
+// button on below it instead (see MyRequests.jsx). This gives it the same
+// stub, reusing the exact `.perf` divider the boarding pass uses, so the
+// two ticket styles read as one consistent system. Backward compatible:
+// omitting `expandable` renders exactly as before (Dashboard's read-only
+// tiles).
 const ICONS = {
   Package, Smartphone, Shirt, Sparkles, UtensilsCrossed, BookOpen,
   Gamepad2, Pill, Gem, Dumbbell, Home, FileText, Plane,
@@ -23,6 +34,8 @@ const Icon = ({ name, size, color, style }) => {
 export function CargoTag({
   itemName, category, categoryIcon = 'Package', from, to, neededBy, spend,
   spendNote = 'Estimate · set by matched flight', state = 'default', interactive = false,
+  expandable = false, expanded = false, onToggleExpand,
+  couponLabel = 'View deal details', couponHideLabel = 'Hide deal details', children,
   style, ...rest
 }) {
   const [hover, setHover] = React.useState(false);
@@ -92,6 +105,20 @@ export function CargoTag({
           </div>
           {spendNote && <p style={{ fontSize: 'var(--text-micro)', color: 'var(--ink-subtle)', marginTop: -6, textAlign: 'right' }}>{spendNote}</p>}
         </div>
+
+        {expandable && (
+          <>
+            <div className="perf" />
+            <button type="button" onClick={onToggleExpand}
+              className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-3">
+              {expanded ? couponHideLabel : couponLabel}
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {expanded && children && (
+              <div style={{ padding: '0 var(--space-4) var(--space-4)' }}>{children}</div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

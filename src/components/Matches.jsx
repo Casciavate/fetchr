@@ -14,6 +14,8 @@ import CardStack from './shared/CardStack';
 import Toast from './shared/Toast';
 import DealInfoSections from './shared/DealInfoSections';
 import AdvisoryBanner from './shared/AdvisoryBanner';
+import CargoTag from './shared/CargoTag';
+import { CATEGORY_ICONS } from './shared/categories';
 import { calcFees, resolveOptionPrice, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT } from '../lib/fees';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside the ticket header bar,
@@ -282,6 +284,207 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     </div>
   );
 
+  // The shipper's take on a match — a cargo tag for the item on top (what
+  // am I sending, on what route, by when) plus a manifest ticket below it
+  // for status/actions, mirroring the traveller's boarding-pass ticket
+  // (renderMatchCard's own return) field-for-field but built for someone
+  // tracking a shipment rather than a trip.
+  const renderCargoTicketCard = ({
+    match, other, avatarUrl, fees, iHaveAccepted, otherHasAcceptedFull,
+    ref, neededKg, capacityOk, isExpanded, needsMe,
+  }) => (
+    <div key={match.id} id={`match-${match.id}`}
+      className={focusMatchId === match.id ? 'ring-2 ring-signal-500 ring-offset-2 rounded-lg' : ''}>
+
+      <CargoTag
+        itemName={match.request?.item_name}
+        category={match.request?.category}
+        categoryIcon={CATEGORY_ICONS[match.request?.category] || 'Package'}
+        from={{ code: match.flight?.from_code, city: match.flight?.from_city }}
+        to={{ code: match.flight?.to_code, city: match.flight?.to_city }}
+        neededBy={match.flight?.flight_date
+          ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+          : '—'}
+        spend={`$${fees.shipperPays.toFixed(2)}`}
+        spendNote="You pay · see breakdown below"
+        state={needsMe ? 'yours' : 'default'}
+      />
+
+      <div className={`ticket mt-2 ${needsMe ? 'border-l-[3px] border-l-signal-500' : ''}`}>
+        <div className="px-4 py-3 space-y-2.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {needsMe && <StatusPill tone="signal">Your turn</StatusPill>}
+            {iHaveAccepted && !otherHasAcceptedFull && (
+              <StatusPill tone="neutral">Waiting on traveller</StatusPill>
+            )}
+            {match.status === 'accepted' && <StatusPill tone="success">Chat open</StatusPill>}
+            <StatusPill tone="score">{Math.min(match.match_score, 100)}% match</StatusPill>
+            <span className="font-mono text-micro text-content-subtle ml-auto">#{ref}</span>
+          </div>
+
+          <p className="font-mono text-micro text-content-muted border-t border-b border-line py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
+            {match.flight?.flight_date
+              ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+              : '—'}
+            {' · '}{match.flight?.flight_number || match.flight?.airline || '—'}
+            {' · '}{match.request?.weight_kg}kg
+          </p>
+
+          {match.shop_ship_included != null ? (
+            <div className="flex items-start gap-2 bg-surface-sunken rounded-r px-2.5 py-2 border-l-[3px] border-line">
+              <CheckCircle size={14} className="text-content-muted flex-shrink-0 mt-0.5" />
+              <p className="text-body-s text-content-muted">
+                <span className="font-semibold">Shop & Ship resolved</span> — {match.shop_ship_included ? 'traveller will buy & ship the item.' : 'handover only, no purchase.'}
+              </p>
+            </div>
+          ) : match.flight?.delivery_type === 'both' && match.request?.requires_purchase ? (
+            <AdvisoryBanner tone="info">
+              <span className="font-semibold">Shop & Ship available</span> — the traveller can buy at the destination.
+            </AdvisoryBanner>
+          ) : match.request?.requires_purchase && match.flight?.delivery_type !== 'both' ? (
+            <AdvisoryBanner tone="warning" title="Shop & Ship doesn't match">
+              You want a purchase; this traveller only offers handover. Resolve this in chat once matched.
+            </AdvisoryBanner>
+          ) : !match.request?.requires_purchase && match.flight?.delivery_type === 'both' ? (
+            <AdvisoryBanner tone="warning" title="Shop & Ship doesn't match">
+              This flight offers Shop & Ship, but your request is handover only. Resolve this in chat once matched.
+            </AdvisoryBanner>
+          ) : null}
+
+          <div className="flex items-center gap-2.5 py-1">
+            <button onClick={() => fetchProfile(other?.id)} className="flex items-center gap-2.5 flex-1 min-w-0 text-left group">
+              <div className="w-8 h-8 rounded-avatar bg-ink-900 flex items-center justify-center text-[11px] font-mono font-semibold text-paper-100 flex-shrink-0 overflow-hidden">
+                {avatarUrl
+                  ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" />
+                  : getInitials(other?.full_name)
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-display font-semibold text-title-s text-ink-900 truncate">
+                    {other?.full_name || 'User'}
+                  </p>
+                  <VerificationBadge verified={other?.verified} />
+                </div>
+                <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier="New traveller"
+                  onClick={other?.id ? () => setReviewsFor({ id: other.id, name: other.full_name }) : undefined} />
+              </div>
+            </button>
+            <ChevronRight size={16} className="text-ink-400 flex-shrink-0 group-hover:text-ink-600 transition-colors" />
+          </div>
+
+          <button onClick={() => setExpandedId(isExpanded ? null : match.id)}
+            className="w-full flex items-center justify-center gap-1 text-label text-content-muted font-semibold py-1">
+            {isExpanded ? 'Hide deal details' : 'View deal details'}
+            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {isExpanded && (
+            <div className="space-y-3">
+              <DealInfoSections match={match} />
+
+              {match.flight?.available_kg != null && (
+                <div className="bg-surface-sunken rounded-md border border-line p-3 flex items-center justify-between text-body-s">
+                  <span className="text-content-subtle">
+                    {match.luggage_type ? `${match.luggage_type === 'carry_on' ? 'Hand' : 'Check-in'} allowance free` : 'Flight capacity free'}
+                  </span>
+                  <span className="font-mono font-medium text-content">{getFlightRemainingKg(match).toFixed(1)} kg</span>
+                </div>
+              )}
+
+              <div className="bg-surface-sunken rounded-md border border-line p-3 space-y-1">
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
+                  <span>{match.request?.weight_kg}kg × ${resolveOptionPrice(match.flight, match.luggage_type)}/kg</span>
+                  <span>${fees.transportFee.toFixed(2)}</span>
+                </div>
+                {fees.isPurchase && (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Shop &amp; ship service fee</span>
+                    <span>${fees.shopFee.toFixed(2)}</span>
+                  </div>
+                )}
+                {fees.isPurchase && fees.purchasePrice > 0 && (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Item purchase price</span>
+                    <span>${fees.purchasePrice.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-mono text-num-m text-content-muted">
+                  <span>Fetchr service fee {fees.floorApplied ? '(minimum)' : `(${Math.round(SHIPPER_SERVICE_FEE_PCT * 100)}%)`}</span>
+                  <span>${fees.shipperServiceFee.toFixed(2)}</span>
+                </div>
+                {fees.isPurchase && fees.purchasePrice > 0 && (
+                  <div className="flex justify-between font-mono text-num-m text-content-muted">
+                    <span>Sourcing fee ({Math.round(SOURCING_FEE_PCT * 100)}%)</span>
+                    <span>${fees.sourcingFee.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="perf" />
+
+        {/* Coupon — same one money line + one action pattern as the
+            boarding pass, never showing the traveller's platform fee. */}
+        <div className="px-4 pt-3.5 pb-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-body-m text-content-muted">You pay</span>
+            <span className="font-mono font-bold text-num-l text-ink-900">${fees.shipperPays.toFixed(2)}</span>
+          </div>
+
+          {!iHaveAccepted ? (
+            <div className="space-y-2">
+              {!capacityOk && (
+                <AdvisoryBanner tone="error">
+                  No remaining luggage space on this flight for {neededKg}kg — another deal already took it.
+                </AdvisoryBanner>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleDecline(match.id)}
+                  disabled={!!acting[match.id]}
+                  className="btn-secondary flex-1 disabled:opacity-50">
+                  <XCircle size={15} />
+                  {acting[match.id] === 'declining' ? 'Declining' : 'Decline'}
+                </button>
+                <button
+                  onClick={() => handleAccept(match.id)}
+                  disabled={!!acting[match.id] || !capacityOk}
+                  className="btn-primary flex-[2] disabled:opacity-50">
+                  <Package size={15} />
+                  {acting[match.id] === 'accepting' ? 'Booking' : 'Book this traveller'}
+                </button>
+              </div>
+            </div>
+          ) : match.status === 'accepted' ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-[var(--info-tint)] rounded-md px-3 py-2.5">
+                <MessageCircle size={16} className="text-[var(--info)] flex-shrink-0" />
+                <p className="text-body-s text-[var(--info)] font-medium">
+                  {match.terms_agreed_shipper && !match.terms_agreed_traveler ? 'Waiting for traveller to agree terms'
+                    : !match.terms_agreed_shipper ? 'Agree on terms in chat to confirm this deal'
+                    : 'Terms agreed — finalizing…'}
+                </p>
+              </div>
+              <button onClick={() => onNavigate && onNavigate('messages', { focusMatchId: match.id })}
+                className="btn-primary w-full">
+                <MessageCircle size={15} /> Open chat
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-success-tint rounded-md px-3 py-2.5">
+              <CheckCircle size={16} className="text-success flex-shrink-0" />
+              <p className="text-body-s text-success font-medium">
+                Waiting for traveller to confirm
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderMatchCard = (match) => {
     const other = getOtherParty(match);
     const avatarUrl = getAvatarUrl(other);
@@ -310,6 +513,18 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     // Needs my attention: either I haven't accepted the match yet, or the
     // match is accepted (chat open) and I haven't agreed terms yet.
     const needsMe = !iHaveAccepted || (match.status === 'accepted' && !myTermsAgreed);
+
+    // The shipper is browsing/tracking an ITEM they're sending — the cargo
+    // tag's luggage-tag visual language fits that. The traveller is
+    // browsing/tracking a TRIP they're carrying it on — the boarding pass
+    // fits that instead. Same underlying match, same actions below, just a
+    // different front card for whichever role is looking at it.
+    if (!iAmTraveler) {
+      return renderCargoTicketCard({
+        match, other, avatarUrl, fees, iHaveAccepted, otherHasAcceptedFull,
+        ref, neededKg, remainingCapacityKg, capacityOk, isExpanded, needsMe,
+      });
+    }
 
     return (
       <div key={match.id} id={`match-${match.id}`}

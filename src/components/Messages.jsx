@@ -14,6 +14,18 @@ import VerificationBadge from './shared/VerificationBadge';
 import DealInfoSections from './shared/DealInfoSections';
 import AdvisoryBanner from './shared/AdvisoryBanner';
 
+// Bare glyph, docs/BRAND.md §2.6 — used inside ticket-style header bars,
+// same small local copy every other ticket-rendering file already keeps
+// (Matches.jsx, MyFlights.jsx) rather than a new shared import.
+const BareGlyph = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="fetchr">
+    <path d="M17.5 37 V21.5 C17.5 15 23 12.5 27.5 14.5"
+      fill="none" stroke="#FBFAF8" strokeWidth="5" strokeLinecap="round" />
+    <rect x="10.5" y="21" width="16" height="4.6" rx="2.3" fill="#FBFAF8" />
+    <path d="M29 10.5 L39 15.5 L29 20.5 L31.4 15.5 Z" fill="#DC5518" />
+  </svg>
+);
+
 const STAGES = [
   { id: 'matched', label: 'Matched', icon: Zap },
   { id: 'terms_agreed', label: 'Terms agreed', icon: CheckCircle },
@@ -105,12 +117,33 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
     setSaving(false);
   };
 
+  // Same ticket/cargo-tag split as Matches.jsx and MyFlights.jsx — the
+  // traveller is tracking a trip (boarding pass), the shipper is tracking
+  // an item (cargo manifest). This modal used to be a plain settings-style
+  // sheet regardless of role; the header now reads as the same physical
+  // document the rest of the app already shows them.
+  const ref = match.id.slice(0, 6).toUpperCase();
+
   return (
     <div className="fixed inset-0 bg-[var(--scrim)] z-modal flex items-end md:items-center justify-center p-4">
       <div className="bg-surface-raised rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-elev-3">
-        <div className="sticky top-0 bg-surface-raised border-b border-line px-5 py-4 flex items-center justify-between rounded-t-xl">
-          <h3 className="font-display font-bold text-title-s text-ink-900">Deal details</h3>
+        <div className="sticky top-0 z-10 h-10 bg-ink-900 flex items-center justify-between px-4 rounded-t-xl">
           <div className="flex items-center gap-2">
+            <BareGlyph size={15} />
+            <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
+          </div>
+          <span className="font-mono text-[10px] text-ink-300 uppercase">
+            {isTrav ? 'Boarding pass' : 'Cargo manifest'} · #{ref}
+          </span>
+        </div>
+        <div className="bg-surface-raised border-b border-line px-5 py-3 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="font-mono font-semibold text-code-l text-ink-900 leading-none">
+              {match.flight?.from_code || '—'} <span className="text-ink-400">→</span> {match.flight?.to_code || '—'}
+            </p>
+            <p className="text-body-s text-content-muted truncate mt-1">{match.request?.item_name}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
             {!editing && match.status === 'accepted' && (
               <button onClick={() => setEditing(true)} className="btn-secondary px-3 text-label">
                 <Edit2 size={12} /> Amend
@@ -1113,8 +1146,27 @@ const Messages = ({ session, focusMatchId }) => {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {messages.map((msg) => {
+            {messages.map((msg, idx) => {
               const isMe = msg.sender_id === session.user.id;
+              const prevMsg = messages[idx - 1];
+              const isNewDay = !prevMsg || new Date(prevMsg.created_at).toDateString() !== new Date(msg.created_at).toDateString();
+              // Grouped run of consecutive bubbles from the same sender —
+              // only the first shows an avatar/wider gap, so a burst of
+              // quick messages reads as one thought instead of a wall of
+              // repeated avatars. A system/proof card or a day boundary
+              // always breaks the run.
+              const groupedWithPrev = !isNewDay && prevMsg && prevMsg.sender_id === msg.sender_id
+                && !isSystemMessage(prevMsg.content)
+                && !(prevMsg.content?.includes('PROOF_IMAGE_1:') || prevMsg.content?.startsWith('📸 PROOF UPLOADED:') || prevMsg.content?.startsWith('Proof uploaded:'));
+              const isLastMine = isMe && idx === messages.length - 1;
+
+              const dateSeparator = isNewDay && (
+                <div key={`day-${msg.id}`} className="flex justify-center py-1">
+                  <span className="font-mono text-overline uppercase text-content-subtle bg-surface-sunken border border-line rounded-full px-3 py-1">
+                    {new Date(msg.created_at).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  </span>
+                </div>
+              );
 
               if (msg.content?.includes('PROOF_IMAGE_1:') || msg.content?.startsWith('📸 PROOF UPLOADED:') || msg.content?.startsWith('Proof uploaded:')) {
                 // Parse proof images — could be single URL or multi-image format
@@ -1127,66 +1179,82 @@ const Messages = ({ session, focusMatchId }) => {
                   imageUrls.push(msg.content.replace(/^(📸 PROOF UPLOADED:|Proof uploaded:)/, '').split('\n')[0].trim());
                 }
                 return (
-                  <div key={msg.id} className="flex justify-center">
-                    <div className="bg-info-50 border border-line rounded-lg p-4 max-w-sm w-full">
-                      <p className="font-mono text-overline uppercase text-info-500 mb-3 flex items-center gap-1.5">
-                        <Camera size={13} /> Delivery proof submitted
-                      </p>
-                      <div className={`grid gap-2 mb-3 ${imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {imageUrls.filter(Boolean).map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noreferrer">
-                            <img src={url} alt={`Proof ${i + 1}`}
-                              className="rounded-md w-full h-32 object-cover hover:opacity-90 transition border border-line" />
-                          </a>
-                        ))}
+                  <React.Fragment key={msg.id}>
+                    {dateSeparator}
+                    <div className="flex justify-center">
+                      <div className="bg-info-50 border border-line rounded-lg p-4 max-w-sm w-full">
+                        <p className="font-mono text-overline uppercase text-info-500 mb-3 flex items-center gap-1.5">
+                          <Camera size={13} /> Delivery proof submitted
+                        </p>
+                        <div className={`grid gap-2 mb-3 ${imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                          {imageUrls.filter(Boolean).map((url, i) => (
+                            <a key={i} href={url} target="_blank" rel="noreferrer">
+                              <img src={url} alt={`Proof ${i + 1}`}
+                                className="rounded-md w-full h-32 object-cover hover:opacity-90 transition border border-line" />
+                            </a>
+                          ))}
+                        </div>
+                        {notes && <p className="text-micro text-info-500 italic">"{notes}"</p>}
+                        <p className="text-micro text-content-subtle mt-1">Tap photos to view full size</p>
                       </div>
-                      {notes && <p className="text-micro text-info-500 italic">"{notes}"</p>}
-                      <p className="text-micro text-content-subtle mt-1">Tap photos to view full size</p>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               }
               if (isSystemMessage(msg.content)) {
                 const { icon: EventIcon, tone } = getSystemEventStyle(msg.content);
                 return (
-                  <div key={msg.id} className="flex justify-center">
-                    {/* bg-ink-50, not bg-surface-sunken — that semantic token goes
-                        near-black under system dark mode while text-ink-900 stays
-                        literal-dark, producing the black-on-black bug. */}
-                    <div className="flex items-start gap-2.5 bg-ink-50 border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
-                      <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${EVENT_TONE_CLASSES[tone]}`}>
-                        <EventIcon size={14} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-body-s text-ink-900 leading-relaxed">{msg.content}</p>
-                        <p className="font-mono text-micro text-ink-500 mt-0.5">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                        </p>
+                  <React.Fragment key={msg.id}>
+                    {dateSeparator}
+                    <div className="flex justify-center">
+                      {/* bg-ink-50, not bg-surface-sunken — that semantic token goes
+                          near-black under system dark mode while text-ink-900 stays
+                          literal-dark, producing the black-on-black bug. */}
+                      <div className="flex items-start gap-2.5 bg-ink-50 border border-line rounded-lg px-3.5 py-2.5 max-w-sm w-full">
+                        <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${EVENT_TONE_CLASSES[tone]}`}>
+                          <EventIcon size={14} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-body-s text-ink-900 leading-relaxed">{msg.content}</p>
+                          <p className="font-mono text-micro text-ink-500 mt-0.5">
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               }
               return (
-                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  {!isMe && (
-                    <div className="w-7 h-7 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 flex-shrink-0 mr-2 mt-1">
-                      {getInitials(msg.sender?.full_name)}
+                <React.Fragment key={msg.id}>
+                  {dateSeparator}
+                  <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} ${groupedWithPrev ? 'mt-0.5' : 'mt-2'}`}>
+                    {!isMe && (
+                      <div className="w-7 h-7 flex-shrink-0 mr-2">
+                        {!groupedWithPrev && (
+                          <div className="w-7 h-7 rounded-avatar bg-ink-100 flex items-center justify-center text-micro font-mono font-semibold text-ink-600 mt-1">
+                            {getInitials(msg.sender?.full_name)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className={`max-w-xs lg:max-w-sm flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      {/* Literal ink-scale classes, not the semantic surface-inverse/
+                          text-content tokens — those swap under system dark mode
+                          (never verified for chat), which was collapsing both
+                          bubble colors together and losing text contrast. */}
+                      <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-ink-900 text-white rounded-br-[3px]' : 'bg-ink-50 text-ink-900 rounded-bl-[3px]'}`}>
+                        {msg.content}
+                      </div>
+                      {(!groupedWithPrev || idx === messages.length - 1) && (
+                        <p className={`font-mono text-micro text-content-subtle mt-0.5 px-1 flex items-center gap-1 ${isMe ? 'text-right' : ''}`}>
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                          {isLastMine && msg.is_read && <span>· Seen</span>}
+                        </p>
+                      )}
                     </div>
-                  )}
-                  <div className={`max-w-xs lg:max-w-sm flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    {/* Literal ink-scale classes, not the semantic surface-inverse/
-                        text-content tokens — those swap under system dark mode
-                        (never verified for chat), which was collapsing both
-                        bubble colors together and losing text contrast. */}
-                    <div className={`px-3.5 py-2.5 rounded-lg text-body-m leading-relaxed ${isMe ? 'bg-ink-900 text-white rounded-br-[3px]' : 'bg-ink-50 text-ink-900 rounded-bl-[3px]'}`}>
-                      {msg.content}
-                    </div>
-                    <p className={`font-mono text-micro text-content-subtle mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>
-                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                    </p>
                   </div>
-                </div>
+                </React.Fragment>
               );
             })}
             <div ref={messagesEndRef} />
