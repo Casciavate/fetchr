@@ -38,6 +38,18 @@ import {
 // width alone, which is the wrong signal here. The web app (real browsers,
 // any width) keeps its existing responsive breakpoint behavior unchanged.
 const IS_NATIVE = Capacitor.isNativePlatform();
+// These three screens stay mounted permanently (hidden via CSS instead of
+// unmounted) rather than going through renderMain()'s switch like every
+// other screen — they're the ones reached via the bottom nav and flipped
+// between constantly, and each does its own initial data fetch (Matches'
+// find_matches() sweep, Messages' up-to-9s retry-loop on cold mount,
+// ActiveDeals' full deal list) plus opens its own realtime channel. Fully
+// unmounting and remounting them on every tab switch meant paying that
+// full fetch + subscribe cost every single time, which is what made
+// switching between Home/Matches/Chat feel slow instead of instant; kept
+// mounted, a repeat visit is instant and their channels keep receiving
+// updates live in the background even while a different tab is showing.
+const KEEP_ALIVE_TABS = ['matches', 'messages', 'active-deals'];
 // Lazy-loaded: pulls in recharts, which only admins ever need — keeps that
 // weight out of the bundle every regular user downloads.
 const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
@@ -99,6 +111,14 @@ const PostChooser = ({ onNavigate }) => (
 
 const Dashboard = ({ session }) => {
   const [activeNav, setActiveNav] = useState('dashboard');
+  // Bumped on every navigate() call — Matches/Messages stay permanently
+  // mounted now (see KEEP_ALIVE_TABS), so their "deep-link from Home"
+  // effects can no longer tell "a fresh navigation" apart from "the same
+  // focusMatchId as last time" just by comparing the id in a ref (that ref
+  // never gets reset by a remount anymore). Keying off this token instead
+  // of the id lets clicking the same match's action tile on Home a second
+  // time still re-focus it.
+  const [focusToken, setFocusToken] = useState(0);
   const [focusMatchId, setFocusMatchId] = useState(null);
   const [focusDealId, setFocusDealId] = useState(null);
   const [focusFlightId, setFocusFlightId] = useState(null);
@@ -187,10 +207,17 @@ const Dashboard = ({ session }) => {
       completedAsTraveler: completedAsTravelerCount || 0,
     });
 
-// Generate new matches for this user before fetching
-    await supabase.rpc('find_matches');
-
-    // Widget data — all in parallel. One broad matches query (every status
+    // Widget data — all in parallel. find_matches() is deliberately NOT
+    // called here: it's an expensive system-wide sweep (every active
+    // flight x every open request, not scoped to this user — see
+    // CLAUDE.md), and this function runs on every 15s poll tick plus every
+    // realtime event across 5 different tables. Running that sweep on
+    // every one of those firings (this component never unmounts for the
+    // life of the session) was hammering the DB continuously for every
+    // logged-in user regardless of which tab they were on. Matches.jsx
+    // still runs it once when that screen is opened, and the bot-agent
+    // cron runs it every 2 minutes regardless — new matches still surface
+    // within that window without this screen re-running the sweep itself. One broad matches query (every status
     // that isn't finished/cancelled) replaces the old separate "pending"
     // and "accepted+" queries — recentMatches/activeDeals below are just
     // client-side slices of it, and the full set also drives the Home
@@ -356,6 +383,7 @@ const Dashboard = ({ session }) => {
     setFocusDealId(opts?.focusDealId ?? null);
     setFocusFlightId(opts?.focusFlightId ?? null);
     setFocusRequestId(opts?.focusRequestId ?? null);
+    setFocusToken(t => t + 1);
   };
 
   const isAdmin = !!profile?.is_admin;
@@ -418,9 +446,11 @@ const Dashboard = ({ session }) => {
       case 'flights': return <MyFlights session={session} onAddFlight={() => navigate('add-flight')} focusFlightId={focusFlightId} />;
       case 'new-request': return <NewRequest session={session} />;
       case 'my-requests': return <MyRequests session={session} onNewRequest={() => navigate('new-request')} focusRequestId={focusRequestId} />;
-case 'matches': return <Matches session={session} onNavigate={navigate} focusMatchId={focusMatchId} />;
-      case 'messages': return <Messages session={session} focusMatchId={focusMatchId} />;
-      case 'active-deals': return <ActiveDeals session={session} onNavigate={navigate} />;
+      // 'matches' / 'messages' / 'active-deals' are handled by the
+      // always-mounted siblings below renderMain()'s own div, not here —
+      // see KEEP_ALIVE_TABS. Returning null avoids computing renderDashboard()
+      // (flightGroups/requestGroups etc.) while one of those tabs is open.
+      case 'matches': case 'messages': case 'active-deals': return null;
       case 'completed': return <Completed session={session} focusDealId={focusDealId} />;
       case 'profile': return <Profile session={session} userRole={getUserRole()}
         onNavigate={navigate} isAdmin={isAdmin} />;
@@ -1151,8 +1181,17 @@ case 'matches': return <Matches session={session} onNavigate={navigate} focusMat
         </header>
 
         <main className="flex-1 min-h-0 overflow-y-auto">
-          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'}`}>
+          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'} ${KEEP_ALIVE_TABS.includes(activeNav) ? 'hidden' : ''}`}>
             {renderMain()}
+          </div>
+          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'} ${activeNav === 'matches' ? '' : 'hidden'}`}>
+            <Matches session={session} onNavigate={navigate} focusMatchId={focusMatchId} focusToken={focusToken} />
+          </div>
+          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'} ${activeNav === 'messages' ? '' : 'hidden'}`}>
+            <Messages session={session} focusMatchId={focusMatchId} focusToken={focusToken} />
+          </div>
+          <div className={`max-w-6xl mx-auto ${IS_NATIVE ? 'p-4' : 'p-4 md:p-6'} pb-[calc(6rem+env(safe-area-inset-bottom))] ${IS_NATIVE ? '' : 'md:pb-6'} ${activeNav === 'active-deals' ? '' : 'hidden'}`}>
+            <ActiveDeals session={session} onNavigate={navigate} />
           </div>
         </main>
       </div>

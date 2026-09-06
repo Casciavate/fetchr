@@ -158,18 +158,23 @@ const ActiveDeals = ({ session, onNavigate }) => {
 
   useEffect(() => {
     fetchDeals();
-    // Real-time updates
-    const sub = supabase.channel('active-deals-rt')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' },
+    const userId = session.user.id;
+    // Real-time updates — filtered server-side to this user's own matches.
+    // The unfiltered version of this (event: 'UPDATE' on the whole matches
+    // table, no filter) fired a refetch on EVERY match update from EVERY
+    // user in the system, not just this one — the channel name wasn't even
+    // user-scoped. Postgrest realtime filters are single-column equality
+    // only, so this needs two listeners (traveler_id / shipper_id) rather
+    // than one OR, same pattern as Dashboard.jsx/Matches.jsx.
+    const sub = supabase.channel(`active-deals-rt-${userId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `traveler_id=eq.${userId}` },
+        () => fetchDeals(false))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `shipper_id=eq.${userId}` },
         () => fetchDeals(false))
       .subscribe();
-    // Polling fallback — every 5 seconds, in case a realtime event is missed
-    // (same resilience pattern as Matches.jsx / Dashboard.jsx). This is what
-    // was missing: escrow payment updates the DB correctly, but a tab left
-    // open on this screen before payment could stay stale if the realtime
-    // event didn't land, showing "Terms agreed" after the sender had already
-    // paid into escrow.
-    const pollInterval = setInterval(() => fetchDeals(false), 5000);
+    // Polling fallback only, in case a realtime event is missed — not the
+    // primary update path, so a longer interval is fine.
+    const pollInterval = setInterval(() => fetchDeals(false), 15000);
     return () => {
       supabase.removeChannel(sub);
       clearInterval(pollInterval);

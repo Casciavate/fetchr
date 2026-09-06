@@ -346,7 +346,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
 };
 
 // ── Main Messages Component ──
-const Messages = ({ session, focusMatchId }) => {
+const Messages = ({ session, focusMatchId, focusToken }) => {
   const [acceptedMatches, setAcceptedMatches] = useState([]);
   const [activeMatch, setActiveMatch] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -366,18 +366,23 @@ const Messages = ({ session, focusMatchId }) => {
   const [showProofModal, setShowProofModal] = useState(false);
   const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
   const messagesEndRef = useRef(null);
-  const consumedFocusIdRef = useRef(null);
+  const consumedFocusTokenRef = useRef(null);
 
   // Deep-link from Home's "your turn" hero ticket straight into its thread.
+  // Keyed off focusToken (bumped by Dashboard on every navigate() call),
+  // not focusMatchId itself — this screen now stays permanently mounted
+  // (see Dashboard's KEEP_ALIVE_TABS), so a ref keyed on the id alone would
+  // never fire again for a repeat click on the same match's tile later in
+  // the session.
   useEffect(() => {
-    if (!focusMatchId || consumedFocusIdRef.current === focusMatchId) return;
+    if (!focusMatchId || consumedFocusTokenRef.current === focusToken) return;
     const match = acceptedMatches.find(m => m.id === focusMatchId);
     if (match) {
-      consumedFocusIdRef.current = focusMatchId;
+      consumedFocusTokenRef.current = focusToken;
       setActiveMatch(match);
       setMobileComposerOpen(false);
     }
-  }, [focusMatchId, acceptedMatches]);
+  }, [focusMatchId, focusToken, acceptedMatches]);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
@@ -443,7 +448,8 @@ const Messages = ({ session, focusMatchId }) => {
 
     loadWithRetry();
 
-    // Poll every 3 seconds to catch status changes
+    // Polling fallback only — the realtime subscription below is the
+    // primary update path, this just catches a missed event.
     const pollInterval = setInterval(async () => {
       if (cancelled) return;
       const { data } = await supabase
@@ -467,20 +473,24 @@ const Messages = ({ session, focusMatchId }) => {
         });
         await fetchUnreadCounts(data);
       }
-    }, 3000);
+    }, 15000);
 
-    // Realtime subscription
+    // Realtime subscription — filtered server-side to this user's own
+    // matches (traveler_id / shipper_id need two listeners: Postgrest
+    // realtime filters are single-column equality only, no OR), instead of
+    // receiving every match update system-wide and discarding most of them
+    // client-side.
+    const handleMatchUpdate = (payload) => {
+      const u = payload.new;
+      if (['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)) {
+        fetchMatches();
+      }
+    };
     const sub = supabase.channel(`messages-main-${userId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' },
-        (payload) => {
-          const u = payload.new;
-          if (
-            (u.traveler_id === userId || u.shipper_id === userId) &&
-            ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)
-          ) {
-            fetchMatches();
-          }
-        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `traveler_id=eq.${userId}` },
+        handleMatchUpdate)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `shipper_id=eq.${userId}` },
+        handleMatchUpdate)
       .subscribe();
 
     return () => {

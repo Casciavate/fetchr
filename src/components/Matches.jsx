@@ -49,7 +49,7 @@ const getFlightRemainingKg = (match) => {
   return Math.max(0, free);
 };
 
-const Matches = ({ session, onNavigate, focusMatchId }) => {
+const Matches = ({ session, onNavigate, focusMatchId, focusToken }) => {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
@@ -61,22 +61,26 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
   const [showMoreProfile, setShowMoreProfile] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState('');
-  const consumedFocusIdRef = useRef(null);
+  const consumedFocusTokenRef = useRef(null);
 
   // Deep-link from Home's action tiles — same pattern as Messages.jsx's
   // focusMatchId, so a "Review match"/"Issue boarding pass" tile on Home
   // opens straight into that specific match's details here rather than
-  // completing the action on Home itself.
+  // completing the action on Home itself. Keyed off focusToken (bumped by
+  // Dashboard on every navigate() call), not focusMatchId itself — this
+  // screen now stays permanently mounted (see Dashboard's KEEP_ALIVE_TABS),
+  // so a ref keyed on the id alone would never fire again for a repeat
+  // click on the same match's tile later in the session.
   useEffect(() => {
-    if (!focusMatchId || consumedFocusIdRef.current === focusMatchId) return;
+    if (!focusMatchId || consumedFocusTokenRef.current === focusToken) return;
     if (!matches.some(m => m.id === focusMatchId)) return;
-    consumedFocusIdRef.current = focusMatchId;
+    consumedFocusTokenRef.current = focusToken;
     setFilter('All'); // guarantee the target match isn't hidden by a filter chip
     setExpandedId(focusMatchId);
     setTimeout(() => {
       document.getElementById(`match-${focusMatchId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
-  }, [focusMatchId, matches]);
+  }, [focusMatchId, focusToken, matches]);
 
   const fetchDeclinedIds = async (userId) => {
     const { data } = await supabase
@@ -131,38 +135,56 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
     setProfileLoading(false);
   };
 
+  // Re-fetches current matches WITHOUT re-running find_matches() — that's
+  // an expensive system-wide sweep (every active flight x every open
+  // request, not scoped to this user), only worth paying for once when
+  // this screen is first opened. Re-running it on every poll tick (this
+  // used to be every 2 seconds) hammered the DB continuously the whole
+  // time this screen was open.
+  const refetchMatchesOnly = async () => {
+    const userId = session.user.id;
+    const declinedIds = await fetchDeclinedIds(userId);
+    let query = supabase
+      .from('matches')
+      .select(`
+        *,
+        flight:flights(*),
+        request:shipment_requests(*),
+        traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+        shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})
+      `)
+      .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
+      .in('status', ['pending', 'awaiting_other', 'accepted'])
+      .order('match_score', { ascending: false });
+    if (declinedIds.length > 0) query = query.not('id', 'in', `(${declinedIds.join(',')})`);
+    const { data, error } = await query;
+    if (!error) setMatches(data || []);
+  };
+
   useEffect(() => {
     fetchMatches();
     const userId = session.user.id;
 
-    // Poll every 2 seconds — catches the other party accepting, agreeing
-    // terms (which moves a match out to Deals), or a capacity change.
+    // Real-time updates — same pattern as Dashboard/ActiveDeals/Messages.
     // Never auto-navigates: a match staying visible here (even once
     // status='accepted' and chat is open) is exactly the point — the user
     // explicitly clicks into chat when they want it, never redirected here
     // just because someone else's action changed this match's status.
-    const interval = setInterval(async () => {
-      await supabase.rpc('find_matches');
-      const declinedIds = await fetchDeclinedIds(userId);
-      let fullQuery = supabase
-        .from('matches')
-        .select(`
-          *,
-          flight:flights(*),
-          request:shipment_requests(*),
-          traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
-          shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})
-        `)
-        .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['pending', 'awaiting_other', 'accepted'])
-        .order('match_score', { ascending: false });
-      if (declinedIds.length > 0) fullQuery = fullQuery.not('id', 'in', `(${declinedIds.join(',')})`);
-      const { data: fullData, error } = await fullQuery;
+    const sub = supabase.channel(`matches-rt-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `traveler_id=eq.${userId}` },
+        () => refetchMatchesOnly())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `shipper_id=eq.${userId}` },
+        () => refetchMatchesOnly())
+      .subscribe();
 
-      if (!error) setMatches(fullData || []);
-    }, 2000);
+    // Polling fallback only, in case a realtime event is missed — not the
+    // primary update path, so a much longer interval than before is fine.
+    const interval = setInterval(refetchMatchesOnly, 15000);
 
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(sub);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleAccept = async (matchId) => {

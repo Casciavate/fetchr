@@ -268,7 +268,19 @@ const NewRequest = ({ session }) => {
       budget_currency: 'USD',
     }]);
 
-    if (error) { setError(error.message); } else { setSuccess(true); }
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess(true);
+      // Best-effort — same fire-and-forget pattern MyFlights.jsx's cancel
+      // flow uses. This is now the actual trigger for surfacing matches
+      // against this new listing promptly: neither Dashboard nor Matches
+      // re-run this sweep on every poll/render any more (it's an expensive
+      // system-wide scan, not scoped to one user — see CLAUDE.md), so
+      // without this a brand new request would otherwise wait on the
+      // bot-agent cron's own periodic sweep (up to ~2 minutes) instead.
+      supabase.rpc('find_matches');
+    }
     setLoading(false);
   };
 
