@@ -169,7 +169,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
             <p className="text-body-s text-content-muted truncate mt-1">{match.request?.item_name}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {!editing && match.status === 'accepted' && (
+            {!editing && ['accepted', 'terms_agreed'].includes(match.status) && (
               <button onClick={() => setEditing(true)} className="btn-secondary px-3 text-label">
                 <Edit2 size={12} /> Amend
               </button>
