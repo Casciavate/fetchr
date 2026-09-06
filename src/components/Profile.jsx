@@ -188,7 +188,15 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
   const fetchProfile = async () => {
     setLoading(true);
     const { data } = await supabase
-      .from('profiles').select('*').eq('id', session.user.id).single();
+      .from('profiles')
+      // Explicit column list, not '*' — profiles.stripe_customer_id/
+      // stripe_connect_account_id/stripe_bank_token/bank_account_*/
+      // payout_card_token are locked down at the grant level (nothing
+      // client-side ever legitimately reads them), and Postgres fails
+      // `select *` outright if the role lacks privilege on even one
+      // column rather than silently narrowing to what it can see.
+      .select('id, full_name, email, avatar_url, role, bio, rating, total_reviews, wallet_balance, created_at, phone, nationality, languages, verified, completed_deals, response_rate, payout_card_last4, payout_card_brand, stripe_payment_method_id, is_admin, terms_accepted_at, stripe_connect_payouts_enabled, is_bot')
+      .eq('id', session.user.id).single();
     if (data) {
       setProfile(data);
       setForm({

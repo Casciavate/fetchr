@@ -43,8 +43,8 @@ const Completed = ({ session, focusDealId }) => {
         *,
         flight:flights(*),
         request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(*),
-        shipper:profiles!matches_shipper_id_fkey(*)
+        traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
+        shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       // Deals cancelled by mutual agreement after being accepted

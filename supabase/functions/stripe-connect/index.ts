@@ -294,9 +294,8 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
       if (paymentIntent.status === 'succeeded') {
-        const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', user.id).single()
-        const newBalance = (profile?.wallet_balance || 0) + amount
-        await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
+        const { data: newBalance } = await adminClient
+          .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
         await adminClient.from('transactions').insert({
           user_id: user.id, type: 'topup', amount,
           description: 'Wallet top up via card', status: 'completed',
@@ -342,9 +341,8 @@ Deno.serve(async (req) => {
       if (existing) throw new Error('This payment has already been credited')
 
       const amount = paymentIntent.amount / 100
-      const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', user.id).single()
-      const newBalance = (profile?.wallet_balance || 0) + amount
-      await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
+      const { data: newBalance } = await adminClient
+        .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'topup', amount, description: 'Wallet top up via card',
         status: 'completed', metadata: { payment_intent_id: paymentIntentId },
@@ -449,8 +447,7 @@ Deno.serve(async (req) => {
       if (walletContribution > 0) {
         const safeBalance = await getVerifiedBalance(user.id)
         if (walletContribution > safeBalance + 0.01) throw new Error('Insufficient wallet balance')
-        const { data: profile } = await adminClient.from('profiles').select('wallet_balance').eq('id', user.id).single()
-        await adminClient.from('profiles').update({ wallet_balance: (profile?.wallet_balance || 0) - walletContribution }).eq('id', user.id)
+        await adminClient.rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -walletContribution })
         await adminClient.from('transactions').insert({
           user_id: user.id, type: 'debit', amount: walletContribution,
           description: `Wallet contribution to escrow: ${match.request?.item_name}`,
@@ -578,10 +575,13 @@ Deno.serve(async (req) => {
       if (safeBalance < fees.shipperPays - 0.01) {
         throw new Error(`Insufficient wallet balance. Available: $${safeBalance.toFixed(2)}`)
       }
-      const { data: profile } = await adminClient.from('profiles').select('wallet_balance, full_name').eq('id', user.id).single()
-
-      const newBalance = (profile?.wallet_balance || 0) - fees.shipperPays
-      await adminClient.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id)
+      const { data: profile } = await adminClient.from('profiles').select('full_name').eq('id', user.id).single()
+      // Atomic check-and-decrement (same as withdraw_to_bank) instead of a
+      // read-then-write — two concurrent escrow payments from the same
+      // wallet could otherwise both pass the safeBalance check above and
+      // both clobber the balance with the same stale snapshot.
+      const { data: newBalance } = await adminClient
+        .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -fees.shipperPays })
 
       const walletEscrowId = `wallet_escrow_${Date.now()}_${matchId.slice(0, 8)}`
       await adminClient.from('matches').update({
@@ -643,6 +643,14 @@ Deno.serve(async (req) => {
       if (match.status !== 'proof_uploaded' || !otherAlreadyConfirmed) {
         throw new Error('Delivery cannot be released yet — both parties must confirm delivery first')
       }
+      // Mirrors Messages.jsx's flightHasDeparted — that was previously the
+      // ONLY place this was enforced, purely client-side (a disabled
+      // button), so a direct call to this action could release escrow
+      // before the flight the deal is even conditioned on has happened.
+      const today = new Date().toISOString().split('T')[0]
+      if (match.flight?.flight_date && match.flight.flight_date > today) {
+        throw new Error(`Delivery cannot be confirmed until the flight on ${match.flight.flight_date} has taken place`)
+      }
 
       // Atomically flip status, guarded on the expected prior state, so a
       // repeated/replayed call (or a second confirmer racing the first)
@@ -683,15 +691,15 @@ Deno.serve(async (req) => {
         await stripe.paymentIntents.capture(paymentIntentId)
       }
 
-      // Credit traveler wallet
+      // Credit traveler wallet — atomic increment, not read-then-write (a
+      // traveler completing two deals at nearly the same moment could
+      // otherwise have one credit silently clobber the other).
       const { data: travelerProfile } = await adminClient
-        .from('profiles').select('wallet_balance, full_name').eq('id', match.traveler_id).single()
+        .from('profiles').select('full_name').eq('id', match.traveler_id).single()
       const { data: shipperProfile } = await adminClient
         .from('profiles').select('full_name').eq('id', match.shipper_id).single()
 
-      await adminClient.from('profiles').update({
-        wallet_balance: (travelerProfile?.wallet_balance || 0) + fees.travelerReceives,
-      }).eq('id', match.traveler_id)
+      await adminClient.rpc('adjust_wallet_balance', { p_user_id: match.traveler_id, p_delta: fees.travelerReceives })
 
       // Two rows: the traveler's payout, and fetchr's FULL revenue in one
       // row (shipper service fee + traveler platform fee + sourcing fee
@@ -756,13 +764,10 @@ Deno.serve(async (req) => {
       if (!isWalletEscrow) {
         await stripe.paymentIntents.cancel(paymentIntentId)
       } else {
-        const { data: shipperProfile } = await adminClient.from('profiles').select('wallet_balance').eq('id', match.shipper_id).single()
         const { data: escrowTx } = await adminClient.from('transactions')
           .select('amount').eq('match_id', match.id).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
         if (escrowTx) {
-          await adminClient.from('profiles').update({
-            wallet_balance: (shipperProfile?.wallet_balance || 0) + escrowTx.amount,
-          }).eq('id', match.shipper_id)
+          await adminClient.rpc('adjust_wallet_balance', { p_user_id: match.shipper_id, p_delta: escrowTx.amount })
           await adminClient.from('transactions').insert({
             user_id: match.shipper_id, type: 'credit', amount: escrowTx.amount,
             description: `Escrow refund: ${match.request?.item_name}`, match_id: match.id, status: 'completed',

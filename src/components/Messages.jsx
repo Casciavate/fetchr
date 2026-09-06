@@ -384,8 +384,8 @@ const Messages = ({ session, focusMatchId }) => {
     const { data } = await supabase
       .from('matches')
       .select(`*, flight:flights(*), request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(*),
-        shipper:profiles!matches_shipper_id_fkey(*)`)
+        traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
+        shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
       .order('created_at', { ascending: false });
@@ -421,8 +421,8 @@ const Messages = ({ session, focusMatchId }) => {
         const { data } = await supabase
           .from('matches')
           .select(`*, flight:flights(*), request:shipment_requests(*),
-            traveler:profiles!matches_traveler_id_fkey(*),
-            shipper:profiles!matches_shipper_id_fkey(*)`)
+            traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
+            shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
           .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
           .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
           .order('created_at', { ascending: false });
@@ -448,8 +448,8 @@ const Messages = ({ session, focusMatchId }) => {
       const { data } = await supabase
         .from('matches')
         .select(`*, flight:flights(*), request:shipment_requests(*),
-          traveler:profiles!matches_traveler_id_fkey(*),
-          shipper:profiles!matches_shipper_id_fkey(*)`)
+          traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
+          shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
         .order('created_at', { ascending: false });
@@ -551,7 +551,7 @@ const Messages = ({ session, focusMatchId }) => {
   const fetchMessages = async (matchId) => {
     const { data } = await supabase
       .from('messages')
-      .select(`*, sender:profiles!messages_sender_id_fkey(*)`)
+      .select(`*, sender:profiles!messages_sender_id_fkey(id, full_name, avatar_url)`)
       .eq('match_id', matchId).order('created_at', { ascending: true });
     if (data) setMessages(data);
     setTimeout(scrollToBottom, 100);

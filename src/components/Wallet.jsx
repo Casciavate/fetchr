@@ -528,7 +528,10 @@ const WalletScreen = ({ session, forceWithdrawAll = false }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const userId = session.user.id;
-    const { data: p } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    // Explicit column list, not '*' — see Profile.jsx's fetchProfile for why.
+    const { data: p } = await supabase.from('profiles')
+      .select('id, full_name, email, avatar_url, role, bio, rating, total_reviews, wallet_balance, created_at, phone, nationality, languages, verified, completed_deals, response_rate, payout_card_last4, payout_card_brand, stripe_payment_method_id, is_admin, terms_accepted_at, stripe_connect_payouts_enabled, is_bot')
+      .eq('id', userId).single();
     if (p) setProfile(p);
 
     const { data: txns } = await supabase

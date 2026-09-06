@@ -189,7 +189,10 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
   const fees = calcFees(match);
 
   useEffect(() => {
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    // Explicit column list, not '*' — see Profile.jsx's fetchProfile for why.
+    supabase.from('profiles')
+      .select('id, full_name, email, avatar_url, role, bio, rating, total_reviews, wallet_balance, created_at, phone, nationality, languages, verified, completed_deals, response_rate, payout_card_last4, payout_card_brand, stripe_payment_method_id, is_admin, terms_accepted_at, stripe_connect_payouts_enabled, is_bot')
+      .eq('id', session.user.id).single()
       .then(({ data }) => { if (data) setProfile(data); });
   }, [session.user.id]);
 
