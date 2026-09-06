@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '../supabaseClient';
+import { PROFILE_SELF_COLUMNS, PROFILE_PUBLIC_COLUMNS } from '../lib/profileColumns';
 import AddFlight from './AddFlight';
 import MyFlights from './MyFlights';
 import NewRequest from './NewRequest';
@@ -140,7 +141,7 @@ const Dashboard = ({ session }) => {
     // Profile — explicit column list, not '*'; see Profile.jsx's fetchProfile for why.
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('id, full_name, email, avatar_url, role, bio, rating, total_reviews, wallet_balance, created_at, phone, nationality, languages, verified, completed_deals, response_rate, payout_card_last4, payout_card_brand, stripe_payment_method_id, is_admin, terms_accepted_at, stripe_connect_payouts_enabled, is_bot')
+      .select(PROFILE_SELF_COLUMNS)
       .eq('id', userId).single();
     if (profileData) {
       setProfile(profileData);
@@ -203,8 +204,8 @@ const Dashboard = ({ session }) => {
     ] = await Promise.all([
       supabase.from('matches')
         .select(`*, flight:flights(*), request:shipment_requests(*),
-          traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-          shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
+          traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+          shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .in('status', ['pending', 'awaiting_other', 'accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'])
         .order('created_at', { ascending: false }).limit(100),

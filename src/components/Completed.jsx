@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { PROFILE_PUBLIC_COLUMNS } from '../lib/profileColumns';
 import {
   CheckCircle, Star, Package, Plane, ChevronDown,
   ChevronUp, Award, TrendingUp, Ban
@@ -43,8 +44,8 @@ const Completed = ({ session, focusDealId }) => {
         *,
         flight:flights(*),
         request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-        shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)
+        traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+        shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       // Deals cancelled by mutual agreement after being accepted

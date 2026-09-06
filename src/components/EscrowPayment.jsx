@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../supabaseClient';
+import { PROFILE_SELF_COLUMNS } from '../lib/profileColumns';
 import {
   Lock, CheckCircle,
   Package, Plane, ShoppingBag, Camera, X, Upload, CreditCard, Wallet, Zap, Plus
@@ -191,7 +192,7 @@ const EscrowInner = ({ match, session, onPaymentComplete }) => {
   useEffect(() => {
     // Explicit column list, not '*' — see Profile.jsx's fetchProfile for why.
     supabase.from('profiles')
-      .select('id, full_name, email, avatar_url, role, bio, rating, total_reviews, wallet_balance, created_at, phone, nationality, languages, verified, completed_deals, response_rate, payout_card_last4, payout_card_brand, stripe_payment_method_id, is_admin, terms_accepted_at, stripe_connect_payouts_enabled, is_bot')
+      .select(PROFILE_SELF_COLUMNS)
       .eq('id', session.user.id).single()
       .then(({ data }) => { if (data) setProfile(data); });
   }, [session.user.id]);

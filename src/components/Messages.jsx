@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { PROFILE_PUBLIC_COLUMNS } from '../lib/profileColumns';
 import {
   Send, Package, Plane, DollarSign, CheckCircle, Shield,
   XCircle, AlertTriangle, ChevronDown, ChevronLeft, MessageCircle,
@@ -384,8 +385,8 @@ const Messages = ({ session, focusMatchId }) => {
     const { data } = await supabase
       .from('matches')
       .select(`*, flight:flights(*), request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-        shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
+        traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+        shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
       .order('created_at', { ascending: false });
@@ -421,8 +422,8 @@ const Messages = ({ session, focusMatchId }) => {
         const { data } = await supabase
           .from('matches')
           .select(`*, flight:flights(*), request:shipment_requests(*),
-            traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-            shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
+            traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+            shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
           .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
           .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
           .order('created_at', { ascending: false });
@@ -448,8 +449,8 @@ const Messages = ({ session, focusMatchId }) => {
       const { data } = await supabase
         .from('matches')
         .select(`*, flight:flights(*), request:shipment_requests(*),
-          traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-          shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)`)
+          traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+          shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
         .order('created_at', { ascending: false });

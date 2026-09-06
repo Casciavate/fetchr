@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { PROFILE_PUBLIC_COLUMNS } from '../lib/profileColumns';
 import {
   Package, Trash2, Plus, CheckCircle,
   MapPin, Weight, DollarSign, Calendar, ShoppingBag,
@@ -83,9 +84,7 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
       .select(`
         *,
         flight:flights(*),
-        traveler:profiles!matches_traveler_id_fkey(
-          id, full_name, avatar_url, rating, total_reviews, verified
-        )
+        traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS})
       `)
       .eq('request_id', requestId)
       .not('status', 'in', '["pending","rejected"]')

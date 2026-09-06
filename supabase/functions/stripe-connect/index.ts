@@ -294,8 +294,15 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
       if (paymentIntent.status === 'succeeded') {
-        const { data: newBalance } = await adminClient
+        // The card charge already succeeded on Stripe's side by this point —
+        // if the credit itself fails, surface the error rather than telling
+        // the client it succeeded while the wallet was never actually
+        // credited (this can't be silently retried from here, since a
+        // second call would double-credit if the first one had partially
+        // succeeded; it needs manual reconciliation against this PI).
+        const { data: newBalance, error: creditError } = await adminClient
           .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
+        if (creditError) throw new Error(`Payment succeeded but crediting the wallet failed — contact support with payment ${paymentIntent.id}`)
         await adminClient.from('transactions').insert({
           user_id: user.id, type: 'topup', amount,
           description: 'Wallet top up via card', status: 'completed',
@@ -341,8 +348,9 @@ Deno.serve(async (req) => {
       if (existing) throw new Error('This payment has already been credited')
 
       const amount = paymentIntent.amount / 100
-      const { data: newBalance } = await adminClient
+      const { data: newBalance, error: creditError } = await adminClient
         .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
+      if (creditError) throw new Error(`Payment succeeded but crediting the wallet failed — contact support with payment ${paymentIntentId}`)
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'topup', amount, description: 'Wallet top up via card',
         status: 'completed', metadata: { payment_intent_id: paymentIntentId },
@@ -447,7 +455,14 @@ Deno.serve(async (req) => {
       if (walletContribution > 0) {
         const safeBalance = await getVerifiedBalance(user.id)
         if (walletContribution > safeBalance + 0.01) throw new Error('Insufficient wallet balance')
-        await adminClient.rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -walletContribution })
+        // The safeBalance check above reads a snapshot that can go stale
+        // under a race (a concurrent debit landing between the read and
+        // this decrement) — the atomic RPC is what actually enforces it,
+        // so its error can't be ignored without silently charging the card
+        // a discounted amount for a wallet contribution that never happened.
+        const { error: debitError } = await adminClient
+          .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -walletContribution })
+        if (debitError) throw new Error('Insufficient wallet balance')
         await adminClient.from('transactions').insert({
           user_id: user.id, type: 'debit', amount: walletContribution,
           description: `Wallet contribution to escrow: ${match.request?.item_name}`,
@@ -579,9 +594,14 @@ Deno.serve(async (req) => {
       // Atomic check-and-decrement (same as withdraw_to_bank) instead of a
       // read-then-write — two concurrent escrow payments from the same
       // wallet could otherwise both pass the safeBalance check above and
-      // both clobber the balance with the same stale snapshot.
-      const { data: newBalance } = await adminClient
+      // both clobber the balance with the same stale snapshot. The RPC's
+      // own error is what actually catches that race (the safeBalance
+      // check above can't), so it must not be ignored — otherwise a failed
+      // decrement still falls through to record escrow as paid and held
+      // against a wallet that was never actually debited.
+      const { data: newBalance, error: debitError } = await adminClient
         .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -fees.shipperPays })
+      if (debitError) throw new Error(`Insufficient wallet balance. Available: $${safeBalance.toFixed(2)}`)
 
       const walletEscrowId = `wallet_escrow_${Date.now()}_${matchId.slice(0, 8)}`
       await adminClient.from('matches').update({
@@ -699,7 +719,14 @@ Deno.serve(async (req) => {
       const { data: shipperProfile } = await adminClient
         .from('profiles').select('full_name').eq('id', match.shipper_id).single()
 
-      await adminClient.rpc('adjust_wallet_balance', { p_user_id: match.traveler_id, p_delta: fees.travelerReceives })
+      // The match was already flipped to 'completed' above (guarded so it
+      // can't be replayed), so a failed credit here can't be silently
+      // swallowed and still let the code fall through to record the
+      // release and announce it in chat — the traveler would believe
+      // they were paid while wallet_balance was never actually touched.
+      const { error: creditError } = await adminClient
+        .rpc('adjust_wallet_balance', { p_user_id: match.traveler_id, p_delta: fees.travelerReceives })
+      if (creditError) throw new Error(`Delivery confirmed but crediting the traveler's wallet failed — contact support for match ${match.id}`)
 
       // Two rows: the traveler's payout, and fetchr's FULL revenue in one
       // row (shipper service fee + traveler platform fee + sourcing fee
@@ -767,7 +794,13 @@ Deno.serve(async (req) => {
         const { data: escrowTx } = await adminClient.from('transactions')
           .select('amount').eq('match_id', match.id).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
         if (escrowTx) {
-          await adminClient.rpc('adjust_wallet_balance', { p_user_id: match.shipper_id, p_delta: escrowTx.amount })
+          // Don't record a completed refund transaction if the credit
+          // itself didn't actually land — the ledger would otherwise say
+          // the shipper got their money back while wallet_balance was
+          // never incremented, with nothing left to catch the mismatch.
+          const { error: creditError } = await adminClient
+            .rpc('adjust_wallet_balance', { p_user_id: match.shipper_id, p_delta: escrowTx.amount })
+          if (creditError) throw new Error(`Failed to refund wallet for match ${match.id} — contact support`)
           await adminClient.from('transactions').insert({
             user_id: match.shipper_id, type: 'credit', amount: escrowTx.amount,
             description: `Escrow refund: ${match.request?.item_name}`, match_id: match.id, status: 'completed',

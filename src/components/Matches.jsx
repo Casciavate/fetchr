@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { PROFILE_PUBLIC_COLUMNS } from '../lib/profileColumns';
 import {
   Search, CheckCircle, XCircle, Ticket, MessageCircle,
   ChevronRight, ChevronDown, ChevronUp, X, Award,
@@ -93,8 +94,8 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
         *,
         flight:flights(*),
         request:shipment_requests(*),
-        traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-        shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)
+        traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+        shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})
       `)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
       .in('status', ['pending', 'awaiting_other', 'accepted'])
@@ -149,8 +150,8 @@ const Matches = ({ session, onNavigate, focusMatchId }) => {
           *,
           flight:flights(*),
           request:shipment_requests(*),
-          traveler:profiles!matches_traveler_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified),
-          shipper:profiles!matches_shipper_id_fkey(id, full_name, avatar_url, rating, total_reviews, verified)
+          traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
+          shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})
         `)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
         .in('status', ['pending', 'awaiting_other', 'accepted'])
