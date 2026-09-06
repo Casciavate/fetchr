@@ -11,8 +11,10 @@ import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PC
 import StatusPill from './shared/StatusPill';
 import SkeletonList from './shared/Skeleton';
 import VerificationBadge from './shared/VerificationBadge';
+import RatingDisplay from './shared/RatingDisplay';
 import DealInfoSections from './shared/DealInfoSections';
 import AdvisoryBanner from './shared/AdvisoryBanner';
+import Barcode from './shared/Barcode';
 
 // Bare glyph, docs/BRAND.md §2.6 — used inside ticket-style header bars,
 // same small local copy every other ticket-rendering file already keeps
@@ -120,14 +122,31 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   // Same ticket/cargo-tag split as Matches.jsx and MyFlights.jsx — the
   // traveller is tracking a trip (boarding pass), the shipper is tracking
   // an item (cargo manifest). This modal used to be a plain settings-style
-  // sheet regardless of role; the header now reads as the same physical
-  // document the rest of the app already shows them.
+  // sheet regardless of role, with no visual relation to the ticket the
+  // rest of the app shows for the same deal; it now embeds the actual
+  // ticket body (status, route, data strip, other party, barcode) rather
+  // than jumping straight to a grid of info cards.
   const ref = match.id.slice(0, 6).toUpperCase();
+  const other = isTrav ? match.shipper : match.traveler;
+  const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2); };
+  const getAvatarUrl = (profile) => {
+    if (!profile?.avatar_url) return null;
+    const { data } = supabase.storage.from('avatars').getPublicUrl(profile.avatar_url);
+    return data?.publicUrl;
+  };
+  const avatarUrl = getAvatarUrl(other);
+  const dealStatusLabel = {
+    accepted: 'Chat open', terms_agreed: 'Terms agreed', in_escrow: 'Escrow secured',
+    proof_uploaded: 'Proof uploaded', completed: 'Delivered',
+  }[match.status] || match.status;
 
   return (
-    <div className="fixed inset-0 bg-[var(--scrim)] z-modal flex items-end md:items-center justify-center p-4">
-      <div className="bg-surface-raised rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-elev-3">
-        <div className="sticky top-0 z-10 h-10 bg-ink-900 flex items-center justify-between px-4 rounded-t-xl">
+    <div className="fixed inset-0 bg-[var(--scrim)] z-modal flex items-end md:items-center justify-center p-0 md:p-4">
+      <div className="bg-surface-raised rounded-t-xl md:rounded-xl w-full max-w-lg max-h-[92vh] md:max-h-[90vh] overflow-y-auto shadow-elev-3">
+        <div className="md:hidden flex justify-center pt-2.5 pb-1 sticky top-0 bg-surface-raised z-10">
+          <div className="w-8 h-1 rounded-full bg-line-strong" />
+        </div>
+        <div className="sticky top-0 md:top-0 z-10 h-10 bg-ink-900 flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <BareGlyph size={15} />
             <span className="font-display font-extrabold text-[12px] tracking-[-0.05em] text-paper-100">fetchr</span>
@@ -136,8 +155,13 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
             {isTrav ? 'Boarding pass' : 'Cargo manifest'} · #{ref}
           </span>
         </div>
-        <div className="bg-surface-raised border-b border-line px-5 py-3 flex items-center justify-between">
-          <div className="min-w-0">
+        <div className="bg-surface-raised border-b border-line px-5 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <StatusPill tone={match.status === 'completed' ? 'success' : match.status === 'in_escrow' ? 'success' : 'neutral'}>
+                {dealStatusLabel}
+              </StatusPill>
+            </div>
             <p className="font-mono font-semibold text-code-l text-ink-900 leading-none">
               {match.flight?.from_code || '—'} <span className="text-ink-400">→</span> {match.flight?.to_code || '—'}
             </p>
@@ -154,6 +178,32 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
               <X size={18} className="text-ink-500" />
             </button>
           </div>
+        </div>
+
+        {/* Data strip — date · flight/airline · weight, same line the
+            boarding-pass and cargo-ticket cards both use. */}
+        <p className="font-mono text-micro text-content-muted px-5 py-2 border-b border-line whitespace-nowrap overflow-hidden text-ellipsis">
+          {match.flight?.flight_date
+            ? new Date(match.flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+            : '—'}
+          {' · '}{match.flight?.flight_number || match.flight?.airline || '—'}
+          {' · '}{match.agreed_weight_kg || match.request?.weight_kg}kg
+        </p>
+
+        {/* Other party — the modal never showed who's actually on the
+            other end of the deal before. */}
+        <div className="flex items-center gap-2.5 px-5 py-3 border-b border-line">
+          <div className="w-9 h-9 rounded-avatar bg-ink-900 flex items-center justify-center text-body-s font-mono font-semibold text-paper-100 flex-shrink-0 overflow-hidden">
+            {avatarUrl ? <img src={avatarUrl} alt={other?.full_name} className="w-full h-full object-cover" /> : getInitials(other?.full_name)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <p className="font-display font-semibold text-title-s text-ink-900 truncate">{other?.full_name || 'User'}</p>
+              <VerificationBadge verified={other?.verified} />
+            </div>
+            <RatingDisplay rating={other?.rating} totalReviews={other?.total_reviews} qualifier={isTrav ? 'New sender' : 'New traveller'} />
+          </div>
+          <span className="badge badge-gray flex-shrink-0">{isTrav ? 'Sender' : 'Traveller'}</span>
         </div>
 
         <div className="p-5 space-y-4">
@@ -283,6 +333,7 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
                   <p className="text-body-s text-content-muted italic">"{match.agreed_notes}"</p>
                 </div>
               )}
+              <Barcode deal={match} />
             </div>
           )}
 
@@ -1014,20 +1065,22 @@ const Messages = ({ session, focusMatchId }) => {
               DealStub as two separate persistent bars), not squeezed
               into the identity header above. */}
           <button onClick={() => setShowDealDetails(true)}
-            className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left">
+            className={`flex-shrink-0 flex items-center gap-3 px-4 py-2.5 bg-surface-raised border-b border-line text-left ${blockedAction ? 'border-l-[3px] border-l-signal-500' : ''}`}>
+            <div className="w-7 h-7 rounded-md bg-ink-900 flex items-center justify-center flex-shrink-0">
+              <BareGlyph size={13} />
+            </div>
             <div className="flex-1 min-w-0">
               <p className="font-mono text-body-s font-semibold text-ink-900">
                 {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
               </p>
-              <p className="text-label text-content-subtle truncate">
-                {isShipper(activeMatch) ? 'You pay' : 'You receive'} $
-                {(isShipper(activeMatch) ? calcFees(activeMatch).shipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
+              <p className="text-label text-content-subtle truncate uppercase tracking-wide">
+                {isShipper(activeMatch) ? 'You pay' : 'You receive'} · {(STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
               </p>
             </div>
-            <StatusPill tone={blockedAction ? 'signal' : activeMatch.status === 'completed' ? 'success' : 'neutral'} className="flex-shrink-0">
-              {blockedAction ? `Your turn · ${blockedAction.label.split(' · ')[0]}`
-                : (STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
-            </StatusPill>
+            <span className="font-mono font-bold text-num-m text-ink-900 flex-shrink-0">
+              ${(isShipper(activeMatch) ? calcFees(activeMatch).shipperPays : calcFees(activeMatch).travelerReceives).toFixed(2)}
+            </span>
+            <ChevronDown size={16} className="text-ink-400 flex-shrink-0" />
           </button>
 
           {/* Shop & Ship mismatch — must be explicitly resolved by both
