@@ -3,9 +3,13 @@
 // Parse webhook (multipart/form-data with `from`, `subject`, `text`/`html`
 // fields — see SendGrid's Inbound Parse docs). Matches the sender to a
 // fetchr account by email, extracts candidate flight number + date pairs,
-// and queues them in pending_flight_imports for the user to review and
-// select in-app (ImportFlights.jsx) — nothing is ever auto-added as a live
-// flight listing from here.
+// then verifies each one against the same live schedule lookup
+// flight-search/index.ts uses (AeroDataBox, cached in flight_schedule_cache
+// — the two functions share that cache). Only candidates that resolve to a
+// real scheduled flight are queued in pending_flight_imports, WITH the
+// route/airline already filled in — a false-positive text match (e.g. "hr"
+// from a duration string) never becomes a real flight number+date, so it
+// simply won't resolve here and is dropped rather than shown to the user.
 //
 // Setup required (not doable from code — needs domain/DNS access):
 // 1. Add an MX record for a subdomain (e.g. parse.fetchr-zeta.app or
@@ -16,6 +20,9 @@
 //    https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/email-import
 // 3. Tell users to forward confirmations to flights@<that-subdomain>.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const RAPIDAPI_HOST = 'aerodatabox.p.rapidapi.com'
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,23 +43,23 @@ function extractCandidates(text, knownCodes) {
   let m
   const isoRe = /\b(\d{4})-(\d{2})-(\d{2})\b/g
   while ((m = isoRe.exec(text))) dateMatches.push({ index: m.index, iso: `${m[1]}-${m[2]}-${m[3]}` })
-  const monthNameRe = /\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})\b/gi
+  const fullYear = (y) => y.length <= 2 ? 2000 + parseInt(y, 10) : parseInt(y, 10)
+  const monthNameRe = /\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{2,4})\b/gi
   while ((m = monthNameRe.exec(text))) {
     const mi = MONTHS.indexOf(m[2].toLowerCase())
-    dateMatches.push({ index: m.index, iso: `${m[3]}-${String(mi + 1).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}` })
+    dateMatches.push({ index: m.index, iso: `${fullYear(m[3])}-${String(mi + 1).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}` })
   }
-  const monthFirstRe = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b/gi
+  const monthFirstRe = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{2,4})\b/gi
   while ((m = monthFirstRe.exec(text))) {
     const mi = MONTHS.indexOf(m[1].toLowerCase())
-    dateMatches.push({ index: m.index, iso: `${m[3]}-${String(mi + 1).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` })
+    dateMatches.push({ index: m.index, iso: `${fullYear(m[3])}-${String(mi + 1).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` })
   }
   const nearestDate = (pos) => {
-    let best = null, bestDist = Infinity
-    for (const d of dateMatches) {
-      const dist = Math.abs(d.index - pos)
-      if (dist < bestDist && dist < 400) { best = d.iso; bestDist = dist }
-    }
-    return best
+    const inWindow = dateMatches.filter(d => Math.abs(d.index - pos) < 400)
+    if (inWindow.length === 0) return null
+    const preceding = inWindow.filter(d => d.index < pos)
+    if (preceding.length > 0) return preceding.sort((a, b) => a.index - b.index)[0].iso
+    return inWindow.sort((a, b) => Math.abs(a.index - pos) - Math.abs(b.index - pos))[0].iso
   }
   const seen = new Set()
   const found = []
@@ -71,6 +78,68 @@ function extractCandidates(text, knownCodes) {
   return found
 }
 
+const normalizeAirport = (a) => a && {
+  iata: a.iata,
+  name: a.shortName || a.name,
+  city: a.municipalityName || a.shortName || a.name,
+}
+const normalizeFlight = (f) => ({
+  flightNumber: (f.number || '').replace(/\s/g, ''),
+  airline: f.airline?.name || null,
+  from: normalizeAirport(f.departure?.airport),
+  to: normalizeAirport(f.arrival?.airport),
+})
+
+async function getCached(supabase, key) {
+  const { data } = await supabase.from('flight_schedule_cache').select('data, created_at').eq('cache_key', key).maybeSingle()
+  if (!data) return null
+  if (Date.now() - new Date(data.created_at).getTime() > CACHE_TTL_MS) return null
+  return data.data
+}
+async function setCached(supabase, key, data) {
+  await supabase.from('flight_schedule_cache').upsert({ cache_key: key, data, created_at: new Date().toISOString() })
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+// Verify a candidate against the same live schedule source flight-search
+// uses (and share its cache) — returns null if it's not a real scheduled
+// flight, which is how a text false-positive like "HR35" gets dropped.
+// A transient failure (rate limit, timeout, network blip) is NOT the same
+// thing as "not a real flight" — one retry after a short pause, and every
+// failure reason is logged, so a real flight isn't silently lost to a
+// burst-rate-limit from checking several candidates back to back.
+async function verifyFlight(supabase, apiKey, flightNumber, date) {
+  const cacheKey = `num:${flightNumber}:${date}`
+  let flights = await getCached(supabase, cacheKey)
+  if (flights) return flights[0] || null
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await sleep(800)
+    try {
+      const res = await fetch(`https://${RAPIDAPI_HOST}/flights/number/${flightNumber}/${date}`, {
+        headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': RAPIDAPI_HOST },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.status === 429 || res.status === 403) {
+        console.error(`verifyFlight ${flightNumber}/${date}: rate limited (${res.status}), attempt ${attempt}`)
+        continue // retry once, don't give up on the first throttle
+      }
+      if (!res.ok) {
+        console.error(`verifyFlight ${flightNumber}/${date}: provider error ${res.status}`)
+        return null
+      }
+      const raw = await res.json()
+      flights = (Array.isArray(raw) ? raw : []).map(normalizeFlight)
+      await setCached(supabase, cacheKey, flights)
+      return flights[0] || null
+    } catch (e) {
+      console.error(`verifyFlight ${flightNumber}/${date}: ${e.message}`)
+    }
+  }
+  return null
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -78,6 +147,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const adminClient = createClient(supabaseUrl, serviceRoleKey)
+    const apiKey = Deno.env.get('AERODATABOX_RAPIDAPI_KEY')
 
     const form = await req.formData()
     const fromRaw = (form.get('from') || '').toString()
@@ -86,25 +156,38 @@ Deno.serve(async (req) => {
 
     const emailMatch = fromRaw.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)
     const senderEmail = emailMatch ? emailMatch[0].toLowerCase() : null
-    if (!senderEmail) return new Response('ok', { headers: corsHeaders }) // nothing to match, ack anyway
+    if (!senderEmail) return new Response('ok', { headers: corsHeaders })
 
     const { data: profile } = await adminClient
       .from('profiles').select('id').ilike('email', senderEmail).maybeSingle()
-    if (!profile) return new Response('ok', { headers: corsHeaders }) // unrecognised sender — silently drop
+    if (!profile) return new Response('ok', { headers: corsHeaders })
+
+    if (!apiKey) return new Response('ok', { headers: corsHeaders }) // can't verify anything — drop rather than show unverified guesses
 
     const candidates = extractCandidates(`${subject}\n${text}`, KNOWN_AIRLINE_PREFIXES)
 
-    if (candidates.length > 0) {
-      await adminClient.from('pending_flight_imports').insert(
-        candidates.map(c => ({
-          user_id: profile.id,
-          flight_number: c.flightNumber,
-          flight_date: c.date,
-          raw_subject: subject.slice(0, 200),
-          raw_snippet: text.slice(0, 500),
-          status: 'pending',
-        }))
-      )
+    // Verify each candidate against the real schedule; only a genuine match
+    // gets queued, with the route already filled in.
+    const rows = []
+    for (const [i, c] of candidates.entries()) {
+      if (i > 0) await sleep(250) // pace calls out — a burst of several at once is what tripped rate-limiting
+      const match = await verifyFlight(adminClient, apiKey, c.flightNumber, c.date)
+      if (!match || !match.from?.iata || !match.to?.iata) continue
+      rows.push({
+        user_id: profile.id,
+        flight_number: c.flightNumber,
+        flight_date: c.date,
+        airline: match.airline,
+        from_code: match.from.iata, from_city: match.from.city,
+        to_code: match.to.iata, to_city: match.to.city,
+        raw_subject: subject.slice(0, 200),
+        raw_snippet: text.slice(0, 500),
+        status: 'pending',
+      })
+    }
+
+    if (rows.length > 0) {
+      await adminClient.from('pending_flight_imports').insert(rows)
     }
 
     return new Response('ok', { headers: corsHeaders })

@@ -1,0 +1,14 @@
+-- Bug fix: find_matches() was SECURITY INVOKER, so its global INSERT ...
+-- SELECT (which spans every user's flights/requests, not just the
+-- caller's) violated the matches table's INSERT policy
+-- (auth.uid() IN (traveler_id, shipper_id)) the moment ANY candidate pair
+-- in the whole system didn't involve the calling user — aborting the
+-- entire sweep with an RLS error that every frontend call site silently
+-- ignores (`await supabase.rpc('find_matches')`, result unchecked).
+-- Verified live: calling it as a normal authenticated user throws
+-- "new row violates row-level security policy for table matches" as soon
+-- as any other user's pending pair exists. Matches SELECT stays properly
+-- restricted (own matches only) — this only fixes the sweep's own INSERT,
+-- mirroring the SECURITY DEFINER pattern already used by
+-- enforce_flight_capacity/update_flight_capacity/protect_match_columns.
+alter function public.find_matches() security definer;

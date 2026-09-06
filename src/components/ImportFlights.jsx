@@ -1,24 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { AIRPORTS } from './shared/airports';
 import {
   Mail, Copy, Check, RefreshCw, CheckCircle, AlertCircle,
   Briefcase, Package, Plane,
 } from 'lucide-react';
-
-const FLIGHT_SEARCH_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/flight-search';
-
-const searchFlightSchedule = async (action, data) => {
-  const { data: { session: auth } } = await supabase.auth.getSession();
-  const res = await fetch(FLIGHT_SEARCH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
-    body: JSON.stringify({ action, data }),
-  });
-  const result = await res.json();
-  if (!res.ok) throw new Error(result.error || 'Flight search failed');
-  return result;
-};
 
 const CATEGORIES = [
   'Electronics', 'Clothing & Fashion', 'Cosmetics & Beauty',
@@ -80,34 +65,19 @@ const ImportFlights = ({ session, onDone }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Enrich the raw parsed rows (flight number + date only) with the real
-  // route via the same live schedule lookup AddFlight.jsx uses — falls back
-  // to manual entry per flight if unavailable or no match, same pattern as
-  // the manual add flow.
-  const reviewPending = async () => {
+  // No enrichment needed here anymore: email-import already verified each
+  // row against the live schedule and filled in the route before it was
+  // ever written to pending_flight_imports — a text false-positive (e.g.
+  // "HR35" from "7 hr 35 min") never resolves to a real flight, so it's
+  // dropped server-side and never reaches this table at all.
+  const reviewPending = () => {
     setError('');
-    const rows = pending;
-    const enriched = await Promise.all(rows.map(async (row) => {
-      let from = null, to = null, airline = null;
-      try {
-        const result = await searchFlightSchedule('by_number', { flightNumber: row.flight_number, date: row.flight_date });
-        const match = result.flights?.[0];
-        if (match) {
-          airline = match.airline || null;
-          const fromAirport = AIRPORTS.find(a => a.code === match.from?.iata);
-          const toAirport = AIRPORTS.find(a => a.code === match.to?.iata);
-          from = fromAirport || (match.from?.iata ? { code: match.from.iata, city: match.from.city || match.from.iata } : null);
-          to = toAirport || (match.to?.iata ? { code: match.to.iata, city: match.to.city || match.to.iata } : null);
-        }
-      } catch (e) { /* graceful fallback below */ }
-      return {
-        id: row.id, flightNumber: row.flight_number, date: row.flight_date, airline,
-        fromCode: from?.code || '', fromCity: from?.city || '',
-        toCode: to?.code || '', toCity: to?.city || '',
-        selected: true, resolved: !!from && !!to,
-      };
-    }));
-    setCandidates(enriched);
+    setCandidates(pending.map(row => ({
+      id: row.id, flightNumber: row.flight_number, date: row.flight_date, airline: row.airline,
+      fromCode: row.from_code, fromCity: row.from_city,
+      toCode: row.to_code, toCity: row.to_city,
+      selected: true, resolved: true,
+    })));
   };
 
   const updateCandidate = (id, patch) => setCandidates(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));

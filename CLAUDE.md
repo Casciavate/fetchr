@@ -315,7 +315,20 @@ supabase functions deploy stripe-connect   # edge function
 git add . && git commit -m "..." && git push   # Vercel auto-deploys frontend
 ```
 
-SQL migrations are still applied by hand in the Supabase SQL Editor.
+SQL migrations are applied via the Supabase MCP `apply_migration` tool (or
+the SQL Editor), which records them in Supabase's own migration history —
+but that history was never mirrored into git until 2026-09-06, when all 42
+prior migrations plus every one since were pulled into `supabase/migrations/`
+(named `<version>_<name>.sql`, matching Supabase's own naming exactly). This
+was a real blind spot: `expire_stale_matches()` had a live bug (a bad match
+between Sandro and Anastasiia over "Russian Chocolates" got silently
+force-rejected by it, twice) that no code review could have caught, because
+its only copy of the truth lived in Supabase and nowhere in git. Going
+forward, **any migration applied to Supabase must also get a matching file
+in `supabase/migrations/`** in the same commit — pull the exact applied SQL
+back with `select statements from supabase_migrations.schema_migrations
+where version = '<version>'` (via `execute_sql`) rather than retyping it, so
+the two never drift.
 
 ## Open bugs
 
