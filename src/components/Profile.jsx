@@ -244,7 +244,7 @@ const Profile = ({ session, userRole, onNavigate, isAdmin }) => {
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`).eq('status', 'completed'),
       supabase.from('matches').select('id', { count: 'exact', head: true })
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded']),
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed']),
     ]);
     setStats({
       flightsActive: flightsActive || 0,

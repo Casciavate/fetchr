@@ -28,7 +28,7 @@ import {
   Home, Plane, PlusCircle, User, Package,
   Bell, MessageCircle, Wallet,
   ChevronRight, ChevronDown, ChevronUp, LogOut, CheckCircle, Search,
-  Zap, ArrowUpRight, Lock, Camera, Ticket, Weight
+  Zap, ArrowUpRight, Lock, Camera, Ticket, Weight, AlertOctagon
 } from 'lucide-react';
 
 // Running inside the native iOS shell always gets the touch-optimized
@@ -185,7 +185,7 @@ const Dashboard = ({ session }) => {
       // here, matching ActiveDeals.jsx's own query boundary.
       supabase.from('matches').select('id', { count: 'exact', head: true })
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['terms_agreed', 'in_escrow', 'proof_uploaded']),
+        .in('status', ['terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed']),
       supabase.from('flights').select('id', { count: 'exact', head: true })
         .eq('user_id', userId).eq('status', 'active')
         .gte('flight_date', new Date().toISOString().split('T')[0]),
@@ -234,7 +234,7 @@ const Dashboard = ({ session }) => {
           traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
           shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['pending', 'awaiting_other', 'accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'])
+        .in('status', ['pending', 'awaiting_other', 'accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed'])
         .order('created_at', { ascending: false }).limit(100),
 
       supabase.from('flights').select('*')
@@ -251,7 +251,7 @@ const Dashboard = ({ session }) => {
     setAllMatches(all);
     setRecentMatches(all.filter(m => ['pending', 'awaiting_other'].includes(m.status))
       .sort((a, b) => (b.match_score || 0) - (a.match_score || 0)).slice(0, 3));
-    setActiveDeals(all.filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status)).slice(0, 4));
+    setActiveDeals(all.filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed'].includes(m.status)).slice(0, 4));
     setUpcomingFlights(flightsData || []);
     setOngoingRequests(requestsData || []);
 
@@ -394,6 +394,7 @@ const Dashboard = ({ session }) => {
     if (s === 'terms_agreed') return { label: 'Terms agreed', color: 'text-content-muted' };
     if (s === 'in_escrow') return { label: 'Escrow secured', color: 'text-success' };
     if (s === 'proof_uploaded') return { label: 'Proof uploaded', color: 'text-warning' };
+    if (s === 'disputed') return { label: 'Disputed', color: 'text-danger' };
     return { label: 'In progress', color: 'text-content-muted' };
   };
 
@@ -556,7 +557,10 @@ const Dashboard = ({ session }) => {
       // Estimated Earnings — deals both users have agreed/accepted
       // (terms_agreed+). Already capacity-validated server-side at accept
       // time (enforce_flight_capacity), capped again here defensively
-      // against the flight's current advertised capacity.
+      // against the flight's current advertised capacity. 'disputed'
+      // deliberately excluded — a dispute means the payout is genuinely
+      // uncertain (it could resolve as a refund instead), so counting it
+      // here would overstate what the traveller should actually expect.
       const potentialEarnings = sumCappedByWeight(
         myMatches.filter(m => ['terms_agreed', 'in_escrow', 'proof_uploaded'].includes(m.status)),
         totalCapacityKg
@@ -873,6 +877,7 @@ const Dashboard = ({ session }) => {
                 const StageIcon = deal.status === 'in_escrow' ? Lock
                   : deal.status === 'terms_agreed' ? CheckCircle
                   : deal.status === 'proof_uploaded' ? Camera
+                  : deal.status === 'disputed' ? AlertOctagon
                   : Zap;
                 return (
                   <button key={i} onClick={() => navigate('messages')}

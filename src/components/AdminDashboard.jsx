@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import {
   DollarSign, Users, Receipt, CreditCard, ShieldCheck,
   TrendingUp, Lock, Wallet, RefreshCw, CheckCircle, XCircle,
-  Ban, KeyRound, Trash2, Search, ArrowUpDown,
+  Ban, KeyRound, Trash2, Search, ArrowUpDown, AlertOctagon, Bot,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -13,6 +13,7 @@ import Toast from './shared/Toast';
 import AdvisoryBanner from './shared/AdvisoryBanner';
 
 const ADMIN_FN_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/admin-dashboard';
+const STRIPE_CONNECT_FN_URL = 'https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect';
 
 const callAdmin = async (action, data) => {
   const { data: { session: auth } } = await supabase.auth.getSession();
@@ -26,10 +27,27 @@ const callAdmin = async (action, data) => {
   return result;
 };
 
+// Actually releasing/refunding escrow funnels through stripe-connect, not
+// admin-dashboard — that's the only function with the Stripe/wallet
+// release logic, so it stays the single place money moves from (see
+// admin_resolve_dispute's own comment in that file).
+const callStripeConnect = async (action, data) => {
+  const { data: { session: auth } } = await supabase.auth.getSession();
+  const res = await fetch(STRIPE_CONNECT_FN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+    body: JSON.stringify({ action, data }),
+  });
+  const result = await res.json();
+  if (!res.ok || result.error) throw new Error(result.error || 'Request failed');
+  return result;
+};
+
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: TrendingUp },
+  { id: 'disputes', label: 'Disputes', icon: AlertOctagon },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'stripe', label: 'Stripe', icon: CreditCard },
@@ -46,6 +64,11 @@ const AdminDashboard = () => {
   const [txFilter, setTxFilter] = useState({ type: '', status: '' });
   const [paymentIntents, setPaymentIntents] = useState([]);
   const [success, setSuccess] = useState('');
+
+  // Disputes tab
+  const [disputes, setDisputes] = useState([]);
+  const [disputeStatusFilter, setDisputeStatusFilter] = useState('escalated');
+  const [resolvingId, setResolvingId] = useState(null);
 
   // Users tab — search, status filter, sort
   const [userSearch, setUserSearch] = useState('');
@@ -78,6 +101,9 @@ const AdminDashboard = () => {
         const { startDate, endDate } = periodRange(kpiPeriod);
         setKpiSeries((await callAdmin('kpi_timeseries', { startDate, endDate })).series || []);
       }
+      if (t === 'disputes') {
+        setDisputes((await callAdmin('disputes', disputeStatusFilter ? { status: disputeStatusFilter } : {})).disputes || []);
+      }
       if (t === 'users') setUsers((await callAdmin('users')).users || []);
       if (t === 'transactions') {
         const filters = {};
@@ -90,7 +116,7 @@ const AdminDashboard = () => {
       setError(e.message);
     }
     setLoading(false);
-  }, [tab, txFilter, kpiPeriod]);
+  }, [tab, txFilter, kpiPeriod, disputeStatusFilter]);
 
   useEffect(() => { load(tab); }, [tab, load]);
 
@@ -104,6 +130,20 @@ const AdminDashboard = () => {
   };
 
   const flash = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 5000); };
+
+  const resolveDispute = async (dispute, resolution) => {
+    const label = resolution === 'release_to_traveler' ? 'release escrow to the traveller' : 'refund escrow to the sender';
+    if (!window.confirm(`Are you sure you want to ${label} for this dispute? This moves real money and can't be undone.`)) return;
+    setResolvingId(dispute.id);
+    try {
+      await callStripeConnect('admin_resolve_dispute', { disputeId: dispute.id, resolution });
+      setDisputes(prev => prev.filter(d => d.id !== dispute.id));
+      flash(`Dispute resolved: ${label}.`);
+    } catch (e) {
+      setError(e.message);
+    }
+    setResolvingId(null);
+  };
 
   const blockUser = async (u) => {
     setActingOn(u.id);
@@ -330,6 +370,122 @@ const AdminDashboard = () => {
             </div>
           </div>
         )
+      )}
+
+      {tab === 'disputes' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={disputeStatusFilter} onChange={e => setDisputeStatusFilter(e.target.value)}
+              className="input-field w-auto py-2 text-body-s">
+              <option value="escalated">Needs a decision</option>
+              <option value="ai_resolved">AI-resolved</option>
+              <option value="resolved">Resolved by admin</option>
+              <option value="open">Open (AI still reviewing)</option>
+              <option value="">All disputes</option>
+            </select>
+            <span className="text-label text-content-subtle">{disputes.length} dispute{disputes.length === 1 ? '' : 's'}</span>
+          </div>
+
+          {loading && disputes.length === 0 ? (
+            <div className="space-y-3">{[1, 2].map(i => <div key={i} className="h-40 bg-surface-sunken rounded-lg animate-pulse" />)}</div>
+          ) : disputes.length === 0 ? (
+            <div className="card p-8 text-center text-content-subtle text-body-s">No disputes here.</div>
+          ) : disputes.map(d => {
+            const m = d.match || {};
+            const req = m.request || {};
+            const isPending = d.status === 'escalated';
+            return (
+              <div key={d.id} className="card p-5 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-display font-semibold text-title-s text-content">
+                      {req.item_name || 'Item'} — {m.flight?.from_code || '—'} → {m.flight?.to_code || '—'}
+                    </p>
+                    <p className="text-label text-content-subtle mt-0.5">
+                      Filed by {d.raiser?.full_name || d.raiser?.email || 'a party'} · {new Date(d.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <StatusPill tone={
+                    d.status === 'escalated' ? 'danger' :
+                    d.status === 'resolved' || d.status === 'ai_resolved' ? 'success' : 'neutral'
+                  }>
+                    {d.status === 'ai_resolved' ? 'AI resolved' : d.status === 'escalated' ? 'Needs decision' : d.status}
+                  </StatusPill>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-body-s">
+                  <div>
+                    <p className="text-label text-content-subtle uppercase mb-0.5">Traveller</p>
+                    <p className="text-content">{m.traveler?.full_name || '—'} <span className="text-content-subtle">({m.traveler?.email || '—'})</span></p>
+                  </div>
+                  <div>
+                    <p className="text-label text-content-subtle uppercase mb-0.5">Sender</p>
+                    <p className="text-content">{m.shipper?.full_name || '—'} <span className="text-content-subtle">({m.shipper?.email || '—'})</span></p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-label text-content-subtle uppercase mb-1">Dispute reason</p>
+                  <p className="text-body-s text-content">{d.reason}</p>
+                </div>
+
+                {(req.item_photo_url || m.proof_photo_url || d.evidence_photo_urls?.length > 0) && (
+                  <div>
+                    <p className="text-label text-content-subtle uppercase mb-1.5">Photos</p>
+                    <div className="flex flex-wrap gap-2">
+                      {req.item_photo_url && (
+                        <a href={req.item_photo_url} target="_blank" rel="noreferrer" className="relative">
+                          <img src={req.item_photo_url} alt="Original request" className="w-20 h-20 object-cover rounded-md border border-line" />
+                          <span className="absolute -bottom-4 left-0 text-micro text-content-subtle whitespace-nowrap">Requested</span>
+                        </a>
+                      )}
+                      {m.proof_photo_url && (
+                        <a href={m.proof_photo_url} target="_blank" rel="noreferrer" className="relative">
+                          <img src={m.proof_photo_url} alt="Delivery proof" className="w-20 h-20 object-cover rounded-md border border-line" />
+                          <span className="absolute -bottom-4 left-0 text-micro text-content-subtle whitespace-nowrap">Proof</span>
+                        </a>
+                      )}
+                      {(d.evidence_photo_urls || []).map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer" className="relative">
+                          <img src={url} alt={`Evidence ${i + 1}`} className="w-20 h-20 object-cover rounded-md border border-line" />
+                          <span className="absolute -bottom-4 left-0 text-micro text-content-subtle whitespace-nowrap">Evidence</span>
+                        </a>
+                      ))}
+                    </div>
+                    <div className="h-4" />
+                  </div>
+                )}
+
+                {d.ai_verdict && (
+                  <AdvisoryBanner tone={d.ai_verdict === 'inconclusive' ? 'warning' : 'info'} title={
+                    <span className="flex items-center gap-1.5"><Bot size={13} /> AI review — {d.ai_verdict.replace(/_/g, ' ')} ({Math.round((d.ai_confidence || 0) * 100)}% confidence)</span>
+                  }>
+                    {d.ai_reasoning}
+                  </AdvisoryBanner>
+                )}
+
+                {d.status === 'resolved' && (
+                  <p className="text-label text-content-subtle">
+                    Resolved by {d.resolver?.full_name || d.resolver?.email || 'an admin'} · {d.resolution?.replace(/_/g, ' ')}
+                  </p>
+                )}
+
+                {isPending && (
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => resolveDispute(d, 'refund_to_shipper')} disabled={resolvingId === d.id}
+                      className="flex-1 btn-secondary disabled:opacity-50">
+                      Refund sender
+                    </button>
+                    <button onClick={() => resolveDispute(d, 'release_to_traveler')} disabled={resolvingId === d.id}
+                      className="flex-1 btn-primary disabled:opacity-50">
+                      {resolvingId === d.id ? 'Working…' : 'Release to traveller'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {tab === 'users' && (

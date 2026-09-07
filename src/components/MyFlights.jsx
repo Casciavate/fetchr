@@ -215,7 +215,7 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     for (const flight of flightList) {
       const { data } = await supabase.from('matches').select('status')
         .eq('flight_id', flight.id)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
         .limit(1);
       if (data && data.length > 0) statuses[flight.id] = data[0].status;
     }
@@ -356,10 +356,14 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     const { data: { session: auth } } = await supabase.auth.getSession();
     const route = `${flight.from_code} → ${flight.to_code}`;
     const dateStr = new Date(flight.flight_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const chatWasOpen = (status) => ['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'].includes(status);
+    const chatWasOpen = (status) => ['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed'].includes(status);
 
     for (const match of matches) {
-      const hadEscrow = ['in_escrow', 'proof_uploaded'].includes(match.status) && match.payment_intent_id;
+      // 'disputed' included — that match still has real escrow held
+      // (raise_dispute never touches payment_intent_id), and the flight
+      // being cancelled is an objective fact the dispute's outcome can't
+      // change: there's nothing left to deliver either way.
+      const hadEscrow = ['in_escrow', 'proof_uploaded', 'disputed'].includes(match.status) && match.payment_intent_id;
       if (hadEscrow) {
         await fetch(STRIPE_CONNECT_URL, {
           method: 'POST',
@@ -414,7 +418,7 @@ const MyFlights = ({ session, onAddFlight, focusFlightId }) => {
     // sender's own deadline.
     const matches = await fetchActionableMatches(flight.id);
     for (const match of matches) {
-      if (!['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded'].includes(match.status)) continue;
+      if (!['accepted', 'terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed'].includes(match.status)) continue;
       const missesDeadline = match.request?.needed_by && rescheduleDate > match.request.needed_by;
       await supabase.from('messages').insert({
         match_id: match.id, sender_id: session.user.id,

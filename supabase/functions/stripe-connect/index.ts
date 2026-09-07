@@ -102,6 +102,126 @@ const calcFees = (match) => {
 // matches the fee-tier breakpoint already used elsewhere in the app.
 const HIGH_VALUE_THRESHOLD = 500
 
+// ── Dispute auto-resolution ──
+// The AI only ever auto-executes a release/refund when BOTH it's
+// confident (per the AI's own self-reported confidence) AND the deal is
+// small — a wrong call on a $20 carry is a bad experience, a wrong call
+// on a $400 Shop & Ship purchase is a real financial loss with no human
+// having looked at it first. Anything outside these bounds is escalated
+// to the admin console instead, with the AI's analysis attached so a
+// human starts from a verdict rather than a cold read.
+const AUTO_RESOLVE_MAX_VALUE = 150.00
+const AUTO_RESOLVE_MIN_CONFIDENCE = 0.85
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
+
+// Deno's btoa() chokes on very large single calls via the spread-operator
+// pattern (stack overflow) — chunk it.
+const arrayBufferToBase64 = (buf: ArrayBuffer) => {
+  let binary = ''
+  const bytes = new Uint8Array(buf)
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+  }
+  return btoa(binary)
+}
+
+const fetchImageAsBase64 = async (url?: string | null) => {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0]
+    if (!contentType.startsWith('image/')) return null
+    const buf = await res.arrayBuffer()
+    return { media_type: contentType, data: arrayBufferToBase64(buf) }
+  } catch (e) {
+    console.error('Failed to fetch image for AI dispute review:', url, e.message)
+    return null
+  }
+}
+
+// Calls Claude (with vision) to weigh a dispute: does the delivery proof
+// actually match what the shipper originally asked for? Always returns a
+// usable result — including on a missing API key, a failed fetch, or an
+// unparseable response — falling back to 'inconclusive' rather than
+// throwing, since a broken AI call must escalate to a human, never crash
+// the dispute filing itself or silently do nothing with the held escrow.
+const callDisputeAI = async ({ requestInfo, proofPhotoUrl, disputeReason, evidencePhotoUrls }: {
+  requestInfo: any, proofPhotoUrl?: string | null, disputeReason: string, evidencePhotoUrls: string[],
+}) => {
+  const fallback = (reasoning: string) => ({ verdict: 'inconclusive', confidence: 0, reasoning })
+  if (!ANTHROPIC_API_KEY) return fallback('AI review unavailable (no API key configured) — escalated for human review.')
+
+  const imageBlocks: any[] = []
+  const originalPhoto = await fetchImageAsBase64(requestInfo?.item_photo_url)
+  if (originalPhoto) {
+    imageBlocks.push({ type: 'text', text: 'Original item requested (reference photo):' })
+    imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: originalPhoto.media_type, data: originalPhoto.data } })
+  }
+  const proofPhoto = await fetchImageAsBase64(proofPhotoUrl)
+  if (proofPhoto) {
+    imageBlocks.push({ type: 'text', text: "Delivery proof photo uploaded by the traveller:" })
+    imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: proofPhoto.media_type, data: proofPhoto.data } })
+  }
+  for (const evidenceUrl of (evidencePhotoUrls || []).slice(0, 3)) {
+    const img = await fetchImageAsBase64(evidenceUrl)
+    if (img) {
+      imageBlocks.push({ type: 'text', text: 'Evidence photo submitted with the dispute:' })
+      imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } })
+    }
+  }
+
+  const prompt = `A fetchr peer-to-peer delivery deal is disputed. Decide whether the escrowed payment should release to the traveller (delivery was legitimate and matches what was requested) or refund to the shipper (delivery didn't match, was missing, or the proof looks fraudulent/insufficient).
+
+Item requested: "${requestInfo?.item_name || 'unknown'}" — ${requestInfo?.description || 'no description'} (category: ${requestInfo?.category || 'unspecified'})
+${requestInfo?.requires_purchase ? `This was a Shop & Ship purchase: item cost $${requestInfo?.purchase_price}, to be bought at ${requestInfo?.purchase_store || 'the specified store'}.` : ''}
+
+Dispute reason (from the party who filed it): "${disputeReason}"
+
+Respond with ONLY a JSON object, no other text, in exactly this shape:
+{"verdict": "release_to_traveler" | "refund_to_shipper" | "inconclusive", "confidence": 0.0-1.0, "reasoning": "one or two sentences, plain language, suitable to show both parties"}
+
+Use "inconclusive" whenever photos are missing, unclear, or the case genuinely could go either way — do not guess. Only give confidence above 0.85 when the evidence is clear-cut.`
+
+  let res: Response
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...imageBlocks] }],
+      }),
+    })
+  } catch (e) {
+    console.error('Anthropic API request failed:', e.message)
+    return fallback('AI review failed to reach the model — escalated for human review.')
+  }
+  if (!res.ok) {
+    console.error('Anthropic API error:', res.status, await res.text())
+    return fallback('AI review failed — escalated for human review.')
+  }
+  const result = await res.json()
+  const text = result.content?.find((b: any) => b.type === 'text')?.text || ''
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text)
+    const verdict = ['release_to_traveler', 'refund_to_shipper', 'inconclusive'].includes(parsed.verdict) ? parsed.verdict : 'inconclusive'
+    const confidence = typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0
+    const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : 'AI response could not be parsed — escalated for human review.'
+    return { verdict, confidence, reasoning }
+  } catch (e) {
+    console.error('Failed to parse AI dispute verdict:', text)
+    return fallback('AI response could not be parsed — escalated for human review.')
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -641,6 +761,104 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // Shared release mechanics — used by capture_payment's normal
+    // delivery-confirmation flow below AND by dispute resolution (AI or
+    // admin) releasing to the traveller despite a dispute having been
+    // raised. Both need the exact same math: released amount comes from
+    // whatever was actually recorded as held at escrow-creation time (the
+    // escrow_hold transaction's frozen metadata), never a fresh
+    // calcFees(match) — match.agreed_price_per_kg etc. are editable by
+    // either party via the client SDK, so recomputing here would let a
+    // shipper quietly lower the price after the real charge went through
+    // and have the difference simply vanish (or a traveler inflate it).
+    const releaseEscrowToTraveler = async (match, paymentIntentId) => {
+      const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
+      const { data: escrowTx } = await adminClient.from('transactions')
+        .select('metadata').eq('match_id', match.id).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
+      if (!escrowTx?.metadata) throw new Error('No pending escrow found for this match')
+      const fees = {
+        transportFee: Number(escrowTx.metadata.transport_fee) || 0,
+        shopFee: Number(escrowTx.metadata.shop_fee) || 0,
+        purchasePrice: Number(escrowTx.metadata.purchase_price) || 0,
+        shipperServiceFee: Number(escrowTx.metadata.shipper_service_fee) || 0,
+        travelerPlatformFee: Number(escrowTx.metadata.traveler_platform_fee) || 0,
+        sourcingFee: Number(escrowTx.metadata.sourcing_fee) || 0,
+        fetchrRevenue: Number(escrowTx.metadata.fetchr_revenue) || 0,
+        travelerReceives: Number(escrowTx.metadata.traveler_receives) || 0,
+      }
+
+      if (!isWalletEscrow) {
+        await stripe.paymentIntents.capture(paymentIntentId)
+      }
+
+      const { data: travelerProfile } = await adminClient
+        .from('profiles').select('full_name').eq('id', match.traveler_id).single()
+      const { data: shipperProfile } = await adminClient
+        .from('profiles').select('full_name').eq('id', match.shipper_id).single()
+
+      // Atomic increment, not read-then-write (a traveler completing two
+      // deals at nearly the same moment could otherwise have one credit
+      // silently clobber the other). The caller has already flipped the
+      // match's status (guarded so it can't be replayed) before calling
+      // this, so a failed credit here can't be silently swallowed and
+      // still let the caller record the release as if it succeeded.
+      const { error: creditError } = await adminClient
+        .rpc('adjust_wallet_balance', { p_user_id: match.traveler_id, p_delta: fees.travelerReceives })
+      if (creditError) throw new Error(`Crediting the traveler's wallet failed — contact support for match ${match.id}`)
+
+      // Two rows: the traveler's payout, and fetchr's FULL revenue in one
+      // row (shipper service fee + traveler platform fee + sourcing fee
+      // combined) — not just one side's fee, per the two-sided model.
+      await adminClient.from('transactions').insert([
+        {
+          user_id: match.traveler_id, type: 'escrow_release',
+          amount: fees.travelerReceives,
+          description: `Delivery payment: ${match.request?.item_name} (${match.flight?.from_code} → ${match.flight?.to_code})`,
+          match_id: match.id, status: 'completed',
+          metadata: {
+            payment_intent_id: paymentIntentId,
+            transport_fee: fees.transportFee,
+            shop_fee: fees.shopFee,
+            purchase_price_reimbursement: fees.purchasePrice,
+            traveler_platform_fee_deducted: fees.travelerPlatformFee,
+            shipper_name: shipperProfile?.full_name,
+            shipper_id: match.shipper_id,
+            traveler_name: travelerProfile?.full_name,
+            breakdown: `Transport $${fees.transportFee.toFixed(2)} + Shop fee $${fees.shopFee.toFixed(2)} + Purchase $${fees.purchasePrice.toFixed(2)} - Platform fee $${fees.travelerPlatformFee.toFixed(2)}`,
+          },
+        },
+        {
+          user_id: match.shipper_id, type: 'fetchr_revenue',
+          amount: fees.fetchrRevenue,
+          description: `Fetchr revenue: ${match.request?.item_name}`,
+          match_id: match.id, status: 'completed',
+          metadata: {
+            payment_intent_id: paymentIntentId,
+            shipper_service_fee: fees.shipperServiceFee,
+            traveler_platform_fee: fees.travelerPlatformFee,
+            sourcing_fee: fees.sourcingFee,
+            traveler_name: travelerProfile?.full_name,
+            shipper_name: shipperProfile?.full_name,
+          },
+        },
+      ])
+
+      await adminClient.from('transactions')
+        .update({ status: 'completed' })
+        .eq('match_id', match.id).eq('type', 'escrow_hold')
+
+      return {
+        travelerReceives: fees.travelerReceives,
+        fetchrRevenue: fees.fetchrRevenue,
+        breakdown: {
+          transportFee: fees.transportFee, shopFee: fees.shopFee,
+          purchasePrice: fees.purchasePrice,
+          travelerPlatformFee: fees.travelerPlatformFee,
+          travelerReceives: fees.travelerReceives,
+        },
+      }
+    }
+
     // ── Capture escrow on delivery confirmed ──
     if (action === 'capture_payment') {
       const { paymentIntentId, matchId } = data
@@ -684,102 +902,10 @@ Deno.serve(async (req) => {
         .select().maybeSingle()
       if (!transitioned) throw new Error('This deal has already been completed')
 
-      // Check if this is a wallet-only escrow (no Stripe PI)
-      const isWalletEscrow = paymentIntentId?.startsWith('wallet_escrow_')
+      const result = await releaseEscrowToTraveler(match, paymentIntentId)
 
-      // The amount released is whatever was actually recorded as held at
-      // escrow-creation time (the escrow_hold transaction), never a fresh
-      // calcFees(match) — match.agreed_price_per_kg etc. are editable by
-      // either party via the client SDK, so recomputing here would let a
-      // shipper quietly lower the price after the real charge went through
-      // and have the difference simply vanish (or a traveler inflate it).
-      const { data: escrowTx } = await adminClient.from('transactions')
-        .select('metadata').eq('match_id', matchId).eq('type', 'escrow_hold').eq('status', 'pending').maybeSingle()
-      if (!escrowTx?.metadata) throw new Error('No pending escrow found for this match')
-      const fees = {
-        transportFee: Number(escrowTx.metadata.transport_fee) || 0,
-        shopFee: Number(escrowTx.metadata.shop_fee) || 0,
-        purchasePrice: Number(escrowTx.metadata.purchase_price) || 0,
-        shipperServiceFee: Number(escrowTx.metadata.shipper_service_fee) || 0,
-        travelerPlatformFee: Number(escrowTx.metadata.traveler_platform_fee) || 0,
-        sourcingFee: Number(escrowTx.metadata.sourcing_fee) || 0,
-        fetchrRevenue: Number(escrowTx.metadata.fetchr_revenue) || 0,
-        travelerReceives: Number(escrowTx.metadata.traveler_receives) || 0,
-      }
-
-      if (!isWalletEscrow) {
-        await stripe.paymentIntents.capture(paymentIntentId)
-      }
-
-      // Credit traveler wallet — atomic increment, not read-then-write (a
-      // traveler completing two deals at nearly the same moment could
-      // otherwise have one credit silently clobber the other).
-      const { data: travelerProfile } = await adminClient
-        .from('profiles').select('full_name').eq('id', match.traveler_id).single()
-      const { data: shipperProfile } = await adminClient
-        .from('profiles').select('full_name').eq('id', match.shipper_id).single()
-
-      // The match was already flipped to 'completed' above (guarded so it
-      // can't be replayed), so a failed credit here can't be silently
-      // swallowed and still let the code fall through to record the
-      // release and announce it in chat — the traveler would believe
-      // they were paid while wallet_balance was never actually touched.
-      const { error: creditError } = await adminClient
-        .rpc('adjust_wallet_balance', { p_user_id: match.traveler_id, p_delta: fees.travelerReceives })
-      if (creditError) throw new Error(`Delivery confirmed but crediting the traveler's wallet failed — contact support for match ${match.id}`)
-
-      // Two rows: the traveler's payout, and fetchr's FULL revenue in one
-      // row (shipper service fee + traveler platform fee + sourcing fee
-      // combined) — not just one side's fee, per the two-sided model.
-      await adminClient.from('transactions').insert([
-        {
-          user_id: match.traveler_id, type: 'escrow_release',
-          amount: fees.travelerReceives,
-          description: `Delivery payment: ${match.request?.item_name} (${match.flight?.from_code} → ${match.flight?.to_code})`,
-          match_id: match.id, status: 'completed',
-          metadata: {
-            payment_intent_id: paymentIntentId,
-            transport_fee: fees.transportFee,
-            shop_fee: fees.shopFee,
-            purchase_price_reimbursement: fees.purchasePrice,
-            traveler_platform_fee_deducted: fees.travelerPlatformFee,
-            shipper_name: shipperProfile?.full_name,
-            shipper_id: match.shipper_id,
-            traveler_name: travelerProfile?.full_name,
-            breakdown: `Transport $${fees.transportFee.toFixed(2)} + Shop fee $${fees.shopFee.toFixed(2)} + Purchase $${fees.purchasePrice.toFixed(2)} - Platform fee $${fees.travelerPlatformFee.toFixed(2)}`,
-          },
-        },
-        {
-          user_id: match.shipper_id, type: 'fetchr_revenue',
-          amount: fees.fetchrRevenue,
-          description: `Fetchr revenue: ${match.request?.item_name}`,
-          match_id: match.id, status: 'completed',
-          metadata: {
-            payment_intent_id: paymentIntentId,
-            shipper_service_fee: fees.shipperServiceFee,
-            traveler_platform_fee: fees.travelerPlatformFee,
-            sourcing_fee: fees.sourcingFee,
-            traveler_name: travelerProfile?.full_name,
-            shipper_name: shipperProfile?.full_name,
-          },
-        },
-      ])
-
-      await adminClient.from('transactions')
-        .update({ status: 'completed' })
-        .eq('match_id', match.id).eq('type', 'escrow_hold')
-
-      return new Response(JSON.stringify({
-        success: true,
-        travelerReceives: fees.travelerReceives,
-        fetchrRevenue: fees.fetchrRevenue,
-        breakdown: {
-          transportFee: fees.transportFee, shopFee: fees.shopFee,
-          purchasePrice: fees.purchasePrice,
-          travelerPlatformFee: fees.travelerPlatformFee,
-          travelerReceives: fees.travelerReceives,
-        },
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ success: true, ...result }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // Shared refund mechanics for both cancel paths below — same Stripe/
@@ -856,7 +982,13 @@ Deno.serve(async (req) => {
       if (!match.flight || match.flight.status !== 'cancelled' || match.flight.user_id !== user.id) {
         throw new Error('Forbidden: this flight has not been cancelled')
       }
-      if (!['in_escrow', 'proof_uploaded'].includes(match.status)) {
+      // 'disputed' included deliberately: a flight cancellation is an
+      // objective, unappealable fact — there's no delivery to review
+      // anymore regardless of what the dispute was about — so it refunds
+      // the shipper even mid-dispute rather than leaving that escrow
+      // orphaned (matched but never in_escrow/proof_uploaded again, so
+      // nothing else would ever refund it).
+      if (!['in_escrow', 'proof_uploaded', 'disputed'].includes(match.status)) {
         throw new Error('No escrow to refund for this deal')
       }
       const refunded = !!match.payment_intent_id
@@ -866,7 +998,192 @@ Deno.serve(async (req) => {
         status: 'rejected', deal_stage: 'cancelled', cancel_reason: 'flight_cancelled',
       }).eq('id', matchId)
 
+      // Close out any dispute this match still had open/escalated — the
+      // match itself just moved to 'rejected' and got refunded, so an
+      // admin revisiting the queue later shouldn't find a dispute that
+      // still claims to be waiting on a decision that's already moot.
+      await adminClient.from('disputes').update({
+        status: 'resolved', resolution: 'refund_to_shipper', resolved_at: new Date().toISOString(),
+      }).eq('match_id', matchId).in('status', ['open', 'escalated'])
+
       return new Response(JSON.stringify({ success: true, refunded }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Raise a dispute ──
+    // Filing a dispute never moves money by itself — escrow stays exactly
+    // where it was. It pauses the normal proof-upload/confirm-delivery
+    // flow (match.status = 'disputed') and asks Claude to weigh the
+    // original request against the delivery proof and the dispute's own
+    // evidence. Only meaningful while there's actual escrow at stake:
+    // in_escrow (before proof) through proof_uploaded (after) — once a
+    // deal is 'completed' the money has already moved, and there's no
+    // "hold" left for either an AI or a human to redirect.
+    if (action === 'raise_dispute') {
+      const { matchId, reason, evidencePhotoUrls = [] } = data
+      if (!matchId) throw new Error('matchId required')
+      if (!reason || !reason.trim()) throw new Error('A reason is required')
+      if (!Array.isArray(evidencePhotoUrls) || evidencePhotoUrls.length > 5) throw new Error('Too many evidence photos (max 5)')
+
+      const { data: match } = await adminClient
+        .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
+        .eq('id', matchId).maybeSingle()
+      if (!match) throw new Error('Match not found')
+      const isTrav = user.id === match.traveler_id
+      const isShip = user.id === match.shipper_id
+      if (!isTrav && !isShip) throw new Error('Forbidden: not a party to this match')
+      if (!['in_escrow', 'proof_uploaded'].includes(match.status)) {
+        throw new Error('A dispute can only be raised while escrow is held (after payment, before delivery is confirmed)')
+      }
+
+      const { data: dispute, error: disputeError } = await adminClient.from('disputes').insert({
+        match_id: matchId, raised_by: user.id, reason: reason.trim(),
+        evidence_photo_urls: evidencePhotoUrls,
+      }).select().single()
+      // The partial unique index (one open/escalated dispute per match) is
+      // what actually enforces this — a second filing attempt hits it and
+      // surfaces here as a constraint violation.
+      if (disputeError) {
+        if (disputeError.code === '23505') throw new Error('This deal already has an open dispute')
+        throw disputeError
+      }
+
+      // Atomically guarded, not a blind update: the unique partial index on
+      // disputes already blocks a second concurrent filing while the first
+      // is still open/escalated, but if the first dispute auto-resolved
+      // (ai_resolved isn't covered by that index) in the gap between two
+      // near-simultaneous filings, this stops the second one from yanking
+      // an already-completed/refunded match back to 'disputed'.
+      const { data: matchTransitioned } = await adminClient.from('matches')
+        .update({ status: 'disputed' })
+        .eq('id', matchId).in('status', ['in_escrow', 'proof_uploaded'])
+        .select().maybeSingle()
+      if (!matchTransitioned) {
+        await adminClient.from('disputes').delete().eq('id', dispute.id)
+        throw new Error('This deal is no longer eligible for a dispute — its status just changed')
+      }
+
+      const raiserRole = isTrav ? 'traveller' : 'sender'
+      await adminClient.from('messages').insert({
+        match_id: matchId, sender_id: user.id,
+        content: `⚠️ Dispute raised by the ${raiserRole}: ${reason.trim()}. Escrow stays held while this is reviewed.`,
+        is_read: false,
+      })
+
+      // AI review runs synchronously — disputes aren't a hot path, and the
+      // filer is already waiting on this request to learn what happens next.
+      const aiResult = await callDisputeAI({
+        requestInfo: match.request || {},
+        proofPhotoUrl: match.proof_photo_url,
+        disputeReason: reason.trim(),
+        evidencePhotoUrls,
+      })
+
+      const fees = calcFees(match)
+      const canAutoResolve = aiResult.verdict !== 'inconclusive'
+        && aiResult.confidence >= AUTO_RESOLVE_MIN_CONFIDENCE
+        && fees.shipperPays <= AUTO_RESOLVE_MAX_VALUE
+
+      if (canAutoResolve) {
+        try {
+          if (aiResult.verdict === 'release_to_traveler') {
+            const { data: transitioned } = await adminClient.from('matches')
+              .update({ status: 'completed', deal_stage: 'completed', traveler_completed: true, shipper_completed: true })
+              .eq('id', matchId).eq('status', 'disputed').select().maybeSingle()
+            if (transitioned) await releaseEscrowToTraveler(match, match.payment_intent_id)
+          } else {
+            const { data: transitioned } = await adminClient.from('matches')
+              .update({ status: 'rejected', deal_stage: 'cancelled', cancel_reason: 'dispute_ai_resolved' })
+              .eq('id', matchId).eq('status', 'disputed').select().maybeSingle()
+            if (transitioned) await refundEscrow(match, match.payment_intent_id)
+          }
+          await adminClient.from('disputes').update({
+            status: 'ai_resolved', ai_verdict: aiResult.verdict, ai_confidence: aiResult.confidence,
+            ai_reasoning: aiResult.reasoning, resolution: aiResult.verdict, resolved_at: new Date().toISOString(),
+          }).eq('id', dispute.id)
+          await adminClient.from('messages').insert({
+            match_id: matchId, sender_id: user.id,
+            content: `Dispute resolved: ${aiResult.verdict === 'release_to_traveler' ? 'escrow released to the traveller' : 'escrow refunded to the sender'} — 🤖 AI review. ${aiResult.reasoning}`,
+            is_read: false,
+          })
+          return new Response(JSON.stringify({
+            success: true, disputeId: dispute.id, status: 'ai_resolved',
+            verdict: aiResult.verdict, reasoning: aiResult.reasoning,
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        } catch (resolveError) {
+          // The AI decided, but actually executing the release/refund
+          // failed (a wallet credit error, Stripe hiccup, etc.) — fall
+          // through to escalation rather than leaving the dispute row
+          // silently stuck with the held escrow in an ambiguous state.
+          console.error('Dispute auto-resolve execution failed, escalating instead:', resolveError)
+        }
+      }
+
+      await adminClient.from('disputes').update({
+        status: 'escalated', ai_verdict: aiResult.verdict, ai_confidence: aiResult.confidence, ai_reasoning: aiResult.reasoning,
+      }).eq('id', dispute.id)
+      await adminClient.from('messages').insert({
+        match_id: matchId, sender_id: user.id,
+        content: `Dispute escalated: this needs a closer look from fetchr's team. You'll see an update here once it's resolved.`,
+        is_read: false,
+      })
+      return new Response(JSON.stringify({ success: true, disputeId: dispute.id, status: 'escalated' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Admin: manually resolve an escalated dispute ──
+    // Everything that actually moves money funnels through this function
+    // (not admin-dashboard, which has no Stripe/wallet release logic of
+    // its own to avoid a second, driftable copy of it) — so the admin
+    // console's "Release"/"Refund" buttons call this action directly.
+    if (action === 'admin_resolve_dispute') {
+      const { data: callerProfile } = await adminClient.from('profiles').select('is_admin').eq('id', user.id).single()
+      if (!callerProfile?.is_admin) throw new Error('Forbidden: admin access only')
+
+      const { disputeId, resolution } = data
+      if (!disputeId) throw new Error('disputeId required')
+      if (!['release_to_traveler', 'refund_to_shipper'].includes(resolution)) throw new Error('resolution must be release_to_traveler or refund_to_shipper')
+
+      const { data: dispute } = await adminClient.from('disputes').select('*').eq('id', disputeId).maybeSingle()
+      if (!dispute) throw new Error('Dispute not found')
+      if (dispute.status !== 'escalated') throw new Error(`This dispute is already ${dispute.status}`)
+
+      const { data: match } = await adminClient
+        .from('matches').select('*, flight:flights(*), request:shipment_requests(*)')
+        .eq('id', dispute.match_id).maybeSingle()
+      if (!match) throw new Error('Match not found for this dispute')
+      if (match.status !== 'disputed') throw new Error(`This match is no longer disputed (status: ${match.status})`)
+
+      if (resolution === 'release_to_traveler') {
+        const { data: transitioned } = await adminClient.from('matches')
+          .update({ status: 'completed', deal_stage: 'completed', traveler_completed: true, shipper_completed: true })
+          .eq('id', match.id).eq('status', 'disputed').select().maybeSingle()
+        if (!transitioned) throw new Error('This match is no longer disputed')
+        await releaseEscrowToTraveler(match, match.payment_intent_id)
+      } else {
+        const { data: transitioned } = await adminClient.from('matches')
+          .update({ status: 'rejected', deal_stage: 'cancelled', cancel_reason: 'dispute_admin_resolved' })
+          .eq('id', match.id).eq('status', 'disputed').select().maybeSingle()
+        if (!transitioned) throw new Error('This match is no longer disputed')
+        await refundEscrow(match, match.payment_intent_id)
+      }
+
+      await adminClient.from('disputes').update({
+        status: 'resolved', resolution, resolved_by: user.id, resolved_at: new Date().toISOString(),
+      }).eq('id', disputeId)
+
+      // A recognized 'Dispute resolved:' prefix (see Messages.jsx's
+      // SYSTEM_MSG_PREFIXES) renders this as a neutral system card rather
+      // than a normal chat bubble — sender_id doesn't affect how it's
+      // displayed once recognized as a system message, but still needs to
+      // be a valid party on this match for the FK.
+      await adminClient.from('messages').insert({
+        match_id: match.id, sender_id: match.shipper_id,
+        content: `Dispute resolved: ${resolution === 'release_to_traveler' ? 'escrow released to the traveller' : 'escrow refunded to the sender'} — reviewed by fetchr's team.`,
+        is_read: false,
+      })
+
+      return new Response(JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

@@ -160,7 +160,10 @@ const ActiveDeals = ({ session, onNavigate }) => {
       // agreed) stays in Matches now — a deal only starts existing here
       // once both sides have agreed terms, which is also when the
       // boarding-pass barcode first appears (see Barcode usage below).
-      .in('status', ['terms_agreed', 'in_escrow', 'proof_uploaded'])
+      // 'disputed' stays here too — it's still an active deal, just a
+      // blocked one, and the whole point is that it should never quietly
+      // vanish from where the parties are used to tracking it.
+      .in('status', ['terms_agreed', 'in_escrow', 'proof_uploaded', 'disputed'])
       .order('created_at', { ascending: false });
     if (data) setDeals(data);
     if (showLoading) setLoading(false);

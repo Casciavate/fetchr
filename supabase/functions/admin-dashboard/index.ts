@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
         adminClient.from('profiles').select('wallet_balance'),
         adminClient.from('profiles').select('id', { count: 'exact', head: true }),
         adminClient.from('matches').select('id', { count: 'exact', head: true })
-          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded']),
+          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed']),
         adminClient.from('matches').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
       ])
 
@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
       const { data: activeDeals } = await adminClient
         .from('matches').select('id')
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
       if (activeDeals && activeDeals.length > 0) {
         throw new Error(`This user has ${activeDeals.length} active deal(s) — resolve or cancel them first.`)
       }
@@ -201,6 +201,38 @@ Deno.serve(async (req) => {
           metadata: pi.metadata, created: pi.created,
         })),
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Disputes queue — everything an admin needs to make a resolution
+    //    call without leaving this screen: the original request (what was
+    //    asked for, with its reference photo), the delivery proof, the
+    //    dispute's own reason/evidence, and Claude's verdict/confidence/
+    //    reasoning if it already ran. Actually resolving one (releasing or
+    //    refunding escrow) is a separate action on stripe-connect, not
+    //    here — this function has no Stripe/wallet release logic of its
+    //    own, so money-moving stays in exactly one place. ──
+    if (action === 'disputes') {
+      const { status } = data || {}
+      let query = adminClient
+        .from('disputes')
+        .select(`
+          *,
+          raiser:profiles!disputes_raised_by_fkey(full_name, email),
+          resolver:profiles!disputes_resolved_by_fkey(full_name, email),
+          match:matches(
+            id, status, agreed_price_per_kg, agreed_weight_kg, agreed_shop_fee,
+            proof_photo_url, proof_notes, payment_intent_id, escrow_amount,
+            traveler:profiles!matches_traveler_id_fkey(id, full_name, email),
+            shipper:profiles!matches_shipper_id_fkey(id, full_name, email),
+            flight:flights(from_code, to_code, flight_date, flight_number, airline),
+            request:shipment_requests(item_name, description, category, item_photo_url, requires_purchase, purchase_price, purchase_store)
+          )
+        `)
+        .order('created_at', { ascending: false })
+      if (status) query = query.eq('status', status)
+      const { data: disputes, error } = await query
+      if (error) throw error
+      return new Response(JSON.stringify({ disputes }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── Toggle a user's verified badge ──

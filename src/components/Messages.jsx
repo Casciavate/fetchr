@@ -5,7 +5,7 @@ import {
   Send, Package, Plane, DollarSign, CheckCircle, Shield,
   XCircle, AlertTriangle, ChevronDown, ChevronLeft, MessageCircle,
   Camera, Lock, Info, X, Edit2,
-  Circle, Zap
+  Circle, Zap, AlertOctagon,
 } from 'lucide-react';
 import EscrowPayment, { ProofUploadModal } from './EscrowPayment';
 import { calcFees, resolveOptionPrice, MINIMUM_DEAL_SIZE, SHIPPER_SERVICE_FEE_PCT, TRAVELER_PLATFORM_FEE_PCT, SOURCING_FEE_PCT, shopShipMismatch, resolvedIsPurchase } from '../lib/fees';
@@ -43,7 +43,8 @@ const STAGES = [
 const SYSTEM_MSG_PREFIXES = [
   'Match accepted', 'Terms agreed', 'Deal amended', 'Deal completed', 'Delivery confirmed by',
   'Cancellation request:', 'Cancellation agreed:', 'Cancellation declined:',
-  'Proof uploaded:', '🎉', '✅', '⏳', '⚠️', '❌', '🔒', '📸', '✏️',
+  'Proof uploaded:', 'Dispute escalated:', 'Dispute resolved:',
+  '🎉', '✅', '⏳', '⚠️', '❌', '🔒', '📸', '✏️',
 ];
 const isSystemMessage = (content) => SYSTEM_MSG_PREFIXES.some(p => content?.startsWith(p));
 
@@ -59,6 +60,8 @@ const getSystemEventStyle = (content) => {
     return { icon: AlertTriangle, tone: 'warning' };
   if (content?.startsWith('Cancellation agreed:') || content?.startsWith('Cancellation declined:') || content?.startsWith('❌'))
     return { icon: XCircle, tone: 'danger' };
+  if (content?.startsWith('Dispute escalated:')) return { icon: AlertOctagon, tone: 'warning' };
+  if (content?.startsWith('Dispute resolved:')) return { icon: AlertOctagon, tone: 'danger' };
   if (content?.startsWith('🔒')) return { icon: Lock, tone: 'success' };
   if (content?.startsWith('⏳')) return { icon: Circle, tone: 'neutral' };
   return { icon: Info, tone: 'neutral' };
@@ -345,6 +348,122 @@ const DealDetailsModal = ({ match, session, onClose, onSaveAmendment }) => {
   );
 };
 
+// ── Report a problem / raise a dispute ──
+// Filing this never moves money by itself — it hands the case to
+// raise_dispute (stripe-connect), which runs Claude against the original
+// request, the delivery proof, and this evidence, then either auto-
+// resolves (high confidence, small deal) or escalates to fetchr's admin
+// queue. Either outcome comes back as a chat message posted server-side,
+// so this modal's own job ends the moment the request succeeds.
+const DisputeModal = ({ match, session, onClose, onFiled }) => {
+  const [reason, setReason] = useState('');
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    const valid = selected.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
+    if (valid.length !== selected.length) setError('Images only, max 10MB each');
+    else setError('');
+    const combined = [...files, ...valid].slice(0, 5);
+    setFiles(combined);
+    const newPreviews = valid.map(f => URL.createObjectURL(f));
+    setPreviews(prev => [...prev, ...newPreviews].slice(0, 5));
+  };
+  const removeFile = (i) => {
+    setFiles(prev => prev.filter((_, idx) => idx !== i));
+    setPreviews(prev => prev.filter((_, idx) => idx !== i));
+  };
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) { setError('Describe the problem.'); return; }
+    setSubmitting(true); setError('');
+    try {
+      const evidencePhotoUrls = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        // Same bucket/path shape as proof uploads — RLS on 'avatars'
+        // requires the uploader's own id as the first path segment.
+        const path = `${session.user.id}/disputes/${match.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+        evidencePhotoUrls.push(urlData.publicUrl);
+      }
+      const { data: { session: auth } } = await supabase.auth.getSession();
+      const res = await fetch('https://jvuzjmigkqolphkhzeei.supabase.co/functions/v1/stripe-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.access_token}` },
+        body: JSON.stringify({ action: 'raise_dispute', data: { matchId: match.id, reason: reason.trim(), evidencePhotoUrls } }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || 'Failed to file the dispute');
+      onFiled(result);
+    } catch (e) {
+      setError(e.message || 'Something went wrong. Try again.');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-modal flex items-end md:items-center justify-center p-4" style={{ background: 'var(--scrim)' }}>
+      <div className="bg-surface-raised rounded-xl w-full max-w-md shadow-elev-3">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <h3 className="font-display font-bold text-title-s text-content flex items-center gap-2">
+            <AlertOctagon size={16} className="text-danger" /> Report a problem
+          </h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-sunken transition">
+            <X size={18} className="text-content-muted" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <AdvisoryBanner tone="warning" title="Before you file">
+            Escrow stays held while this is reviewed — filing doesn't release or refund anything by itself.
+            Clear-cut cases get an AI decision right away; anything uncertain goes to fetchr's team.
+          </AdvisoryBanner>
+          <div>
+            <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">What's wrong?</label>
+            <textarea rows={4} value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="e.g. The item delivered doesn't match what I ordered…"
+              className="input-field resize-none text-body-s" />
+          </div>
+          <div>
+            <label className="block text-label text-content-muted mb-1 uppercase tracking-wide">Evidence photos (optional)</label>
+            <div className="grid grid-cols-3 gap-2">
+              {previews.map((src, i) => (
+                <div key={i} className="relative aspect-square rounded-md overflow-hidden border border-line">
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removeFile(i)} className="absolute top-1 right-1 w-5 h-5 bg-ink-900/70 rounded-full flex items-center justify-center">
+                    <X size={11} className="text-white" />
+                  </button>
+                </div>
+              ))}
+              {files.length < 5 && (
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="aspect-square rounded-md border border-dashed border-line-strong flex items-center justify-center text-ink-400 hover:border-ink-600 hover:text-ink-600 transition">
+                  <Camera size={18} />
+                </button>
+              )}
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+          </div>
+          {error && <p className="text-body-s text-danger">{error}</p>}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 btn-secondary">Keep it</button>
+            <button onClick={handleSubmit} disabled={submitting || !reason.trim()}
+              className="flex-[2] btn-primary disabled:opacity-50">
+              {submitting ? 'Reviewing…' : 'File dispute'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Messages Component ──
 const Messages = ({ session, focusMatchId, focusToken }) => {
   const [acceptedMatches, setAcceptedMatches] = useState([]);
@@ -364,6 +483,8 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
   const [uploadingProof, setUploadingProof] = useState(false);
   const [showDealDetails, setShowDealDetails] = useState(false);
   const [showProofModal, setShowProofModal] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputeInfo, setDisputeInfo] = useState(null);
   const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const consumedFocusTokenRef = useRef(null);
@@ -393,7 +514,7 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
         traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
         shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
       .or(`traveler_id.eq.${session.user.id},shipper_id.eq.${session.user.id}`)
-      .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+      .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
       .order('created_at', { ascending: false });
 
     if (data && data.length > 0) {
@@ -430,7 +551,7 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
             traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
             shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
           .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+          .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
           .order('created_at', { ascending: false });
 
         if (data && data.length > 0) {
@@ -458,7 +579,7 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
           traveler:profiles!matches_traveler_id_fkey(${PROFILE_PUBLIC_COLUMNS}),
           shipper:profiles!matches_shipper_id_fkey(${PROFILE_PUBLIC_COLUMNS})`)
         .or(`traveler_id.eq.${userId},shipper_id.eq.${userId}`)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
         .order('created_at', { ascending: false });
 
       if (!data || cancelled) return;
@@ -482,7 +603,7 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
     // client-side.
     const handleMatchUpdate = (payload) => {
       const u = payload.new;
-      if (['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'].includes(u.status)) {
+      if (['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'].includes(u.status)) {
         fetchMatches();
       }
     };
@@ -506,6 +627,11 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
       fetchCancelRequest(activeMatch.id);
     }
   }, [activeMatch?.id]);
+
+  useEffect(() => {
+    if (activeMatch?.status === 'disputed') fetchDisputeInfo(activeMatch.id);
+    else setDisputeInfo(null);
+  }, [activeMatch?.id, activeMatch?.status]);
 
   useEffect(() => {
     if (!activeMatch) return;
@@ -570,6 +696,16 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
       await supabase.rpc('mark_messages_read', { p_match_id: matchId, p_user_id: session.user.id });
     } catch (e) {}
     setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
+  };
+
+  // The most recent still-open dispute on this match — 'open' covers the
+  // brief window while raise_dispute's own AI call is still running, so
+  // the banner below has something to show even before that resolves.
+  const fetchDisputeInfo = async (matchId) => {
+    const { data } = await supabase.from('disputes')
+      .select('*').eq('match_id', matchId).in('status', ['open', 'escalated'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    setDisputeInfo(data || null);
   };
 
   const fetchCancelRequest = async (matchId) => {
@@ -909,6 +1045,24 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
         />
       )}
 
+      {showDisputeModal && activeMatch && (
+        <DisputeModal
+          match={activeMatch}
+          session={session}
+          onClose={() => setShowDisputeModal(false)}
+          onFiled={(result) => {
+            setShowDisputeModal(false);
+            // ai_resolved lands the match on 'completed' or 'rejected'
+            // (whichever the AI decided) — anything still 'disputed'
+            // means it's escalated and waiting on a human. Either way the
+            // authoritative state is whatever the server actually wrote,
+            // so re-fetch rather than trying to guess it locally.
+            fetchMatches();
+            fetchMessages(activeMatch.id);
+          }}
+        />
+      )}
+
       {/* Sidebar — full-screen list on mobile until a thread is opened */}
       <div className={`${activeMatch ? 'hidden md:flex' : 'flex'} w-full md:w-auto
         ${showSidebar ? 'md:w-64' : 'md:w-0'} border-r border-line flex-col flex-shrink-0 transition-all duration-300 overflow-hidden`}>
@@ -1063,6 +1217,18 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
                 </button>
               )}
 
+              {/* Report a problem — only while there's actual escrow at
+                  stake to redirect (in_escrow through proof_uploaded).
+                  Filing pauses the normal flow (match.status flips to
+                  'disputed'), so this and the buttons above become
+                  mutually exclusive with it automatically. */}
+              {['in_escrow', 'proof_uploaded'].includes(activeMatch.status) && (
+                <button onClick={() => setShowDisputeModal(true)}
+                  className="hidden md:inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
+                  <AlertOctagon size={12} /> Report
+                </button>
+              )}
+
               <button onClick={() => { setShowCancelRequest(!showCancelRequest); setShowPayment(false); }}
                 className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
                 <XCircle size={12} /> Cancel
@@ -1085,7 +1251,7 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
                 {activeMatch.flight?.from_code} → {activeMatch.flight?.to_code}
               </p>
               <p className="text-label text-content-subtle truncate uppercase tracking-wide">
-                {isShipper(activeMatch) ? 'You pay' : 'You receive'} · {(STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
+                {isShipper(activeMatch) ? 'You pay' : 'You receive'} · {activeMatch.status === 'disputed' ? 'Disputed' : (STAGES.find(s => s.id === getCurrentStage(activeMatch)) || STAGES[0]).label}
               </p>
             </div>
             <span className="font-mono font-bold text-num-m text-ink-900 flex-shrink-0">
@@ -1093,6 +1259,24 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
             </span>
             <ChevronDown size={16} className="text-ink-400 flex-shrink-0" />
           </button>
+
+          {/* Disputed — the AI has already run by the time this can render
+              (raise_dispute runs it synchronously before returning), so
+              disputeInfo.status here is only ever 'open' for the brief
+              window before that request's response lands, or 'escalated'
+              once it's actually sitting in the admin queue. */}
+          {activeMatch.status === 'disputed' && (
+            <div className="px-4 pt-3 flex-shrink-0">
+              <AdvisoryBanner tone="error" title="This deal is disputed">
+                {disputeInfo?.status === 'escalated'
+                  ? "Escrow stays held while fetchr's team reviews this — you'll see an update here once it's resolved."
+                  : 'Escrow stays held while this is reviewed.'}
+                {disputeInfo?.reason && (
+                  <p className="mt-1.5 text-content-muted italic">"{disputeInfo.reason}"</p>
+                )}
+              </AdvisoryBanner>
+            </div>
+          )}
 
           {/* Shop & Ship mismatch — must be explicitly resolved by both
               parties before terms can be agreed (enforced in the DB too).

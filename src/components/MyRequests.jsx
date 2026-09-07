@@ -69,7 +69,7 @@ const MyRequests = ({ session, onNewRequest, focusRequestId }) => {
         .from('matches')
         .select('status')
         .eq('request_id', req.id)
-        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded'])
+        .in('status', ['accepted', 'in_escrow', 'terms_agreed', 'proof_uploaded', 'disputed'])
         .limit(1);
       if (data && data.length > 0) statuses[req.id] = data[0].status;
     }
