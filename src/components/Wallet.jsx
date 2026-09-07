@@ -383,6 +383,11 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
     callStripe('connect_account_status').then(res => {
       setConnectStatus(res);
       if (res.bankAccountCountry) setPayoutCountry(res.bankAccountCountry);
+      // A card-only account (no bank on file) has no confirmed way to
+      // receive Stripe's standard scheduled payout — instant-to-card is
+      // the only rail known to actually work for them, so it's not a
+      // preference to offer, it's the only functional choice.
+      if (res.hasInstantCard && !res.hasBankAccount) setPayoutMethod('instant');
     }).catch(() => setConnectStatus({ connected: false, payoutsEnabled: false }));
   }, []);
 
@@ -450,14 +455,26 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
         <CheckCircle size={32} className="text-success" />
       </div>
       <p className="font-display font-bold text-ink-900 mb-1">Withdrawal initiated.</p>
-      <p className="text-body-s text-content-muted">
-        ${net.toFixed(2)} will arrive {result?.estimatedArrival || 'within 3-5 business days'}
-        {result?.payoutMethod === 'instant' ? ' — Stripe deducts its own instant-payout fee from this on top of fetchr\'s fee shown above.' : '.'}
-      </p>
-      {result?.instantPayoutFailed && (
-        <p className="text-micro text-warning mt-2">
-          Instant transfer couldn't complete right now — this will arrive via the standard 2-5 day payout instead. Your money is safe, nothing was lost.
+      {result?.estimatedArrival ? (
+        <p className="text-body-s text-content-muted">
+          ${net.toFixed(2)} will arrive {result.estimatedArrival}
+          {result.payoutMethod === 'instant' ? ' — Stripe deducts its own instant-payout fee from this on top of fetchr\'s fee shown above.' : '.'}
         </p>
+      ) : (
+        <p className="text-body-s text-content-muted">
+          ${net.toFixed(2)} has left your fetchr wallet and is now sitting in your connected payout account, ready to go — see below.
+        </p>
+      )}
+      {result?.instantPayoutFailed && (
+        result.noFallbackAvailable ? (
+          <p className="text-micro text-warning mt-2">
+            The instant transfer to your card couldn't complete right now, and there's no bank account on file to fall back to. Your money is safe — it's sitting in your connected payout account. Try the instant withdrawal again shortly.
+          </p>
+        ) : (
+          <p className="text-micro text-warning mt-2">
+            Instant transfer couldn't complete right now — this will arrive via the standard 2-5 day payout instead. Your money is safe, nothing was lost.
+          </p>
+        )
       )}
     </div>
   );
@@ -550,11 +567,15 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
         )}
       </div>
 
-      {/* Instant vs standard — only offered once a debit card is actually
-          on file (hasInstantCard). Stripe's own instant-payout fee comes
-          out on top of fetchr's fee above; we don't know that number ahead
-          of time, so we don't pretend to quote a final total for it. */}
-      {connectStatus?.payoutsEnabled && connectStatus?.hasInstantCard && (
+      {/* Instant vs standard — a real choice only when BOTH a bank account
+          and a debit card are on file. A card-only traveler (no bank
+          account at all — common, not an edge case) has no confirmed way
+          to receive Stripe's standard scheduled payout, so instant is
+          their only functional option, not a preference to offer. Stripe's
+          own instant-payout fee comes out on top of fetchr's fee above; we
+          don't know that number ahead of time, so we don't pretend to
+          quote a final total for it. */}
+      {connectStatus?.payoutsEnabled && connectStatus?.hasInstantCard && connectStatus?.hasBankAccount && (
         <div>
           <label className="block text-label text-content-muted mb-1.5 uppercase">Speed</label>
           <div className="grid grid-cols-2 gap-2">
@@ -572,6 +593,17 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
               <span className="text-body-s font-semibold text-ink-900">Instant</span>
               <span className="text-micro text-content-subtle">~30 min · Stripe fee applies</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Card-only account — no choice to make, just say what's happening. */}
+      {connectStatus?.payoutsEnabled && connectStatus?.hasInstantCard && !connectStatus?.hasBankAccount && (
+        <div className="flex items-center gap-3 p-3 rounded-md border-2 border-line">
+          <Zap size={18} className="text-ink-700 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-body-m font-semibold text-ink-900">Instant to your debit card</p>
+            <p className="text-micro text-content-subtle">No bank account on file — this is usually minutes, and Stripe's own fee applies on top of fetchr's above</p>
           </div>
         </div>
       )}

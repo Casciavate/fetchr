@@ -437,15 +437,21 @@ Deno.serve(async (req) => {
       if (!!account.payouts_enabled !== profile.stripe_connect_payouts_enabled) {
         await adminClient.from('profiles').update({ stripe_connect_payouts_enabled: !!account.payouts_enabled }).eq('id', user.id)
       }
-      // Instant Payouts need a debit card on file, not just a bank account —
       // account.external_accounts is included by default on retrieve(), no
-      // separate list call needed. Whether Stripe's hosted onboarding even
-      // offers to collect a card depends on a platform-level Dashboard
-      // setting (Connect settings → external accounts → allow debit cards),
-      // not anything this account object controls.
+      // separate list call needed. hasBankAccount matters beyond just
+      // display: some travelers only ever have a debit/credit card, no
+      // bank account at all, and Stripe's standard (non-instant) payout
+      // schedule targets a bank account — not something confirmed safe to
+      // rely on for a card-only destination. withdraw_to_bank uses this
+      // same distinction to force the instant rail for card-only accounts
+      // rather than let them pick a "standard" path that might just never
+      // pay out. Whether hosted onboarding even offers to collect a card
+      // depends on a platform-level Dashboard setting (Connect settings →
+      // external accounts → allow debit cards), not this account object.
+      const hasBankAccount = (account.external_accounts?.data || []).some(ea => ea.object === 'bank_account')
       const hasInstantCard = (account.external_accounts?.data || []).some(ea => ea.object === 'card')
       return new Response(JSON.stringify({
-        connected: true, payoutsEnabled: !!account.payouts_enabled, hasInstantCard,
+        connected: true, payoutsEnabled: !!account.payouts_enabled, hasInstantCard, hasBankAccount,
         bankAccountCountry: profile.bank_account_country || null,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -562,12 +568,16 @@ Deno.serve(async (req) => {
     // fetchr's platform balance into the traveler's own connected-account
     // Stripe balance (unchanged from before), then it reaches their real
     // bank/card either automatically on Stripe's default payout schedule
-    // ('standard'), or immediately via an explicit Payout call ('instant',
-    // only possible once a debit card external account exists — see
-    // connect_account_status's hasInstantCard).
+    // ('standard'), or immediately via an explicit Payout call ('instant').
+    // Some travelers only ever have a debit/credit card on file, no bank
+    // account at all — Stripe's standard automatic payout schedule targets
+    // a bank account, and card-only accounts aren't confirmed to receive
+    // anything through it, so a card-only account is forced onto the
+    // instant rail below regardless of what the client asked for, rather
+    // than risk silently accepting a withdrawal that never actually pays out.
     if (action === 'withdraw_to_bank') {
       const { amount, method } = data
-      const payoutMethod = method === 'instant' ? 'instant' : 'standard'
+      let payoutMethod = method === 'instant' ? 'instant' : 'standard'
       if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
       const WITHDRAWAL_FEE_PCT = 0.025
       const fee = amount * WITHDRAWAL_FEE_PCT
@@ -583,8 +593,10 @@ Deno.serve(async (req) => {
       // external_accounts comes back on retrieve() by default, no separate
       // list call needed to find the debit card for the instant path.
       const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
-      if (!account.payouts_enabled) throw new Error('Your connected bank account is not ready to receive payouts yet — finish onboarding in Stripe first.')
+      if (!account.payouts_enabled) throw new Error('Your payout account is not ready to receive payouts yet — finish onboarding in Stripe first.')
       const cardExternalAccount = (account.external_accounts?.data || []).find(ea => ea.object === 'card')
+      const bankExternalAccount = (account.external_accounts?.data || []).find(ea => ea.object === 'bank_account')
+      if (!bankExternalAccount && cardExternalAccount) payoutMethod = 'instant'
       if (payoutMethod === 'instant' && !cardExternalAccount) {
         throw new Error('No debit card on file — add one via "Connect your bank via Stripe" to enable instant withdrawals.')
       }
@@ -620,8 +632,10 @@ Deno.serve(async (req) => {
       // The transfer above already succeeded — that money is safely in the
       // traveler's own Stripe balance no matter what happens next, so a
       // failure here is never a reason to touch the wallet debit again.
-      // Stripe's own default payout schedule will still sweep it out to
-      // whichever external account is marked default, just not instantly.
+      // If a bank account also exists, Stripe's own default payout schedule
+      // will still sweep it out that way, just not instantly. A card-only
+      // account has no such fallback — the money stays parked in their
+      // Stripe balance (not lost, just not yet paid out) until a retry.
       let payout = null
       let payoutError = null
       if (payoutMethod === 'instant') {
@@ -638,6 +652,7 @@ Deno.serve(async (req) => {
           payoutError = e.message
         }
       }
+      const noFallbackAvailable = payoutMethod === 'instant' && !payout && !bankExternalAccount
 
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'withdrawal', amount,
@@ -649,16 +664,21 @@ Deno.serve(async (req) => {
           verified_balance_at_withdrawal: safeBalance,
           payout_method: payoutMethod, payout_id: payout?.id || null,
           // Set only when an instant payout was requested but Stripe's
-          // side of it failed after the transfer already succeeded — the
-          // money isn't lost, it just falls back to the standard schedule.
+          // side of it failed after the transfer already succeeded. If a
+          // bank account also exists it still falls back to the standard
+          // schedule; if not (noFallbackAvailable), the money is stuck in
+          // the Stripe balance until a retry — surfaced to the user rather
+          // than silently claiming it's still on its way.
           instant_payout_fallback_reason: payoutError,
+          no_fallback_available: noFallbackAvailable,
         },
       })
       return new Response(JSON.stringify({
         success: true, newBalance, transferId: transfer.id, netAmount, fee,
         payoutMethod: payout ? 'instant' : 'standard',
         instantPayoutFailed: payoutMethod === 'instant' && !payout,
-        estimatedArrival: payout ? 'usually within 30 minutes' : '2-5 business days',
+        noFallbackAvailable,
+        estimatedArrival: payout ? 'usually within 30 minutes' : (noFallbackAvailable ? null : '2-5 business days'),
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
