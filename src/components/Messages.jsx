@@ -1221,10 +1221,14 @@ const Messages = ({ session, focusMatchId, focusToken }) => {
                   stake to redirect (in_escrow through proof_uploaded).
                   Filing pauses the normal flow (match.status flips to
                   'disputed'), so this and the buttons above become
-                  mutually exclusive with it automatically. */}
+                  mutually exclusive with it automatically. Always visible
+                  (not hidden md:), same as Cancel below — a rare action a
+                  user needs to be able to reach on mobile too, not just
+                  desktop; unlike Agree/Pay/Upload/Confirm it has no
+                  mirrored entry in the mobile sticky action bar. */}
               {['in_escrow', 'proof_uploaded'].includes(activeMatch.status) && (
                 <button onClick={() => setShowDisputeModal(true)}
-                  className="hidden md:inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
+                  className="inline-flex items-center gap-1 h-11 px-2.5 rounded-md text-label font-display font-semibold text-content-muted hover:bg-danger-tint hover:text-danger transition">
                   <AlertOctagon size={12} /> Report
                 </button>
               )}
