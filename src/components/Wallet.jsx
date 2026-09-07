@@ -7,7 +7,7 @@ import { supabase } from '../supabaseClient';
 import { PROFILE_SELF_COLUMNS } from '../lib/profileColumns';
 import {
   WalletCards, DollarSign, ArrowDownCircle, ArrowUpCircle,
-  CreditCard, CheckCircle, Clock, Lock,
+  CreditCard, CheckCircle, Clock, Lock, Zap,
   ChevronRight, Building, Plus
 } from 'lucide-react';
 import BottomSheet from './shared/BottomSheet';
@@ -342,6 +342,8 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   const [error, setError] = useState('');
   const [step, setStep] = useState('form');
   const [connectStatus, setConnectStatus] = useState(null); // null = checking
+  const [payoutMethod, setPayoutMethod] = useState('standard');
+  const [result, setResult] = useState(null);
   const WITHDRAWAL_FEE_PCT = 2.5;
   const MIN_WITHDRAWAL = forceWithdrawAll ? 0 : 10;
 
@@ -387,9 +389,10 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
     setLoading(true); setError(''); setStep('processing');
     try {
-      const result = await callStripe('withdraw_to_bank', { amount: amt });
+      const res = await callStripe('withdraw_to_bank', { amount: amt, method: payoutMethod });
+      setResult(res);
       setStep('success');
-      setTimeout(() => onSuccess(result), 1500);
+      setTimeout(() => onSuccess(res), 1500);
     } catch (e) {
       setError(e.message);
       setStep('form');
@@ -414,8 +417,14 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       </div>
       <p className="font-display font-bold text-ink-900 mb-1">Withdrawal initiated.</p>
       <p className="text-body-s text-content-muted">
-        ${net.toFixed(2)} will arrive in your bank account within 3-5 business days.
+        ${net.toFixed(2)} will arrive {result?.estimatedArrival || 'within 3-5 business days'}
+        {result?.payoutMethod === 'instant' ? ' — Stripe deducts its own instant-payout fee from this on top of fetchr\'s fee shown above.' : '.'}
       </p>
+      {result?.instantPayoutFailed && (
+        <p className="text-micro text-warning mt-2">
+          Instant transfer couldn't complete right now — this will arrive via the standard 2-5 day payout instead. Your money is safe, nothing was lost.
+        </p>
+      )}
     </div>
   );
 
@@ -480,18 +489,44 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
               <Building size={18} className="text-ink-400 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-body-m font-semibold text-ink-900">
-                  {connectStatus.connected ? 'Onboarding not finished yet' : 'No bank account connected'}
+                  {connectStatus.connected ? 'Onboarding not finished yet' : 'No payout account connected'}
                 </p>
-                <p className="text-micro text-content-subtle">Required before you can withdraw</p>
+                <p className="text-micro text-content-subtle">Required before you can withdraw — bank account or debit card</p>
               </div>
             </div>
             <button type="button" onClick={startBankConnect} disabled={connecting}
               className="w-full btn-primary disabled:opacity-50">
-              {connecting ? 'Opening Stripe…' : 'Connect your bank via Stripe'}
+              {connecting ? 'Opening Stripe…' : 'Connect a payout method via Stripe'}
             </button>
           </div>
         )}
       </div>
+
+      {/* Instant vs standard — only offered once a debit card is actually
+          on file (hasInstantCard). Stripe's own instant-payout fee comes
+          out on top of fetchr's fee above; we don't know that number ahead
+          of time, so we don't pretend to quote a final total for it. */}
+      {connectStatus?.payoutsEnabled && connectStatus?.hasInstantCard && (
+        <div>
+          <label className="block text-label text-content-muted mb-1.5 uppercase">Speed</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPayoutMethod('standard')}
+              className={`flex flex-col items-start gap-1 p-3 rounded-md border-2 text-left transition ${
+                payoutMethod === 'standard' ? 'border-ink-900 bg-surface-sunken' : 'border-line'}`}>
+              <Building size={16} className="text-ink-700" />
+              <span className="text-body-s font-semibold text-ink-900">Standard</span>
+              <span className="text-micro text-content-subtle">2-5 business days · no extra fee</span>
+            </button>
+            <button type="button" onClick={() => setPayoutMethod('instant')}
+              className={`flex flex-col items-start gap-1 p-3 rounded-md border-2 text-left transition ${
+                payoutMethod === 'instant' ? 'border-ink-900 bg-surface-sunken' : 'border-line'}`}>
+              <Zap size={16} className="text-ink-700" />
+              <span className="text-body-s font-semibold text-ink-900">Instant</span>
+              <span className="text-micro text-content-subtle">~30 min · Stripe fee applies</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 

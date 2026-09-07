@@ -324,14 +324,26 @@ Deno.serve(async (req) => {
     //    grant payout ability by itself — onboarding does that. ──
     if (action === 'create_connect_account') {
       const { data: profile } = await adminClient.from('profiles')
-        .select('stripe_connect_account_id').eq('id', user.id).single()
+        .select('stripe_connect_account_id, full_name').eq('id', user.id).single()
       if (profile?.stripe_connect_account_id) {
         return new Response(JSON.stringify({ accountId: profile.stripe_connect_account_id }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
+      // Every fetchr user is a private individual, never a business — pin
+      // business_type so onboarding skips straight past the "what kind of
+      // business is this" screen, and prefill the name we already have so
+      // Stripe doesn't ask for it again.
+      const [firstName, ...restName] = (profile?.full_name || '').trim().split(/\s+/).filter(Boolean)
+      const lastName = restName.join(' ')
       const account = await stripe.accounts.create({
         type: 'express',
         email: user.email,
+        business_type: 'individual',
+        individual: {
+          email: user.email,
+          ...(firstName ? { first_name: firstName } : {}),
+          ...(lastName ? { last_name: lastName } : {}),
+        },
         capabilities: { transfers: { requested: true } },
         metadata: { supabase_user_id: user.id },
       })
@@ -369,7 +381,14 @@ Deno.serve(async (req) => {
       if (!!account.payouts_enabled !== profile.stripe_connect_payouts_enabled) {
         await adminClient.from('profiles').update({ stripe_connect_payouts_enabled: !!account.payouts_enabled }).eq('id', user.id)
       }
-      return new Response(JSON.stringify({ connected: true, payoutsEnabled: !!account.payouts_enabled }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      // Instant Payouts need a debit card on file, not just a bank account —
+      // account.external_accounts is included by default on retrieve(), no
+      // separate list call needed. Whether Stripe's hosted onboarding even
+      // offers to collect a card depends on a platform-level Dashboard
+      // setting (Connect settings → external accounts → allow debit cards),
+      // not anything this account object controls.
+      const hasInstantCard = (account.external_accounts?.data || []).some(ea => ea.object === 'card')
+      return new Response(JSON.stringify({ connected: true, payoutsEnabled: !!account.payouts_enabled, hasInstantCard }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     if (action === 'create_setup_intent') {
@@ -479,9 +498,17 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── Withdraw to bank ──
+    // ── Withdraw to bank (or, if a debit card is on file, instantly) ──
+    // Two-step under the hood either way: a Transfer moves the money from
+    // fetchr's platform balance into the traveler's own connected-account
+    // Stripe balance (unchanged from before), then it reaches their real
+    // bank/card either automatically on Stripe's default payout schedule
+    // ('standard'), or immediately via an explicit Payout call ('instant',
+    // only possible once a debit card external account exists — see
+    // connect_account_status's hasInstantCard).
     if (action === 'withdraw_to_bank') {
-      const { amount } = data
+      const { amount, method } = data
+      const payoutMethod = method === 'instant' ? 'instant' : 'standard'
       if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
       const WITHDRAWAL_FEE_PCT = 0.025
       const fee = amount * WITHDRAWAL_FEE_PCT
@@ -494,8 +521,14 @@ Deno.serve(async (req) => {
 
       // Re-check live with Stripe rather than trusting the cached flag —
       // this is the moment real money actually moves, worth the extra call.
+      // external_accounts comes back on retrieve() by default, no separate
+      // list call needed to find the debit card for the instant path.
       const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
       if (!account.payouts_enabled) throw new Error('Your connected bank account is not ready to receive payouts yet — finish onboarding in Stripe first.')
+      const cardExternalAccount = (account.external_accounts?.data || []).find(ea => ea.object === 'card')
+      if (payoutMethod === 'instant' && !cardExternalAccount) {
+        throw new Error('No debit card on file — add one via "Connect your bank via Stripe" to enable instant withdrawals.')
+      }
 
       // Atomic, race-safe debit BEFORE the transfer: a plain read-then-write
       // of wallet_balance let two concurrent withdrawals both pass the
@@ -525,18 +558,48 @@ Deno.serve(async (req) => {
         throw transferError
       }
 
+      // The transfer above already succeeded — that money is safely in the
+      // traveler's own Stripe balance no matter what happens next, so a
+      // failure here is never a reason to touch the wallet debit again.
+      // Stripe's own default payout schedule will still sweep it out to
+      // whichever external account is marked default, just not instantly.
+      let payout = null
+      let payoutError = null
+      if (payoutMethod === 'instant') {
+        try {
+          payout = await stripe.payouts.create({
+            amount: Math.round(netAmount * 100),
+            currency: 'usd',
+            method: 'instant',
+            destination: cardExternalAccount.id,
+            description: `fetchr instant withdrawal for ${user.email}`,
+            metadata: { supabase_user_id: user.id },
+          }, { stripeAccount: profile.stripe_connect_account_id })
+        } catch (e) {
+          payoutError = e.message
+        }
+      }
+
       await adminClient.from('transactions').insert({
         user_id: user.id, type: 'withdrawal', amount,
-        description: 'Withdrawal to connected bank account',
+        description: payout ? 'Instant withdrawal to debit card' : 'Withdrawal to connected payout account',
         status: 'completed',
         metadata: {
           transfer_id: transfer.id, fee, net: netAmount,
           connect_account_id: profile.stripe_connect_account_id,
           verified_balance_at_withdrawal: safeBalance,
+          payout_method: payoutMethod, payout_id: payout?.id || null,
+          // Set only when an instant payout was requested but Stripe's
+          // side of it failed after the transfer already succeeded — the
+          // money isn't lost, it just falls back to the standard schedule.
+          instant_payout_fallback_reason: payoutError,
         },
       })
       return new Response(JSON.stringify({
-        success: true, newBalance, transferId: transfer.id, netAmount, fee, estimatedArrival: '2-5 business days',
+        success: true, newBalance, transferId: transfer.id, netAmount, fee,
+        payoutMethod: payout ? 'instant' : 'standard',
+        instantPayoutFailed: payoutMethod === 'instant' && !payout,
+        estimatedArrival: payout ? 'usually within 30 minutes' : '2-5 business days',
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
