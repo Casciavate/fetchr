@@ -324,10 +324,20 @@ Deno.serve(async (req) => {
     //    grant payout ability by itself — onboarding does that. ──
     if (action === 'create_connect_account') {
       const { data: profile } = await adminClient.from('profiles')
-        .select('stripe_connect_account_id, full_name').eq('id', user.id).single()
+        .select('stripe_connect_account_id, full_name, bank_account_country').eq('id', user.id).single()
       if (profile?.stripe_connect_account_id) {
         return new Response(JSON.stringify({ accountId: profile.stripe_connect_account_id }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      // fetchr is a UAE company, but its travelers/shippers can be
+      // anywhere — omitting `country` here silently defaulted every
+      // connected account to the PLATFORM's own country (UAE) regardless
+      // of where the actual person is, which is both wrong and is why UAE
+      // individual onboarding's stricter requirements (e.g. a trade
+      // license) showed up for users who should never have hit them.
+      // set_payout_country must run first so this is always explicit.
+      if (!profile?.bank_account_country) {
+        throw new Error('Select your payout country first.')
       }
       // Every fetchr user is a private individual, never a business — pin
       // business_type so onboarding skips straight past the "what kind of
@@ -337,6 +347,7 @@ Deno.serve(async (req) => {
       const lastName = restName.join(' ')
       const account = await stripe.accounts.create({
         type: 'express',
+        country: profile.bank_account_country,
         email: user.email,
         business_type: 'individual',
         individual: {
@@ -349,6 +360,51 @@ Deno.serve(async (req) => {
       })
       await adminClient.from('profiles').update({ stripe_connect_account_id: account.id }).eq('id', user.id)
       return new Response(JSON.stringify({ accountId: account.id }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── Set (or change, pre-onboarding) which country a traveler's payout
+    //    account is created under. Must run before create_connect_account
+    //    — Stripe can't infer this, and getting it wrong means hitting
+    //    whatever onboarding rules that OTHER country happens to have. ──
+    if (action === 'set_payout_country') {
+      const { countryCode } = data
+      if (!countryCode || typeof countryCode !== 'string' || !/^[A-Za-z]{2}$/.test(countryCode)) {
+        throw new Error('A valid country is required')
+      }
+      const code = countryCode.toUpperCase()
+
+      const { data: profile } = await adminClient.from('profiles')
+        .select('stripe_connect_account_id, stripe_connect_payouts_enabled, bank_account_country')
+        .eq('id', user.id).single()
+
+      // Once payouts are actually enabled, Stripe has already verified
+      // this account under its current country and won't let it change —
+      // updating our own column without a matching Stripe-side change
+      // would just desync the two.
+      if (profile?.stripe_connect_payouts_enabled) {
+        throw new Error('Your payout country is already set and verified — contact support to change it.')
+      }
+
+      // A Connect account exists but never finished onboarding under a
+      // now-wrong country (e.g. it silently defaulted to fetchr's own UAE
+      // registration) — delete it so the next "Connect your bank" click
+      // creates a fresh one under the corrected country. Safe to delete
+      // unconditionally here: withdraw_to_bank only ever transfers real
+      // money in once payouts_enabled is true, so an account that hasn't
+      // reached that point has never held or moved any of it.
+      if (profile?.stripe_connect_account_id && code !== profile.bank_account_country) {
+        try {
+          await stripe.accounts.del(profile.stripe_connect_account_id)
+        } catch (e) {
+          console.error('Failed to delete stale Connect account before re-onboarding under a new country:', e.message)
+        }
+        await adminClient.from('profiles').update({
+          stripe_connect_account_id: null, stripe_connect_payouts_enabled: false,
+        }).eq('id', user.id)
+      }
+
+      await adminClient.from('profiles').update({ bank_account_country: code }).eq('id', user.id)
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── Stripe-hosted onboarding link (ID + bank account). Short-lived —
@@ -373,9 +429,9 @@ Deno.serve(async (req) => {
     //    finishing onboarding and landing back on return_url. ──
     if (action === 'connect_account_status') {
       const { data: profile } = await adminClient.from('profiles')
-        .select('stripe_connect_account_id, stripe_connect_payouts_enabled').eq('id', user.id).single()
+        .select('stripe_connect_account_id, stripe_connect_payouts_enabled, bank_account_country').eq('id', user.id).single()
       if (!profile?.stripe_connect_account_id) {
-        return new Response(JSON.stringify({ connected: false, payoutsEnabled: false }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ connected: false, payoutsEnabled: false, bankAccountCountry: profile?.bank_account_country || null }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
       const account = await stripe.accounts.retrieve(profile.stripe_connect_account_id)
       if (!!account.payouts_enabled !== profile.stripe_connect_payouts_enabled) {
@@ -388,7 +444,10 @@ Deno.serve(async (req) => {
       // setting (Connect settings → external accounts → allow debit cards),
       // not anything this account object controls.
       const hasInstantCard = (account.external_accounts?.data || []).some(ea => ea.object === 'card')
-      return new Response(JSON.stringify({ connected: true, payoutsEnabled: !!account.payouts_enabled, hasInstantCard }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({
+        connected: true, payoutsEnabled: !!account.payouts_enabled, hasInstantCard,
+        bankAccountCountry: profile.bank_account_country || null,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     if (action === 'create_setup_intent') {

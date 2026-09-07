@@ -18,6 +18,30 @@ import { RowSkeleton } from './shared/Skeleton';
 
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
+// fetchr is a UAE company, but travelers/shippers can be anywhere — this is
+// what a payout account actually gets created under (see set_payout_country
+// in stripe-connect), never the platform's own country. Deliberately no
+// default selection: an explicit choice here is exactly what was missing
+// before. Not every listed country is necessarily supported by Stripe
+// Connect for individual payouts — if one isn't, account creation surfaces
+// Stripe's own error rather than us pre-filtering against a list we can't
+// keep perfectly current.
+const PAYOUT_COUNTRIES = [
+  ['AE', 'United Arab Emirates'], ['US', 'United States'], ['GB', 'United Kingdom'],
+  ['CA', 'Canada'], ['AU', 'Australia'], ['NZ', 'New Zealand'], ['IE', 'Ireland'],
+  ['DE', 'Germany'], ['FR', 'France'], ['ES', 'Spain'], ['IT', 'Italy'], ['NL', 'Netherlands'],
+  ['BE', 'Belgium'], ['AT', 'Austria'], ['CH', 'Switzerland'], ['SE', 'Sweden'],
+  ['NO', 'Norway'], ['DK', 'Denmark'], ['FI', 'Finland'], ['PT', 'Portugal'],
+  ['PL', 'Poland'], ['CZ', 'Czech Republic'], ['GR', 'Greece'], ['RO', 'Romania'],
+  ['SA', 'Saudi Arabia'], ['QA', 'Qatar'], ['KW', 'Kuwait'], ['BH', 'Bahrain'], ['OM', 'Oman'],
+  ['EG', 'Egypt'], ['JO', 'Jordan'], ['IN', 'India'], ['PK', 'Pakistan'], ['BD', 'Bangladesh'],
+  ['PH', 'Philippines'], ['ID', 'Indonesia'], ['MY', 'Malaysia'], ['SG', 'Singapore'],
+  ['TH', 'Thailand'], ['VN', 'Vietnam'], ['JP', 'Japan'], ['KR', 'South Korea'], ['CN', 'China'],
+  ['HK', 'Hong Kong'], ['ZA', 'South Africa'], ['NG', 'Nigeria'], ['KE', 'Kenya'],
+  ['BR', 'Brazil'], ['MX', 'Mexico'], ['AR', 'Argentina'], ['CL', 'Chile'], ['CO', 'Colombia'],
+  ['TR', 'Turkey'],
+];
+
 const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
@@ -343,6 +367,7 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   const [step, setStep] = useState('form');
   const [connectStatus, setConnectStatus] = useState(null); // null = checking
   const [payoutMethod, setPayoutMethod] = useState('standard');
+  const [payoutCountry, setPayoutCountry] = useState('');
   const [result, setResult] = useState(null);
   const WITHDRAWAL_FEE_PCT = 2.5;
   const MIN_WITHDRAWAL = forceWithdrawAll ? 0 : 10;
@@ -355,14 +380,23 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   // right after finishing onboarding, the account.updated webhook may not
   // have landed yet.
   useEffect(() => {
-    callStripe('connect_account_status').then(setConnectStatus).catch(() => setConnectStatus({ connected: false, payoutsEnabled: false }));
+    callStripe('connect_account_status').then(res => {
+      setConnectStatus(res);
+      if (res.bankAccountCountry) setPayoutCountry(res.bankAccountCountry);
+    }).catch(() => setConnectStatus({ connected: false, payoutsEnabled: false }));
   }, []);
 
   const startBankConnect = async () => {
+    if (!payoutCountry) { setError('Select which country your payout account is in first.'); return; }
     setConnecting(true); setError('');
     const isNative = Capacitor.isNativePlatform();
     const pendingTab = isNative ? null : window.open('', '_blank');
     try {
+      // Must run before create_connect_account every time — if the user
+      // is switching countries after a stalled onboarding attempt, this
+      // is also what tears down the stale (wrong-country) Connect account
+      // so a fresh one gets created under the corrected one.
+      await callStripe('set_payout_country', { countryCode: payoutCountry });
       await callStripe('create_connect_account');
       const returnUrl = window.location.href;
       const { url } = await callStripe('create_connect_onboarding_link', { returnUrl, refreshUrl: returnUrl });
@@ -494,7 +528,21 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
                 <p className="text-micro text-content-subtle">Required before you can withdraw — bank account or debit card</p>
               </div>
             </div>
-            <button type="button" onClick={startBankConnect} disabled={connecting}
+            {/* Which country the payout account gets created under —
+                fetchr itself is UAE-based, but this determines the actual
+                traveler's own onboarding rules, not fetchr's. No default
+                selection on purpose. */}
+            <div>
+              <label className="block text-label text-content-muted mb-1.5 uppercase">
+                Country your payout account is in
+              </label>
+              <select value={payoutCountry} onChange={e => setPayoutCountry(e.target.value)}
+                className="input-field">
+                <option value="">Select a country…</option>
+                {PAYOUT_COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+            </div>
+            <button type="button" onClick={startBankConnect} disabled={connecting || !payoutCountry}
               className="w-full btn-primary disabled:opacity-50">
               {connecting ? 'Opening Stripe…' : 'Connect a payout method via Stripe'}
             </button>
