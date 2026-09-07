@@ -42,10 +42,20 @@ const stepIndex = (statusKey) => {
 // Tracking timeline — docs/BRAND.md §7.15. A cramped 5-column horizontal
 // row with truncated captions doesn't read on phone width, so mobile gets
 // a real vertical stepper; md+ keeps the horizontal row (there's room).
+// currentIdx is the stage the deal has actually REACHED (deal_stage is
+// named for the action that already happened to get there — 'in_escrow'
+// means escrow is already paid) — so that step itself is complete, and
+// it's the *next* one that's current/waiting. Previously this marked
+// `i === currentIdx` as the waiting step and only `i < currentIdx` as
+// complete, so the tracker always showed the deal's actual current stage
+// as an unchecked, still-pending box — e.g. escrow already secured (real
+// PaymentIntent charged, "Escrow secured" badge shown elsewhere on the
+// same screen) but "Escrow paid" still rendered empty with "Waiting on
+// the other party", one step behind reality.
 const stepState = (i, currentIdx, isFailed, waitingOnMe) => {
   if (isFailed && i === currentIdx) return { kind: 'failed', word: 'Failed' };
-  if (!isFailed && i < currentIdx) return { kind: 'complete', word: 'Completed' };
-  if (!isFailed && i === currentIdx) return waitingOnMe
+  if (!isFailed && i <= currentIdx) return { kind: 'complete', word: 'Completed' };
+  if (!isFailed && i === currentIdx + 1) return waitingOnMe
     ? { kind: 'current-mine', word: 'Current step, waiting for you' }
     : { kind: 'current-other', word: 'Current step, waiting for the other party' };
   return { kind: 'upcoming', word: 'Not started' };
