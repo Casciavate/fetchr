@@ -39,20 +39,6 @@ const countryName = (code) => {
   }
 };
 
-const MANUAL_PAYOUT_METHODS = [
-  ['bank_transfer', 'Bank transfer'],
-  ['paypal', 'PayPal'],
-  ['wise', 'Wise'],
-  ['other', 'Something else'],
-];
-
-const MANUAL_DETAILS_PLACEHOLDER = {
-  bank_transfer: 'Account holder name, IBAN / account number, SWIFT/BIC, bank name and country',
-  paypal: 'The email address on your PayPal account',
-  wise: 'Your Wise email or Wisetag, and the currency you want to receive',
-  other: 'Tell us exactly how to send it, including any details we would need',
-};
-
 const CARD_ELEMENT_OPTIONS = {
   style: {
     base: {
@@ -380,9 +366,6 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
   const [payoutMethod, setPayoutMethod] = useState('standard');
   const [payoutCountry, setPayoutCountry] = useState('');
   const [payoutCountries, setPayoutCountries] = useState(null); // null = loading
-  const [manualMode, setManualMode] = useState(false);
-  const [manualMethod, setManualMethod] = useState('bank_transfer');
-  const [manualDetails, setManualDetails] = useState('');
   const [result, setResult] = useState(null);
   const WITHDRAWAL_FEE_PCT = 2.5;
   const MIN_WITHDRAWAL = forceWithdrawAll ? 0 : 10;
@@ -410,33 +393,6 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       .then(setPayoutCountries)
       .catch(() => setPayoutCountries({ platformCountry: null, supportedCountries: [] }));
   }, []);
-
-  const submitManualPayout = async () => {
-    if (!amt || amt <= 0) { setError('Enter a valid amount.'); return; }
-    if (amt > (profile?.wallet_balance || 0)) {
-      setError(`Insufficient balance. Available: $${(profile?.wallet_balance || 0).toFixed(2)}`); return;
-    }
-    if (!forceWithdrawAll && amt < MIN_WITHDRAWAL) {
-      setError(`Minimum withdrawal is $${MIN_WITHDRAWAL}.`); return;
-    }
-    if (manualDetails.trim().length < 4) { setError('Tell us where to send the money.'); return; }
-
-    setLoading(true); setError(''); setStep('processing');
-    try {
-      const res = await callStripe('request_manual_payout', {
-        amount: amt, method: manualMethod,
-        destinationDetails: manualDetails.trim(),
-        country: payoutCountry || null,
-      });
-      setResult({ ...res, manual: true });
-      setStep('success');
-      setTimeout(() => onSuccess(res), 1500);
-    } catch (e) {
-      setError(e.message);
-      setStep('form');
-    }
-    setLoading(false);
-  };
 
   const startBankConnect = async () => {
     if (!payoutCountry) { setError('Select which country your payout account is in first.'); return; }
@@ -501,14 +457,8 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
       <div className="w-16 h-16 bg-success-tint rounded-lg flex items-center justify-center mx-auto mb-4">
         <CheckCircle size={32} className="text-success" />
       </div>
-      <p className="font-display font-bold text-ink-900 mb-1">
-        {result?.manual ? 'Payout requested.' : 'Withdrawal initiated.'}
-      </p>
-      {result?.manual ? (
-        <p className="text-body-s text-content-muted">
-          ${net.toFixed(2)} is reserved and fetchr will send it to the details you gave us. You'll see it here as sent once it's on its way — usually within a couple of business days.
-        </p>
-      ) : result?.estimatedArrival ? (
+      <p className="font-display font-bold text-ink-900 mb-1">Withdrawal initiated.</p>
+      {result?.estimatedArrival ? (
         <p className="text-body-s text-content-muted">
           ${net.toFixed(2)} will arrive {result.estimatedArrival}
           {result.payoutMethod === 'instant' ? ' — Stripe deducts its own instant-payout fee from this on top of fetchr\'s fee shown above.' : '.'}
@@ -599,72 +549,39 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
               </div>
             </div>
             {/* Only the countries Stripe will actually let fetchr create a
-                payout account in — asked at runtime, never hardcoded. */}
-            {!manualMode && (
-              <>
-                <div>
-                  <label className="block text-label text-content-muted mb-1.5 uppercase">
-                    Country your payout account is in
-                  </label>
-                  {payoutCountries === null ? (
-                    <div className="h-11 bg-surface-sunken rounded-md animate-pulse" />
-                  ) : (
-                    <select value={payoutCountry} onChange={e => setPayoutCountry(e.target.value)}
-                      className="input-field">
-                      <option value="">Select a country…</option>
-                      {[...(payoutCountries.supportedCountries || [])]
-                        .map(code => [code, countryName(code)])
-                        .sort((a, b) => a[1].localeCompare(b[1]))
-                        .map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-                    </select>
-                  )}
-                </div>
-                <button type="button" onClick={startBankConnect}
-                  disabled={connecting || !payoutCountry || payoutCountries === null}
-                  className="w-full btn-primary disabled:opacity-50">
-                  {connecting ? 'Opening Stripe…' : 'Connect a payout method via Stripe'}
-                </button>
-                {/* The honest escape hatch: Stripe genuinely cannot reach
-                    every country from fetchr's own account, so anyone not
-                    in the list above still needs a way to get paid. */}
-                <button type="button" onClick={() => { setManualMode(true); setError(''); }}
-                  className="w-full text-center text-body-s text-content-muted underline">
-                  Country not listed? Request a manual payout
-                </button>
-              </>
-            )}
-
-            {manualMode && (
-              <div className="space-y-3">
-                <AdvisoryBanner tone="info">
-                  Stripe can't create a payout account in every country from fetchr's own.
-                  Tell us where to send it and we'll pay you directly — your balance is
-                  reserved as soon as you request it.
+                payout account in — asked at runtime, never hardcoded.
+                Stripe limits cross-border payouts to platforms in the
+                US/UK/EEA/CA/CH; fetchr is UAE-registered, so this list is
+                whatever AE is actually allowed to reach and nothing more. */}
+            <div>
+              <label className="block text-label text-content-muted mb-1.5 uppercase">
+                Country your payout account is in
+              </label>
+              {payoutCountries === null ? (
+                <div className="h-11 bg-surface-sunken rounded-md animate-pulse" />
+              ) : (payoutCountries.supportedCountries || []).length === 0 ? (
+                <AdvisoryBanner tone="warning">
+                  Payouts aren't available yet. Your balance is safe and stays in your
+                  wallet — nothing is lost, and it'll be withdrawable as soon as payouts
+                  are switched on.
                 </AdvisoryBanner>
-                <div>
-                  <label className="block text-label text-content-muted mb-1.5 uppercase">How should we pay you?</label>
-                  <select value={manualMethod} onChange={e => setManualMethod(e.target.value)} className="input-field">
-                    {MANUAL_PAYOUT_METHODS.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-label text-content-muted mb-1.5 uppercase">Payout details</label>
-                  <textarea value={manualDetails} onChange={e => setManualDetails(e.target.value)}
-                    rows={4} maxLength={2000}
-                    placeholder={MANUAL_DETAILS_PLACEHOLDER[manualMethod]}
-                    className="input-field resize-none" />
-                </div>
-                <button type="button" onClick={submitManualPayout} disabled={loading}
-                  className="w-full btn-primary disabled:opacity-50">
-                  {loading ? 'Sending request…' : `Request payout of $${net > 0 ? net.toFixed(2) : '0.00'}`}
-                </button>
-                <button type="button" onClick={() => { setManualMode(false); setError(''); }}
-                  className="w-full text-center text-body-s text-content-muted underline">
-                  Back to Stripe payout
-                </button>
-              </div>
+              ) : (
+                <select value={payoutCountry} onChange={e => setPayoutCountry(e.target.value)}
+                  className="input-field">
+                  <option value="">Select a country…</option>
+                  {[...(payoutCountries.supportedCountries || [])]
+                    .map(code => [code, countryName(code)])
+                    .sort((a, b) => a[1].localeCompare(b[1]))
+                    .map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                </select>
+              )}
+            </div>
+            {(payoutCountries === null || (payoutCountries.supportedCountries || []).length > 0) && (
+              <button type="button" onClick={startBankConnect}
+                disabled={connecting || !payoutCountry || payoutCountries === null}
+                className="w-full btn-primary disabled:opacity-50">
+                {connecting ? 'Opening Stripe…' : 'Connect a payout method via Stripe'}
+              </button>
             )}
           </div>
         )}
@@ -713,20 +630,15 @@ const WithdrawForm = ({ profile, forceWithdrawAll, onSuccess, onClose }) => {
 
       {error && <AdvisoryBanner tone="error">{error}</AdvisoryBanner>}
 
-      {/* Manual mode has its own submit button — this one would only ever
-          render disabled there, since payouts_enabled is false by
-          definition for anyone who needs the manual route. */}
       <div className="flex gap-2">
         <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-        {!manualMode && (
-          <button onClick={handleWithdraw} disabled={loading || !connectStatus?.payoutsEnabled}
-            className="btn-primary flex-[2] disabled:opacity-50">
-            {loading
-              ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>
-              : <><ArrowUpCircle size={15} /> Withdraw ${net > 0 ? net.toFixed(2) : '0.00'}</>
-            }
-          </button>
-        )}
+        <button onClick={handleWithdraw} disabled={loading || !connectStatus?.payoutsEnabled}
+          className="btn-primary flex-[2] disabled:opacity-50">
+          {loading
+            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing</>
+            : <><ArrowUpCircle size={15} /> Withdraw ${net > 0 ? net.toFixed(2) : '0.00'}</>
+          }
+        </button>
       </div>
     </div>
   );

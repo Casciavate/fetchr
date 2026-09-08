@@ -369,7 +369,10 @@ Deno.serve(async (req) => {
     // created by platforms in AE"). country_specs is where Stripe
     // publishes that list for our own platform country, so we ask rather
     // than guess — it stays correct on its own as Stripe expands.
-    // Anything NOT in this list falls back to request_manual_payout.
+    // NOTE: Stripe limits cross-border payouts to platforms in the
+    // US/UK/EEA/CA/CH. fetchr is UAE-registered, so this list is expected
+    // to be short (likely AE only) until payouts move to a provider that
+    // can push to cards globally.
     const getSupportedPayoutCountries = async () => {
       const platformAccount = await stripe.accounts.retrieve()
       const platformCountry = platformAccount.country
@@ -378,8 +381,8 @@ Deno.serve(async (req) => {
         return { platformCountry, supportedCountries: spec.supported_transfer_countries || [] }
       } catch (e) {
         // Fail closed to an empty list rather than an optimistic one: an
-        // empty list routes everyone to the manual path, which always
-        // works, instead of offering a Connect country that will reject.
+        // empty list tells the UI payouts aren't available rather than
+        // offering a Connect country that will reject at creation time.
         console.error('Failed to load country spec for platform country', platformCountry, e.message)
         return { platformCountry, supportedCountries: [] }
       }
@@ -406,7 +409,7 @@ Deno.serve(async (req) => {
       // the user has already sat through the country picker.
       const { platformCountry, supportedCountries } = await getSupportedPayoutCountries()
       if (supportedCountries.length && !supportedCountries.includes(code)) {
-        throw new Error(`Stripe can't pay out to ${code} from fetchr's ${platformCountry} account. Use "Request a manual payout" instead — we'll send it by bank transfer, PayPal or Wise.`)
+        throw new Error(`Stripe can't pay out to ${code} from fetchr's ${platformCountry} account — cross-border payouts are limited to US/UK/EEA/CA/CH platforms. Payouts to your country aren't available yet; your balance stays safe in your wallet.`)
       }
 
       const { data: profile } = await adminClient.from('profiles')
@@ -716,125 +719,6 @@ Deno.serve(async (req) => {
         noFallbackAvailable,
         estimatedArrival: payout ? 'usually within 30 minutes' : (noFallbackAvailable ? null : '2-5 business days'),
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // ── Manual payout request (for corridors Stripe Connect can't serve) ──
-    // A UAE-registered platform can only create connected accounts in the
-    // countries Stripe lists for it, so travelers elsewhere (Switzerland,
-    // say) have no Connect route at all. They file a request here and
-    // fetchr sends the money by hand. The wallet is debited immediately,
-    // exactly like a Stripe withdrawal, so the same balance can't be
-    // requested twice while an admin is still settling the first one.
-    if (action === 'request_manual_payout') {
-      const { amount, method, destinationDetails, country } = data
-      if (!amount || amount <= 0) throw new Error('Invalid withdrawal amount')
-      if (!['bank_transfer', 'paypal', 'wise', 'other'].includes(method)) {
-        throw new Error('Choose how you want to be paid')
-      }
-      const details = (destinationDetails || '').trim()
-      if (details.length < 4) throw new Error('Enter where the money should be sent (IBAN, PayPal email, etc.)')
-      if (details.length > 2000) throw new Error('Payout details are too long')
-
-      const WITHDRAWAL_FEE_PCT = 0.025
-      const fee = amount * WITHDRAWAL_FEE_PCT
-      const netAmount = amount - fee
-      if (netAmount <= 0) throw new Error('That amount is too small after fees')
-
-      const safeBalance = await verifyWithdrawalEligibility(user.id, amount)
-
-      const { data: newBalance, error: debitError } = await adminClient
-        .rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: -amount })
-      if (debitError) throw new Error(`Withdrawal of $${amount.toFixed(2)} exceeds your available balance.`)
-
-      // Ledger row first, then the request that points at it — every
-      // failure path below puts the debited money back rather than
-      // leaving a reservation with nothing tracking it.
-      let txRow
-      try {
-        const { data: tx, error: txError } = await adminClient.from('transactions').insert({
-          user_id: user.id, type: 'withdrawal', amount,
-          description: 'Manual payout requested (awaiting review)',
-          status: 'pending',
-          metadata: {
-            payout_method: 'manual', manual_method: method,
-            fee, net: netAmount, country: country || null,
-            verified_balance_at_request: safeBalance,
-          },
-        }).select().single()
-        if (txError) throw txError
-        txRow = tx
-      } catch (e) {
-        await adminClient.rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
-        throw e
-      }
-
-      const { data: request, error: reqError } = await adminClient.from('payout_requests').insert({
-        user_id: user.id, amount, fee, net_amount: netAmount,
-        country: country || null, method, destination_details: details,
-        transaction_id: txRow.id,
-      }).select().single()
-      if (reqError) {
-        await adminClient.from('transactions').delete().eq('id', txRow.id)
-        await adminClient.rpc('adjust_wallet_balance', { p_user_id: user.id, p_delta: amount })
-        // Partial unique index: one pending request per user.
-        if (reqError.code === '23505') throw new Error('You already have a payout request being processed — we\'ll get to it shortly.')
-        throw reqError
-      }
-
-      return new Response(JSON.stringify({
-        success: true, requestId: request.id, newBalance, netAmount, fee,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // ── Admin: settle a manual payout request ──
-    // 'paid' means an admin really sent the money outside fetchr, so the
-    // reservation just becomes a completed withdrawal. 'rejected' means
-    // nothing was sent, so the reserved balance goes back.
-    if (action === 'admin_resolve_payout_request') {
-      const { data: callerProfile } = await adminClient.from('profiles').select('is_admin').eq('id', user.id).single()
-      if (!callerProfile?.is_admin) throw new Error('Forbidden: admin access only')
-
-      const { requestId, resolution, adminNote } = data
-      if (!requestId) throw new Error('requestId required')
-      if (!['paid', 'rejected'].includes(resolution)) throw new Error("resolution must be 'paid' or 'rejected'")
-
-      // Guarded transition — two admins working the queue at once can't
-      // both settle (and, on reject, both refund) the same request.
-      const { data: request } = await adminClient.from('payout_requests')
-        .update({
-          status: resolution, admin_note: adminNote || null,
-          resolved_by: user.id, resolved_at: new Date().toISOString(),
-        })
-        .eq('id', requestId).eq('status', 'pending')
-        .select().maybeSingle()
-      if (!request) throw new Error('This payout request has already been resolved')
-
-      if (resolution === 'paid') {
-        if (request.transaction_id) {
-          await adminClient.from('transactions')
-            .update({ status: 'completed', description: 'Manual payout sent' })
-            .eq('id', request.transaction_id)
-        }
-      } else {
-        const { error: creditError } = await adminClient
-          .rpc('adjust_wallet_balance', { p_user_id: request.user_id, p_delta: request.amount })
-        if (creditError) {
-          // Put it back in the queue rather than leaving it marked
-          // rejected with the user's money still reserved.
-          await adminClient.from('payout_requests')
-            .update({ status: 'pending', resolved_by: null, resolved_at: null })
-            .eq('id', requestId)
-          throw new Error(`Couldn't return $${Number(request.amount).toFixed(2)} to their wallet — request left pending, try again.`)
-        }
-        if (request.transaction_id) {
-          await adminClient.from('transactions')
-            .update({ status: 'refunded', description: 'Manual payout request declined' })
-            .eq('id', request.transaction_id)
-        }
-      }
-
-      return new Response(JSON.stringify({ success: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── Create escrow payment intent ──
