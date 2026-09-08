@@ -235,6 +235,26 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ disputes }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Manual payout queue — travelers in countries Stripe Connect
+    //    can't reach from fetchr's own (UAE) platform account. Settling
+    //    one moves real money outside fetchr, so the actual resolve is a
+    //    stripe-connect action, not here; this is the read side only. ──
+    if (action === 'payout_requests') {
+      const { status } = data || {}
+      let query = adminClient
+        .from('payout_requests')
+        .select(`
+          *,
+          requester:profiles!payout_requests_user_id_fkey(full_name, email),
+          resolver:profiles!payout_requests_resolved_by_fkey(full_name, email)
+        `)
+        .order('created_at', { ascending: false })
+      if (status) query = query.eq('status', status)
+      const { data: requests, error } = await query
+      if (error) throw error
+      return new Response(JSON.stringify({ payoutRequests: requests }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     // ── Toggle a user's verified badge ──
     if (action === 'toggle_verified') {
       const { userId, verified } = data

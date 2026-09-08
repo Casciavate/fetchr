@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import {
   DollarSign, Users, Receipt, CreditCard, ShieldCheck,
   TrendingUp, Lock, Wallet, RefreshCw, CheckCircle, XCircle,
-  Ban, KeyRound, Trash2, Search, ArrowUpDown, AlertOctagon, Bot,
+  Ban, KeyRound, Trash2, Search, ArrowUpDown, AlertOctagon, Bot, Banknote,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -48,6 +48,7 @@ const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const TABS = [
   { id: 'overview', label: 'Overview', icon: TrendingUp },
   { id: 'disputes', label: 'Disputes', icon: AlertOctagon },
+  { id: 'payouts', label: 'Payouts', icon: Banknote },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'stripe', label: 'Stripe', icon: CreditCard },
@@ -69,6 +70,12 @@ const AdminDashboard = () => {
   const [disputes, setDisputes] = useState([]);
   const [disputeStatusFilter, setDisputeStatusFilter] = useState('escalated');
   const [resolvingId, setResolvingId] = useState(null);
+
+  // Payouts tab — manual payout queue for countries Stripe Connect can't
+  // reach from fetchr's own platform country.
+  const [payoutRequests, setPayoutRequests] = useState([]);
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState('pending');
+  const [payingOutId, setPayingOutId] = useState(null);
 
   // Users tab — search, status filter, sort
   const [userSearch, setUserSearch] = useState('');
@@ -104,6 +111,9 @@ const AdminDashboard = () => {
       if (t === 'disputes') {
         setDisputes((await callAdmin('disputes', disputeStatusFilter ? { status: disputeStatusFilter } : {})).disputes || []);
       }
+      if (t === 'payouts') {
+        setPayoutRequests((await callAdmin('payout_requests', payoutStatusFilter ? { status: payoutStatusFilter } : {})).payoutRequests || []);
+      }
       if (t === 'users') setUsers((await callAdmin('users')).users || []);
       if (t === 'transactions') {
         const filters = {};
@@ -116,7 +126,7 @@ const AdminDashboard = () => {
       setError(e.message);
     }
     setLoading(false);
-  }, [tab, txFilter, kpiPeriod, disputeStatusFilter]);
+  }, [tab, txFilter, kpiPeriod, disputeStatusFilter, payoutStatusFilter]);
 
   useEffect(() => { load(tab); }, [tab, load]);
 
@@ -143,6 +153,28 @@ const AdminDashboard = () => {
       setError(e.message);
     }
     setResolvingId(null);
+  };
+
+  // "Paid" is a statement of fact about money you already sent by hand —
+  // it completes the reservation rather than moving anything itself.
+  // "Reject" returns the reserved balance to the user's wallet.
+  const resolvePayoutRequest = async (req, resolution) => {
+    const label = resolution === 'paid'
+      ? `mark $${Number(req.net_amount).toFixed(2)} as already sent to ${req.requester?.full_name || req.requester?.email || 'this user'}`
+      : `reject this request and return $${Number(req.amount).toFixed(2)} to their wallet`;
+    if (!window.confirm(`Are you sure you want to ${label}?`)) return;
+    const adminNote = resolution === 'rejected'
+      ? (window.prompt('Reason (shown in the admin log, optional):') || '')
+      : (window.prompt('Reference for this payment, e.g. bank/PayPal transaction id (optional):') || '');
+    setPayingOutId(req.id);
+    try {
+      await callStripeConnect('admin_resolve_payout_request', { requestId: req.id, resolution, adminNote });
+      setPayoutRequests(prev => prev.filter(r => r.id !== req.id));
+      flash(resolution === 'paid' ? 'Payout marked as sent.' : 'Request rejected and balance returned.');
+    } catch (e) {
+      setError(e.message);
+    }
+    setPayingOutId(null);
   };
 
   const blockUser = async (u) => {
@@ -370,6 +402,95 @@ const AdminDashboard = () => {
             </div>
           </div>
         )
+      )}
+
+      {tab === 'payouts' && (
+        <div className="space-y-3">
+          <AdvisoryBanner tone="info">
+            Stripe can't create payout accounts in every country from fetchr's own,
+            so travelers in those countries request payouts here. Their balance is
+            already reserved — send the money yourself, then mark it as sent.
+          </AdvisoryBanner>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={payoutStatusFilter} onChange={e => setPayoutStatusFilter(e.target.value)}
+              className="input-field w-auto py-2 text-body-s">
+              <option value="pending">Awaiting payment</option>
+              <option value="paid">Sent</option>
+              <option value="rejected">Rejected</option>
+              <option value="">All requests</option>
+            </select>
+            <span className="text-label text-content-subtle">
+              {payoutRequests.length} request{payoutRequests.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {loading && payoutRequests.length === 0 ? (
+            <div className="space-y-3">{[1, 2].map(i => <div key={i} className="h-32 bg-surface-sunken rounded-lg animate-pulse" />)}</div>
+          ) : payoutRequests.length === 0 ? (
+            <div className="card p-8 text-center text-content-subtle text-body-s">Nothing here.</div>
+          ) : payoutRequests.map(r => {
+            const isPending = r.status === 'pending';
+            return (
+              <div key={r.id} className="card p-5 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-display font-semibold text-title-s text-content">
+                      ${Number(r.net_amount).toFixed(2)} to {r.requester?.full_name || r.requester?.email || 'Unknown user'}
+                    </p>
+                    <p className="text-label text-content-subtle mt-0.5">
+                      {r.requester?.email} · {r.country || 'country not given'} · requested {new Date(r.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <StatusPill tone={isPending ? 'signal' : r.status === 'paid' ? 'success' : 'danger'}>
+                    {isPending ? 'Awaiting payment' : r.status === 'paid' ? 'Sent' : 'Rejected'}
+                  </StatusPill>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-body-s">
+                  <div>
+                    <p className="text-label text-content-subtle uppercase mb-1">Method</p>
+                    <p className="text-content">
+                      {{ bank_transfer: 'Bank transfer', paypal: 'PayPal', wise: 'Wise', other: 'Other' }[r.method] || r.method}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-label text-content-subtle uppercase mb-1">Amounts</p>
+                    <p className="text-content font-mono">
+                      ${Number(r.net_amount).toFixed(2)} net · ${Number(r.amount).toFixed(2)} gross · ${Number(r.fee).toFixed(2)} fee
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-label text-content-subtle uppercase mb-1">Send it to</p>
+                  <p className="text-body-s text-content whitespace-pre-wrap bg-surface-sunken rounded-md p-3 border border-line">
+                    {r.destination_details}
+                  </p>
+                </div>
+
+                {r.admin_note && (
+                  <p className="text-label text-content-subtle">
+                    Note: {r.admin_note}
+                    {r.resolver ? ` — ${r.resolver.full_name || r.resolver.email}` : ''}
+                  </p>
+                )}
+
+                {isPending && (
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => resolvePayoutRequest(r, 'paid')} disabled={payingOutId === r.id}
+                      className="btn-primary px-4 disabled:opacity-50">
+                      <CheckCircle size={15} /> I've sent this
+                    </button>
+                    <button onClick={() => resolvePayoutRequest(r, 'rejected')} disabled={payingOutId === r.id}
+                      className="btn-secondary px-4 disabled:opacity-50">
+                      <XCircle size={15} /> Reject &amp; refund
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {tab === 'disputes' && (
