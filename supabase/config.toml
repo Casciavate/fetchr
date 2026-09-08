@@ -1,3 +1,15 @@
+# Linked project. With this set, every CLI command below works from a bare
+# `npx supabase <cmd>` in this repo — no --project-ref to remember and no
+# chance of pointing a migration or a deploy at the wrong project.
+project_id = "jvuzjmigkqolphkhzeei"
+
+# IMPORTANT: every function that lives in supabase/functions/ must have an
+# entry here. `supabase functions deploy` reads verify_jwt from this file,
+# and its default is true — so a function omitted here gets redeployed with
+# JWT verification ON. For bot-agent (called by pg_cron via pg_net with no
+# auth header) and stripe-identity (Stripe posts the webhook directly, and
+# authenticates itself by signature instead) that would silently break them.
+
 
 [functions.create-payment]
 enabled = true
@@ -48,3 +60,20 @@ enabled = true
 verify_jwt = false # public webhook target for SendGrid Inbound Parse — no user session
 import_map = "./functions/email-import/deno.json"
 entrypoint = "./functions/email-import/index.ts"
+
+[functions.delete-account]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/delete-account/index.ts"
+
+[functions.bot-agent]
+enabled = true
+verify_jwt = false # invoked by the bot-agent-tick pg_cron job via pg_net, which sends no auth header
+import_map = "./functions/bot-agent/deno.json"
+entrypoint = "./functions/bot-agent/index.ts"
+
+[functions.stripe-identity]
+enabled = true
+verify_jwt = false # Stripe posts /webhook directly; that path authenticates via Stripe's signature
+import_map = "./functions/stripe-identity/deno.json"
+entrypoint = "./functions/stripe-identity/index.ts"

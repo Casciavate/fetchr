@@ -308,27 +308,74 @@ synchronously on click (`window.open('', '_blank')`) and redirects it
    `protect_match_columns`. If you add another sweep-style function that
    writes across users, it needs this too.
 
-## Deploying
+## Deploying — the repo is the entry point, always
+
+**Rule: nothing reaches Supabase except by being committed here first and
+then pushed from the terminal.** Not the SQL Editor, not the Supabase
+dashboard, not the MCP `apply_migration`/`deploy_edge_function` tools. Those
+apply a change whose only copy of the truth then lives inside Supabase, and
+git silently falls behind. If a change is worth making, it is worth being
+in a file someone can review, revert, and re-apply.
+
+The Supabase CLI is a devDependency (`npx supabase`, pinned in
+`package.json`), so no global install is needed. One-time setup per machine:
 
 ```bash
-supabase functions deploy stripe-connect   # edge function
+npx supabase login                                    # opens a browser
+npx supabase link --project-ref jvuzjmigkqolphkhzeei  # asks for the DB password
+```
+
+Then everything is an npm script, run from the repo root:
+
+```bash
+npm run db:status     # local migration files vs. what's applied remotely
+npm run fn:list       # deployed edge functions and their versions
+npm run sync:check    # both of the above — run this when in doubt
+
+npm run db:new  add_widget_table   # creates supabase/migrations/<ts>_add_widget_table.sql
+npm run db:push:dry                # show what would be applied
+npm run db:push                    # apply the new migration files
+
+npm run fn:deploy                  # deploy every function
+npm run fn:deploy -- stripe-connect # or just one
+
 git add . && git commit -m "..." && git push   # Vercel auto-deploys frontend
 ```
 
-SQL migrations are applied via the Supabase MCP `apply_migration` tool (or
-the SQL Editor), which records them in Supabase's own migration history —
-but that history was never mirrored into git until 2026-09-06, when all 42
-prior migrations plus every one since were pulled into `supabase/migrations/`
-(named `<version>_<name>.sql`, matching Supabase's own naming exactly). This
-was a real blind spot: `expire_stale_matches()` had a live bug (a bad match
-between Sandro and Anastasiia over "Russian Chocolates" got silently
-force-rejected by it, twice) that no code review could have caught, because
-its only copy of the truth lived in Supabase and nowhere in git. Going
-forward, **any migration applied to Supabase must also get a matching file
-in `supabase/migrations/`** in the same commit — pull the exact applied SQL
-back with `select statements from supabase_migrations.schema_migrations
-where version = '<version>'` (via `execute_sql`) rather than retyping it, so
-the two never drift.
+`fn:deploy` passes `--use-api`, which bundles server-side so Docker isn't
+required locally.
+
+`supabase/config.toml` carries `project_id` plus an entry for **every**
+function in `supabase/functions/`. That completeness is not cosmetic:
+`functions deploy` reads `verify_jwt` from that file and defaults it to
+`true`, so a function missing an entry gets redeployed with JWT
+verification switched on — which would break `bot-agent` (invoked by the
+`bot-agent-tick` pg_cron job via pg_net, no auth header) and
+`stripe-identity` (Stripe posts the webhook directly and authenticates by
+signature). Add a new function to `config.toml` in the same commit that
+adds its directory.
+
+### Why the rule exists
+
+The migration history was never mirrored into git until 2026-09-06, when
+all 42 prior migrations plus every one since were pulled into
+`supabase/migrations/` (named `<version>_<name>.sql`, matching Supabase's
+own naming exactly). That was a real blind spot: `expire_stale_matches()`
+had a live bug (a bad match between Sandro and Anastasiia over "Russian
+Chocolates" got silently force-rejected by it, twice) that no code review
+could have caught, because its only copy of the truth lived in Supabase and
+nowhere in git.
+
+If a migration ever does get applied out-of-band — an emergency fix in the
+SQL Editor, say — treat it as an incident to close, not a shortcut that
+worked: pull the exact applied SQL back with
+
+```sql
+select statements from supabase_migrations.schema_migrations where version = '<version>';
+```
+
+and commit it as `supabase/migrations/<version>_<name>.sql` verbatim rather
+than retyping it, so the file and the applied statement can't diverge.
 
 ## Open bugs
 

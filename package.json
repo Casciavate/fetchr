@@ -32,7 +32,15 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "cap:sync": "npm run build && npx cap sync ios",
-    "ios:open": "npm run cap:sync && npx cap open ios"
+    "ios:open": "npm run cap:sync && npx cap open ios",
+    "db:status": "supabase migration list --linked",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push --linked",
+    "db:push:dry": "supabase db push --linked --dry-run",
+    "db:pull": "supabase db pull --linked",
+    "fn:list": "supabase functions list",
+    "fn:deploy": "supabase functions deploy --use-api",
+    "sync:check": "npm run db:status && npm run fn:list"
   },
   "eslintConfig": {
     "extends": [
@@ -51,5 +59,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "supabase": "^2.117.0"
   }
 }
