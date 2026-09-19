@@ -77,3 +77,9 @@ enabled = true
 verify_jwt = false # Stripe posts /webhook directly; that path authenticates via Stripe's signature
 import_map = "./functions/stripe-identity/deno.json"
 entrypoint = "./functions/stripe-identity/index.ts"
+
+[functions.nium-payout]
+enabled = true
+verify_jwt = true
+import_map = "./functions/nium-payout/deno.json"
+entrypoint = "./functions/nium-payout/index.ts"
