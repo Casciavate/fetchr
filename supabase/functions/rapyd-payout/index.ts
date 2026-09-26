@@ -136,6 +136,15 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Confirmed 2026-09-26 against a live sandbox call: this signature
+    // scheme (HMAC-SHA256 over method+path+salt+timestamp+access_key+
+    // secret_key+body, then base64 of the hex digest) authenticates
+    // correctly — GET /v1/data/countries on sandboxapi.rapyd.net returned
+    // status.status === 'SUCCESS'. If a specific action below ever comes
+    // back UNAUTHORIZED_API_CALL again, it means that Rapyd *product*
+    // (e.g. Disburse) isn't enabled for this client yet, not a signature
+    // bug — Rapyd gates products individually per account, even in sandbox.
+
     // Same ledger-verification pattern as stripe-connect's
     // verifyWithdrawalEligibility/getVerifiedBalance and the Nium
     // function's copy of it — duplicated deliberately (edge functions
