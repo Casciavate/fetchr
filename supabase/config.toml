@@ -83,3 +83,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/nium-payout/deno.json"
 entrypoint = "./functions/nium-payout/index.ts"
+
+[functions.rapyd-payout]
+enabled = true
+verify_jwt = true
+import_map = "./functions/rapyd-payout/deno.json"
+entrypoint = "./functions/rapyd-payout/index.ts"
