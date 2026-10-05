@@ -89,3 +89,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/rapyd-payout/deno.json"
 entrypoint = "./functions/rapyd-payout/index.ts"
+
+[functions.trolley-payout]
+enabled = true
+verify_jwt = true
+import_map = "./functions/trolley-payout/deno.json"
+entrypoint = "./functions/trolley-payout/index.ts"
